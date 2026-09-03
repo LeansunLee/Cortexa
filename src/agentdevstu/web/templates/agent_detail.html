@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}智能体详情 - AgentDevStu{% endblock %}
+{% block page_title %}智能体详情{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="subtitle" id="agent-id">ID: {{ agent_id }}</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="history.back()">返回</button>
+    <button class="btn btn-primary" onclick="publishAgent()">发布</button>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="card">
+    <h3>基本信息</h3>
+    <div class="form-group">
+      <label>名称</label>
+      <input type="text" id="agent-name" placeholder="智能体名称">
+    </div>
+    <div class="form-group">
+      <label>描述</label>
+      <textarea id="agent-description" rows="3" placeholder="智能体描述"></textarea>
+    </div>
+    <div class="form-group">
+      <label>LLM 提供商</label>
+      <select id="agent-llm-provider">
+        <option value="">选择 LLM 提供商</option>
+      </select>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h3>系统提示词</h3>
+    <div class="form-group">
+      <textarea id="agent-system-prompt" rows="10" placeholder="输入系统提示词..."></textarea>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3>版本历史</h3>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>版本</th>
+        <th>状态</th>
+        <th>创建时间</th>
+      </tr>
+    </thead>
+    <tbody id="versions-table">
+      <tr>
+        <td colspan="3" class="empty-state">暂无版本</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<style>
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const agentId = '{{ agent_id }}';
+
+async function loadAgent() {
+  try {
+    const res = await fetch(`/api/agents/${agentId}`);
+    if (res.ok) {
+      const agent = await res.json();
+      document.getElementById('agent-name').value = agent.name || '';
+      document.getElementById('agent-description').value = agent.description || '';
+      document.getElementById('agent-system-prompt').value = agent.system_prompt || '';
+      loadProviders(agent.llm_provider);
+    }
+  } catch (e) {
+    console.error('Failed to load agent:', e);
+  }
+}
+
+async function loadProviders(selected) {
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    const select = document.getElementById('agent-llm-provider');
+    select.innerHTML = '<option value="">选择 LLM 提供商</option>';
+    Object.keys(config.providers).forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = `${name} (${config.providers[name].model})`;
+      if (name === selected) opt.selected = true;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load providers:', e);
+  }
+}
+
+async function publishAgent() {
+  try {
+    const res = await fetch(`/api/agents/${agentId}/publish`, {
+      method: 'POST'
+    });
+    
+    if (res.ok) {
+      showToast('智能体已发布', 'success');
+      loadAgent();
+    } else {
+      const error = await res.json();
+      showToast(error.detail || '发布失败', 'error');
+    }
+  } catch (e) {
+    showToast('网络错误', 'error');
+  }
+}
+
+function showToast(message, type) {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+loadAgent();
+</script>
+{% endblock %}

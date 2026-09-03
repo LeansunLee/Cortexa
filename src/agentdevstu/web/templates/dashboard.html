@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - AgentDevStu{% endblock %}
+{% block page_title %}仪表盘{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">🏢</div>
+      <div class="stat-info">
+        <div class="stat-value" id="workspace-count">0</div>
+        <div class="stat-label">工作空间</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🤖</div>
+      <div class="stat-info">
+        <div class="stat-value" id="agent-count">0</div>
+        <div class="stat-label">智能体</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🔄</div>
+      <div class="stat-info">
+        <div class="stat-value" id="workflow-count">0</div>
+        <div class="stat-label">工作流</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📋</div>
+      <div class="stat-info">
+        <div class="stat-value" id="task-count">0</div>
+        <div class="stat-label">任务</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="quick-actions">
+    <div class="section-header">
+      <h2>快速操作</h2>
+    </div>
+    <div class="action-grid">
+      <div class="action-card" onclick="showCreateWorkspace()">
+        <span class="action-icon">🏢</span>
+        <span class="action-text">创建工作空间</span>
+      </div>
+      <a href="/agents" class="action-card">
+        <span class="action-icon">🤖</span>
+        <span class="action-text">创建智能体</span>
+      </a>
+      <a href="/workflows" class="action-card">
+        <span class="action-icon">🔄</span>
+        <span class="action-text">创建工作流</span>
+      </a>
+      <a href="/settings" class="action-card">
+        <span class="action-icon">⚙️</span>
+        <span class="action-text">模型配置</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="workspace-section">
+    <div class="section-header">
+      <h2>工作空间</h2>
+      <button class="btn btn-primary btn-sm" onclick="showCreateWorkspace()">+ 新建</button>
+    </div>
+    <div class="workspace-list" id="workspace-list">
+      <div class="empty-state"><p>暂无工作空间，点击上方按钮创建</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showCreateWorkspace() {
+  document.getElementById('create-workspace-modal').style.display = 'flex';
+  document.getElementById('ws-name').value = '';
+  document.getElementById('ws-desc').value = '';
+  document.getElementById('ws-name').focus();
+}
+
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+function createWorkspace() {
+  var name = document.getElementById('ws-name').value.trim();
+  var desc = document.getElementById('ws-desc').value.trim();
+  if (!name) { alert('请输入工作空间名称'); return; }
+  fetch('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, description: desc || null })
+  }).then(function(r) {
+    if (r.ok) {
+      closeModal('create-workspace-modal');
+      loadWorkspaceList();
+      loadWorkspaceSelector();
+      showToast('工作空间创建成功', 'success');
+    } else {
+      r.json().then(function(err) { alert('创建失败: ' + (err.detail || '未知错误')); });
+    }
+  }).catch(function(e) { alert('网络错误: ' + e.message); });
+}
+
+function loadWorkspaceList() {
+  fetch('/api/workspaces').then(function(r) { return r.json(); }).then(function(workspaces) {
+    document.getElementById('workspace-count').textContent = workspaces.length;
+    var list = document.getElementById('workspace-list');
+    if (workspaces.length === 0) {
+      list.innerHTML = '<div class="empty-state"><p>暂无工作空间，点击上方按钮创建</p></div>';
+      return;
+    }
+    list.innerHTML = workspaces.map(function(ws) {
+      return '<div class="workspace-item" onclick="selectWorkspace(\'' + ws.id + '\', \'' + ws.name + '\')">' +
+        '<div class="ws-name">🏢 ' + ws.name + '</div>' +
+        '<div class="ws-desc">' + (ws.description || '暂无描述') + '</div>' +
+        '<div class="ws-meta">创建于 ' + new Date(ws.created_at).toLocaleDateString('zh-CN') + '</div>' +
+        '</div>';
+    }).join('');
+  });
+}
+
+function selectWorkspace(id, name) {
+  currentWorkspace = id;
+  localStorage.setItem('currentWorkspace', id);
+  var select = document.getElementById('workspace-select');
+  if (select) { for (var i = 0; i < select.options.length; i++) { if (select.options[i].value === id) { select.options[i].selected = true; break; } } }
+  window.dispatchEvent(new CustomEvent('workspace-changed', { detail: currentWorkspace }));
+  loadStats();
+}
+
+function loadStats() {
+  var ws = currentWorkspace || localStorage.getItem('currentWorkspace');
+  if (!ws) return;
+  Promise.all([
+    fetch('/api/workspaces/' + ws + '/agents').then(function(r) { return r.json(); }),
+    fetch('/api/workspaces/' + ws + '/workflows').then(function(r) { return r.json(); }),
+    fetch('/api/workspaces/' + ws + '/tasks').then(function(r) { return r.json(); })
+  ]).then(function(data) {
+    document.getElementById('agent-count').textContent = (data[0].length || 0);
+    document.getElementById('workflow-count').textContent = (data[1].length || 0);
+    document.getElementById('task-count').textContent = (data[2].length || 0);
+  }).catch(function(e) { console.error(e); });
+}
+
+function showToast(msg, type) {
+  var t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function() { t.remove(); }, 3000);
+}
+
+loadWorkspaceList();
+loadStats();
+window.addEventListener('workspace-changed', function(e) { currentWorkspace = e.detail; loadStats(); });
+</script>
+{% endblock %}
+
+{% block modals %}
+<div id="create-workspace-modal" class="modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeModal('create-workspace-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>创建工作空间</h3>
+      <button class="modal-close" onclick="closeModal('create-workspace-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>工作空间名称</label>
+        <input type="text" id="ws-name" placeholder="例如：产品设计团队" />
+      </div>
+      <div class="form-group">
+        <label>描述（可选）</label>
+        <textarea id="ws-desc" rows="3" placeholder="工作空间的用途描述"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('create-workspace-modal')">取消</button>
+      <button class="btn btn-primary" onclick="createWorkspace()">创建</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

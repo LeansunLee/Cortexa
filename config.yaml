@@ -1,0 +1,50 @@
+llm:
+  default: 小米mimo
+  providers:
+    openai:
+      kind: openai
+      model: gpt-4o-mini
+      api_key: ${OPENAI_API_KEY}
+      temperature: 0.2
+    deepseek:
+      kind: openai
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-chat
+      api_key: ${DEEPSEEK_API_KEY}
+      temperature: 0.2
+    moonshot:
+      kind: openai
+      base_url: https://api.moonshot.cn/v1
+      model: moonshot-v1-8k
+      api_key: ${MOONSHOT_API_KEY}
+      temperature: 0.3
+    zhipu:
+      kind: openai
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      model: glm-4-flash
+      api_key: ${ZHIPU_API_KEY}
+      temperature: 0.2
+    ollama:
+      kind: ollama
+      model: qwen2.5:7b
+      base_url: http://localhost:11434
+      temperature: 0.2
+    anthropic:
+      kind: anthropic
+      model: claude-sonnet-4-20250514
+      api_key: ${ANTHROPIC_API_KEY}
+      temperature: 0.2
+    小米mimo:
+      kind: openai
+      model: mimo-v2.5
+      base_url: https://token-plan-cn.xiaomimimo.com/v1
+      api_key: ${MIMO_API_KEY}
+      temperature: 0.2
+      max_tokens: 4096
+    Deepseek:
+      kind: openai
+      model: deepseek-v4-pro
+      base_url: https://api.deepseek.com
+      api_key: ${DEEPSEEK_API_KEY}
+      temperature: 0.2
+      max_tokens: 4096

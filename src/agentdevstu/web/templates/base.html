@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AgentDevStu{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="logo">🤖</span>
+        <span class="brand-text">AgentDevStu</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/" class="nav-item" data-page="dashboard">
+          <span class="nav-icon">📊</span>
+          <span class="nav-text">首页</span>
+        </a>
+        <a href="/agents" class="nav-item" data-page="agents">
+          <span class="nav-icon">🤖</span>
+          <span class="nav-text">智能体</span>
+        </a>
+        <a href="/workflows" class="nav-item" data-page="workflows">
+          <span class="nav-icon">🔄</span>
+          <span class="nav-text">工作流</span>
+        </a>
+        <a href="/tasks" class="nav-item" data-page="tasks">
+          <span class="nav-icon">📋</span>
+          <span class="nav-text">任务</span>
+        </a>
+        <a href="/conversations" class="nav-item" data-page="conversations">
+          <span class="nav-icon">💬</span>
+          <span class="nav-text">对话</span>
+        </a>
+        <a href="/knowledge" class="nav-item" data-page="knowledge">
+          <span class="nav-icon">📚</span>
+          <span class="nav-text">知识库</span>
+        </a>
+        <a href="/rules" class="nav-item" data-page="rules">
+          <span class="nav-icon">📏</span>
+          <span class="nav-text">规则库</span>
+        </a>
+        <a href="/tools" class="nav-item" data-page="tools">
+          <span class="nav-icon">🔧</span>
+          <span class="nav-text">工具</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/settings" class="nav-item">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-text">设置</span>
+        </a>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="top-bar-left">
+          <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+        </div>
+        <div class="top-bar-right">
+          <div class="workspace-selector">
+            <select id="workspace-select">
+              <option value="">选择工作空间</option>
+            </select>
+          </div>
+        </div>
+      </header>
+      <div class="page-content">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    var currentWorkspace = null;
+
+    function highlightCurrentPage() {
+      var path = window.location.pathname;
+      document.querySelectorAll('.nav-item').forEach(function(item) {
+        item.classList.remove('active');
+        var href = item.getAttribute('href');
+        if (href === path || (path === '/' && href === '/')) {
+          item.classList.add('active');
+        } else if (href !== '/' && path.startsWith(href)) {
+          item.classList.add('active');
+        }
+      });
+    }
+
+    function loadWorkspaceSelector() {
+      fetch('/api/workspaces').then(function(r) { return r.json(); }).then(function(workspaces) {
+        var select = document.getElementById('workspace-select');
+        if (!select) return;
+        select.innerHTML = '<option value="">选择工作空间</option>';
+        workspaces.forEach(function(ws) {
+          var opt = document.createElement('option');
+          opt.value = ws.id;
+          opt.textContent = ws.name;
+          select.appendChild(opt);
+        });
+        var saved = localStorage.getItem('currentWorkspace');
+        if (saved) {
+          select.value = saved;
+          currentWorkspace = saved;
+        } else if (workspaces.length > 0) {
+          select.value = workspaces[0].id;
+          currentWorkspace = workspaces[0].id;
+          localStorage.setItem('currentWorkspace', workspaces[0].id);
+        }
+        if (currentWorkspace) {
+          window.dispatchEvent(new CustomEvent('workspace-changed', { detail: currentWorkspace }));
+        }
+      }).catch(function(e) { console.warn('loadWorkspaces error:', e); });
+    }
+
+    document.getElementById('workspace-select').addEventListener('change', function(e) {
+      currentWorkspace = e.target.value;
+      if (currentWorkspace) {
+        localStorage.setItem('currentWorkspace', currentWorkspace);
+      }
+      window.dispatchEvent(new CustomEvent('workspace-changed', { detail: currentWorkspace }));
+    });
+
+    highlightCurrentPage();
+    loadWorkspaceSelector();
+  </script>
+
+  {% block scripts %}{% endblock %}
+  
+  {% block modals %}{% endblock %}
+</body>
+</html>

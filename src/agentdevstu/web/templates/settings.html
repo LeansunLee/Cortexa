@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}设置 - AgentDevStu{% endblock %}
+{% block page_title %}模型供应商配置{% endblock %}
+
+{% block content %}
+<div class="settings-page">
+  <div class="settings-section">
+    <div class="section-header">
+      <h2>LLM 供应商</h2>
+      <button class="btn btn-primary btn-sm" onclick="showAddProvider()">+ 添加供应商</button>
+    </div>
+    <p class="section-desc">配置 AI 模型供应商的 API Key 和参数，供智能体调用。</p>
+    
+    <div class="provider-list" id="provider-list">
+      <div class="empty-state">
+        <p>暂无供应商配置</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-header">
+      <h2>默认供应商</h2>
+    </div>
+    <p class="section-desc">选择智能体默认使用的模型供应商。</p>
+    <div class="form-group">
+      <select id="default-provider" style="width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;">
+        <option value="">请先添加供应商</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="saveDefaultProvider()">保存默认供应商</button>
+  </div>
+</div>
+
+<!-- 添加/编辑供应商弹窗 -->
+<div id="provider-modal" class="modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeModal('provider-modal')"></div>
+  <div class="modal-box" style="width:560px;">
+    <div class="modal-header">
+      <h3 id="modal-title">添加供应商</h3>
+      <button class="modal-close" onclick="closeModal('provider-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>供应商名称 *</label>
+          <input type="text" id="prov-name" placeholder="例如：openai、小米mimo" />
+        </div>
+        <div class="form-group">
+          <label>类型</label>
+          <select id="prov-kind">
+            <option value="openai">OpenAI 兼容</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="ollama">Ollama</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>模型名称</label>
+        <input type="text" id="prov-model" placeholder="例如：gpt-4o-mini、mimo-v2.5" />
+      </div>
+      <div class="form-group">
+        <label>Base URL</label>
+        <input type="text" id="prov-base-url" placeholder="例如：https://api.openai.com/v1（可选，留空使用默认）" />
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="prov-api-key" placeholder="sk-xxx 或环境变量 ${VAR_NAME}" />
+        <div class="field-hint">支持直接填写 Key 或使用环境变量引用（如 ${OPENAI_API_KEY}）</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Temperature</label>
+          <input type="number" id="prov-temp" value="0.2" min="0" max="2" step="0.1" />
+        </div>
+        <div class="form-group">
+          <label>Max Tokens</label>
+          <input type="number" id="prov-max-tokens" value="4096" min="256" max="128000" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('provider-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveProvider()">保存</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.settings-page { max-width: 800px; }
+.settings-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 24px; }
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.section-desc { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+h2 { font-size: 18px; font-weight: 600; margin-bottom: 0; }
+.provider-list { display: flex; flex-direction: column; gap: 12px; }
+.provider-item { display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.provider-item .prov-info { flex: 1; }
+.provider-item .prov-name { font-weight: 600; font-size: 15px; color: var(--text); }
+.provider-item .prov-meta { font-size: 12px; color: var(--text2); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+.provider-item .prov-badges { display: flex; gap: 8px; }
+.badge-kind { padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; background: var(--ai-bg); color: var(--ai); }
+.badge-key-ok { padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; background: var(--success-bg); color: var(--success); }
+.badge-key-missing { padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; background: var(--warning-bg); color: var(--warning); }
+.prov-actions { display: flex; gap: 8px; }
+.modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; }
+.modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+.modal-box { position: relative; background: var(--surface); border-radius: var(--radius); width: 480px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.modal-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
+.modal-close { background: none; border: none; font-size: 20px; color: var(--text2); cursor: pointer; }
+.modal-body { padding: 24px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+.form-group input, .form-group select { width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 14px; outline: none; }
+.form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+.field-hint { font-size: 12px; color: var(--text2); margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let editingProvider = null;
+let configData = { default: '', providers: {} };
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    configData = await res.json();
+    renderProviders();
+    renderDefaultSelect();
+  } catch (e) {
+    console.error('Failed to load config:', e);
+  }
+}
+
+function renderProviders() {
+  const list = document.getElementById('provider-list');
+  const providers = configData.providers || {};
+  const names = Object.keys(providers);
+  
+  if (names.length === 0) {
+    list.innerHTML = '<div class="empty-state"><p>暂无供应商配置，点击上方按钮添加</p></div>';
+    return;
+  }
+  
+  list.innerHTML = names.map(name => {
+    const p = providers[name];
+    const keyStatus = p.api_key_set 
+      ? '<span class="badge-key-ok">✓ Key 已配置</span>' 
+      : '<span class="badge-key-missing">⚠ Key 未配置</span>';
+    return `
+      <div class="provider-item">
+        <div class="prov-info">
+          <div class="prov-name">${name}</div>
+          <div class="prov-meta">
+            <span>模型: ${p.model || '-'}</span>
+            <span>Base: ${p.base_url || '默认'}</span>
+            <span>Temp: ${p.temperature || 0.2}</span>
+          </div>
+        </div>
+        <div class="prov-badges">
+          <span class="badge-kind">${p.kind || 'openai'}</span>
+          ${keyStatus}
+        </div>
+        <div class="prov-actions">
+          <button class="btn btn-ghost btn-sm" onclick="editProvider('${name}')">编辑</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProvider('${name}')">删除</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDefaultSelect() {
+  const select = document.getElementById('default-provider');
+  const providers = configData.providers || {};
+  const names = Object.keys(providers);
+  select.innerHTML = '<option value="">请选择</option>' + 
+    names.map(n => `<option value="${n}" ${n === configData.default ? 'selected' : ''}>${n}</option>`).join('');
+}
+
+function showAddProvider() {
+  editingProvider = null;
+  document.getElementById('modal-title').textContent = '添加供应商';
+  document.getElementById('prov-name').value = '';
+  document.getElementById('prov-name').disabled = false;
+  document.getElementById('prov-kind').value = 'openai';
+  document.getElementById('prov-model').value = '';
+  document.getElementById('prov-base-url').value = '';
+  document.getElementById('prov-api-key').value = '';
+  document.getElementById('prov-temp').value = '0.2';
+  document.getElementById('prov-max-tokens').value = '4096';
+  document.getElementById('provider-modal').style.display = 'flex';
+  document.getElementById('prov-name').focus();
+}
+
+function editProvider(name) {
+  editingProvider = name;
+  const p = configData.providers[name];
+  document.getElementById('modal-title').textContent = '编辑供应商';
+  document.getElementById('prov-name').value = name;
+  document.getElementById('prov-name').disabled = true;
+  document.getElementById('prov-kind').value = p.kind || 'openai';
+  document.getElementById('prov-model').value = p.model || '';
+  document.getElementById('prov-base-url').value = p.base_url || '';
+  document.getElementById('prov-api-key').value = '';
+  document.getElementById('prov-temp').value = p.temperature || 0.2;
+  document.getElementById('prov-max-tokens').value = p.max_tokens || 4096;
+  document.getElementById('provider-modal').style.display = 'flex';
+}
+
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+async function saveProvider() {
+  const name = document.getElementById('prov-name').value.trim();
+  const kind = document.getElementById('prov-kind').value;
+  const model = document.getElementById('prov-model').value.trim();
+  const base_url = document.getElementById('prov-base-url').value.trim();
+  const api_key = document.getElementById('prov-api-key').value.trim();
+  const temperature = parseFloat(document.getElementById('prov-temp').value) || 0.2;
+  const max_tokens = parseInt(document.getElementById('prov-max-tokens').value) || 4096;
+  
+  if (!name) { alert('请输入供应商名称'); return; }
+  
+  try {
+    const res = await fetch('/api/config/provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, kind, model, base_url, api_key, temperature, max_tokens })
+    });
+    
+    if (res.ok) {
+      closeModal('provider-modal');
+      loadConfig();
+      showToast('供应商已保存', 'success');
+    } else {
+      const err = await res.json();
+      alert('保存失败: ' + (err.detail || '未知错误'));
+    }
+  } catch (e) {
+    alert('网络错误: ' + e.message);
+  }
+}
+
+async function deleteProvider(name) {
+  if (!confirm(`确定删除供应商 "${name}" 吗？`)) return;
+  
+  try {
+    const res = await fetch(`/api/config/provider/${encodeURIComponent(name)}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      loadConfig();
+      showToast('供应商已删除', 'success');
+    }
+  } catch (e) {
+    alert('网络错误: ' + e.message);
+  }
+}
+
+async function saveDefaultProvider() {
+  const defaultName = document.getElementById('default-provider').value;
+  try {
+    const res = await fetch('/api/config/default', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default: defaultName })
+    });
+    if (res.ok) {
+      configData.default = defaultName;
+      showToast('默认供应商已保存', 'success');
+    }
+  } catch (e) {
+    alert('网络错误: ' + e.message);
+  }
+}
+
+function showToast(msg, type) {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+loadConfig();
+</script>
+{% endblock %}

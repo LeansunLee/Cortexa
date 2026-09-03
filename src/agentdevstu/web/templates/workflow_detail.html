@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}工作流详情 - AgentDevStu{% endblock %}
+{% block page_title %}工作流详情{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="subtitle" id="workflow-id">ID: {{ workflow_id }}</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="history.back()">返回</button>
+    <button class="btn btn-primary" onclick="saveWorkflow()">保存</button>
+  </div>
+</div>
+
+<div class="workflow-layout">
+  <div class="workflow-canvas">
+    <div class="canvas-header">
+      <h3>工作流画布</h3>
+      <button class="btn btn-sm btn-ghost" onclick="addNode()">+ 添加节点</button>
+    </div>
+    <div class="canvas-area" id="canvas-area">
+      <div class="empty-state">
+        <p>点击"添加节点"开始设计工作流</p>
+      </div>
+    </div>
+  </div>
+  
+  <div class="workflow-sidebar">
+    <div class="card">
+      <h3>基本信息</h3>
+      <div class="form-group">
+        <label>名称</label>
+        <input type="text" id="workflow-name" placeholder="工作流名称">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <textarea id="workflow-description" rows="3" placeholder="工作流描述"></textarea>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h3>节点列表</h3>
+      <div id="node-list">
+        <div class="empty-state">
+          <p>暂无节点</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.workflow-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 24px;
+}
+
+.workflow-canvas {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-height: 500px;
+}
+
+.canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.canvas-area {
+  padding: 24px;
+  min-height: 400px;
+}
+
+.workflow-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.node-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+
+.node-item .node-icon {
+  font-size: 20px;
+}
+
+.node-item .node-info {
+  flex: 1;
+}
+
+.node-item .node-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.node-item .node-type {
+  font-size: 12px;
+  color: var(--text2);
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const workflowId = '{{ workflow_id }}';
+let nodes = [];
+
+async function loadWorkflow() {
+  try {
+    const res = await fetch(`/api/workflows/${workflowId}`);
+    if (res.ok) {
+      const wf = await res.json();
+      document.getElementById('workflow-name').value = wf.name || '';
+      document.getElementById('workflow-description').value = wf.description || '';
+      
+      // 加载节点
+      if (wf.nodes) {
+        nodes = wf.nodes;
+        renderNodes();
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load workflow:', e);
+  }
+}
+
+function renderNodes() {
+  const container = document.getElementById('canvas-area');
+  const nodeList = document.getElementById('node-list');
+  
+  if (nodes.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>点击"添加节点"开始设计工作流</p></div>';
+    nodeList.innerHTML = '<div class="empty-state"><p>暂无节点</p></div>';
+    return;
+  }
+  
+  // 渲染节点列表
+  nodeList.innerHTML = nodes.map((node, idx) => `
+    <div class="node-item">
+      <span class="node-icon">🤖</span>
+      <div class="node-info">
+        <div class="node-name">${node.name || `节点 ${idx + 1}`}</div>
+        <div class="node-type">${node.type || 'agent'}</div>
+      </div>
+      <button class="btn btn-sm btn-danger" onclick="removeNode(${idx})">×</button>
+    </div>
+  `).join('');
+  
+  // 渲染画布
+  container.innerHTML = `
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: center;">
+      ${nodes.map((node, idx) => `
+        <div style="
+          padding: 20px;
+          background: var(--surface);
+          border: 2px solid var(--primary);
+          border-radius: var(--radius);
+          min-width: 150px;
+          text-align: center;
+        ">
+          <div style="font-size: 24px; margin-bottom: 8px;">🤖</div>
+          <div style="font-weight: 600;">${node.name || `节点 ${idx + 1}`}</div>
+          <div style="font-size: 12px; color: var(--text2);">${node.type || 'agent'}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function addNode() {
+  const name = prompt('输入节点名称：');
+  if (!name) return;
+  
+  nodes.push({
+    name: name,
+    type: 'agent',
+    config: {}
+  });
+  
+  renderNodes();
+}
+
+function removeNode(index) {
+  if (!confirm('确定要删除这个节点吗？')) return;
+  nodes.splice(index, 1);
+  renderNodes();
+}
+
+async function saveWorkflow() {
+  const name = document.getElementById('workflow-name').value.trim();
+  const description = document.getElementById('workflow-description').value.trim();
+  
+  try {
+    const res = await fetch(`/api/workflows/${workflowId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description })
+    });
+    
+    if (res.ok) {
+      showToast('工作流保存成功', 'success');
+    } else {
+      const error = await res.json();
+      showToast(error.detail || '保存失败', 'error');
+    }
+  } catch (e) {
+    showToast('网络错误', 'error');
+  }
+}
+
+function showToast(message, type) {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+loadWorkflow();
+</script>
+{% endblock %}

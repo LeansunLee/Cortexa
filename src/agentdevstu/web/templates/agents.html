@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}智能体管理 - AgentDevStu{% endblock %}
+{% block page_title %}智能体管理{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="subtitle">管理和配置您的智能体</p>
+  </div>
+  <button class="btn btn-primary" onclick="showCreateModal()">
+    <span>+</span> 创建智能体
+  </button>
+</div>
+
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>描述</th>
+        <th>状态</th>
+        <th>版本</th>
+        <th>创建时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="agents-table">
+      <tr>
+        <td colspan="6" class="empty-state">暂无智能体</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 创建智能体模态框 -->
+<div id="create-modal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>创建智能体</h3>
+      <button class="btn-close" onclick="hideCreateModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>名称</label>
+        <input type="text" id="agent-name" placeholder="输入智能体名称">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <textarea id="agent-description" rows="3" placeholder="输入智能体描述"></textarea>
+      </div>
+      <div class="form-group">
+        <label>系统提示词</label>
+        <textarea id="agent-system-prompt" rows="5" placeholder="输入系统提示词"></textarea>
+      </div>
+      <div class="form-group">
+        <label>LLM 提供商</label>
+        <select id="agent-llm-provider">
+          <option value="">选择 LLM 提供商</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="hideCreateModal()">取消</button>
+      <button class="btn btn-primary" onclick="createAgent()">创建</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--surface);
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text2);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-draft {
+  background: var(--surface2);
+  color: var(--text2);
+}
+
+.status-published {
+  background: var(--success-bg);
+  color: var(--success);
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentWorkspace = null;
+
+window.addEventListener('workspace-changed', (e) => {
+  currentWorkspace = e.detail;
+  loadAgents();
+});
+
+function showCreateModal() {
+  document.getElementById('create-modal').style.display = 'flex';
+  loadProviders();
+}
+
+function hideCreateModal() {
+  document.getElementById('create-modal').style.display = 'none';
+}
+
+async function loadProviders() {
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    const select = document.getElementById('agent-llm-provider');
+    select.innerHTML = '<option value="">选择 LLM 提供商</option>';
+    Object.keys(config.providers).forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = `${name} (${config.providers[name].model})`;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load providers:', e);
+  }
+}
+
+async function loadAgents() {
+  if (!currentWorkspace) return;
+  
+  try {
+    const res = await fetch(`/api/workspaces/${currentWorkspace}/agents`);
+    const agents = await res.json();
+    const tbody = document.getElementById('agents-table');
+    
+    if (agents.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无智能体</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = agents.map(agent => `
+      <tr>
+        <td><strong>${agent.name}</strong></td>
+        <td>${agent.description || '-'}</td>
+        <td>
+          <span class="status-badge status-${agent.status}">${agent.status === 'published' ? '已发布' : '草稿'}</span>
+        </td>
+        <td>${agent.run_number || 1}</td>
+        <td>${new Date(agent.created_at).toLocaleString('zh-CN')}</td>
+        <td>
+          <a href="/agents/${agent.id}" class="btn btn-sm btn-ghost">详情</a>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error('Failed to load agents:', e);
+  }
+}
+
+async function createAgent() {
+  if (!currentWorkspace) {
+    alert('请先选择工作空间');
+    return;
+  }
+  
+  const name = document.getElementById('agent-name').value.trim();
+  const description = document.getElementById('agent-description').value.trim();
+  const system_prompt = document.getElementById('agent-system-prompt').value.trim();
+  const llm_provider = document.getElementById('agent-llm-provider').value;
+  
+  if (!name) {
+    alert('请输入名称');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/workspaces/${currentWorkspace}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        description,
+        system_prompt,
+        llm_provider
+      })
+    });
+    
+    if (res.ok) {
+      hideCreateModal();
+      loadAgents();
+      showToast('智能体创建成功', 'success');
+    } else {
+      const error = await res.json();
+      showToast(error.detail || '创建失败', 'error');
+    }
+  } catch (e) {
+    showToast('网络错误', 'error');
+  }
+}
+
+function showToast(message, type) {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+loadAgents();
+</script>
+{% endblock %}

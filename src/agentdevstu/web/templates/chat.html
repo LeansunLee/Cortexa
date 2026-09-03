@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentDevStu - 对话</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <span class="nav-brand">🤖 AgentDevStu</span>
+    <div class="nav-links">
+      <a href="/">⚙️ 配置</a>
+      <a href="/chat" class="active">💬 对话</a>
+    </div>
+  </nav>
+
+  <div class="chat-layout">
+    <div class="chat-sidebar">
+      <button class="btn btn-primary" style="width:100%" onclick="newSession()">+ 新对话</button>
+      <h3>历史会话</h3>
+      <div id="session-list"></div>
+    </div>
+
+    <div class="chat-main">
+      <div id="chat-messages" class="chat-messages">
+        <div class="empty-state" id="empty-state">
+          <div class="icon">💬</div>
+          <p>开始一个新的对话</p>
+          <p style="font-size:12px">输入任务，多智能体团队将协作完成</p>
+        </div>
+      </div>
+      <div class="chat-input-bar">
+        <div class="chat-input-row">
+          <textarea id="chat-input" rows="1" placeholder="输入任务描述... (Enter 发送，Shift+Enter 换行)"
+                    onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="btn btn-primary" id="send-btn" onclick="sendMessage()">发送</button>
+          <button class="btn btn-ghost" onclick="clearChat()" title="清空当前对话">🗑️</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="/static/js/chat.js"></script>
+</body>
+</html>
