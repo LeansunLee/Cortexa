@@ -13,37 +13,33 @@ class RetrievalPlan:
     knowledge: bool = False
     memory: bool = False
     data: bool = False
+    followup: bool = False
     reason: str = "复用当前对话，无需检索"
 
 
-def plan_retrieval(query):
+def plan_retrieval(query, recent_messages=None):
     text = re.sub(r"@[^\s@]+", "", query).strip()
     web = bool(re.search(r"网上|联网|全网|互联网|网页|官网|公开信息|DuckDuckGo|网络搜索|搜索引擎|媒体评测|最新新闻|web search", text, re.I))
     if re.search(r"不要联网|无需联网|不用联网|禁止联网|不要搜索|不用搜索", text):
         web = False
     internal = bool(re.search(r"内部|知识库|公司政策|销售政策|制度|文档|资料库", text))
-    data = bool(re.search(r"数据库|销量|销售额|库存|订单|经销商|门店|车型|统计.*(?:数量|业务)|业务数据", text))
     reuse = bool(re.search(r"^(?:谢谢|好的|明白|你好|收到|继续[。！!]?\s*$|(?:请)?(?:把|将)?(?:上面|上述|刚才|这段|已有|以上).*(?:总结|改写|翻译|整理|缩短|润色)|(?:请)?(?:改写|翻译|润色|总结一下))", text))
     refresh = bool(re.search(r"重新查询|刷新|最新|重新检索", text))
     if reuse and not refresh and not web:
         return RetrievalPlan()
     if web:
-        return RetrievalPlan(web=True, knowledge=internal, data=internal and data, reason="联网搜索" + ("并结合明确要求的内部资料" if internal else "；不加载内部知识和业务工具"))
-    if data:
-        return RetrievalPlan(knowledge=internal, data=True, reason="按需查询相关业务数据")
+        return RetrievalPlan(web=True, knowledge=internal, reason="联网搜索" + ("并结合明确要求的内部资料" if internal else "；不检索内部知识，数据工具遵守用户来源限制"))
     if not text:
         return RetrievalPlan()
     return RetrievalPlan(knowledge=True, memory=True, reason="检索相关知识与记忆")
 
 
-def select_capabilities(items, query):
-    aliases = {"经销商": r"经销商|代理商", "门店": r"门店|网点|店铺|试驾点", "车型": r"车型|产品参数|配置|排量", "库存": r"库存", "销售": r"销量|销售额|销售数据", "订单": r"订单"}
-    selected = []
-    for item in items:
-        name = item["capability"].name
-        if name in query or any(key in name and re.search(pattern, query) for key, pattern in aliases.items()):
-            selected.append(item)
-    return selected[:3]
+def select_capabilities(items, query=None):
+    """Expose configured capabilities; the model selects using descriptions and context.
+
+    Do not prefilter by vocabulary, language, name overlap or an arbitrary top K.
+    """
+    return list(items)
 
 
 def _result_facets(data, max_values=30):

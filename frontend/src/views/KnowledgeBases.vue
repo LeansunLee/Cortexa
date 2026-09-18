@@ -1,220 +1,59 @@
 <template>
   <div class="knowledge-page">
-    <div class="page-header">
-      <div>
-        <h1>📚 空间知识库</h1>
-        <p class="subtitle">管理当前工作空间的共享知识库，同空间的智能体均可使用</p>
-      </div>
-      <button class="btn btn-primary" @click="showCreate = true">+ 创建知识库</button>
+    <PageHeader>
+        <button v-if="can('knowledge.manage')" class="btn btn-primary btn-page-action" @click="showCreate = true"><Plus :size="16" />创建知识库</button>
+      </PageHeader>
+    <div v-if="!loading && !loadError && knowledgeBases.length" class="knowledge-summary">
+      <span>共 {{ knowledgeBases.length }} 个知识库</span>
+      <span class="scope-badge">当前工作空间共享</span>
     </div>
-
-    <!-- Create modal -->
-    <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false">
-      <div class="modal">
-        <h3>创建空间知识库</h3>
-        <div class="form-group">
-          <label>名称 *</label>
-          <input v-model="newName" placeholder="例如：产品文档库" @keydown.enter="createKB" />
-        </div>
-        <div class="form-group">
-          <label>描述</label>
-          <textarea v-model="newDesc" rows="3" placeholder="知识库用途描述"></textarea>
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" @click="showCreate = false">取消</button>
-          <button class="btn btn-primary" @click="createKB" :disabled="!newName.trim()">创建</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- KB List -->
-    <div v-if="loading" class="empty-state">加载中...</div>
-    <div v-else-if="knowledgeBases.length === 0" class="empty-state">
-      <div class="empty-icon">📚</div>
-      <p>暂无空间知识库</p>
-    </div>
-    <div v-else class="kb-list">
-      <div v-for="kb in knowledgeBases" :key="kb.id" class="kb-card">
-        <div class="kb-card-header">
-          <div class="kb-card-info">
-            <div class="kb-card-name">📁 {{ kb.name }}</div>
-            <div class="kb-card-meta">
-              {{ kbDocs[kb.id]?.length || 0 }} 个文档
-              <span v-if="kb.description"> · {{ kb.description }}</span>
-            </div>
-          </div>
-          <div class="kb-card-actions">
-            <label class="btn btn-ghost btn-sm">
-              📤 上传文件
-              <input type="file" multiple style="display:none" @change="(e) => uploadFile(e, kb.id)" />
-            </label>
-            <button class="btn btn-ghost btn-sm" @click="toggleExpand(kb.id)">
-              {{ expandedKB === kb.id ? '收起' : '展开' }}
-            </button>
-            <button class="btn btn-danger btn-sm" @click="deleteKB(kb.id)">删除</button>
-          </div>
-        </div>
-        <!-- Expanded doc list -->
-        <div v-if="expandedKB === kb.id" class="kb-docs">
-          <div v-if="!kbDocs[kb.id] || kbDocs[kb.id].length === 0" class="empty-hint">暂无文档</div>
-          <div v-for="doc in kbDocs[kb.id]" :key="doc.id" class="kb-doc-item">
-            <span class="kb-doc-name">📄 {{ doc.name || doc.filename || '未命名' }}</span>
-            <span class="kb-doc-meta" v-if="doc.metadata_json?.size">{{ formatSize(doc.metadata_json.size) }}</span>
-            <button class="btn btn-ghost btn-xs" @click="deleteDoc(kb.id, doc.id)">🗑️</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="toast.show" :class="['toast', 'toast-' + toast.type]">{{ toast.message }}</div>
+    <div v-if="loading" class="empty-state">正在加载知识库…</div>
+    <div v-else-if="loadError" class="empty-state">{{ loadError }} <button @click="loadKBs">重试</button></div>
+    <div v-else-if="!knowledgeBases.length" class="empty-state"><BookOpen :size="40" /><h3>构建团队的知识空间</h3><p>创建知识库，上传产品手册、业务资料或常见问题。</p><button class="btn btn-primary" @click="showCreate = true">创建第一个知识库</button></div>
+    <div v-else class="kb-list"><KnowledgeBaseCard v-for="kb in knowledgeBases" :key="kb.id" :kb="kb" :can-manage="can('knowledge.manage')" :can-use="can('knowledge.use')" @deleted="removeKB" /></div>
+    <Teleport v-if="pageTabActive" to="body"><div v-if="showCreate" class="create-overlay" @click.self="!creating && (showCreate = false)" @keydown.esc="!creating && (showCreate = false)"><form class="create-dialog" role="dialog" aria-modal="true" aria-labelledby="create-kb-title" @submit.prevent="createKB"><h3 id="create-kb-title">创建空间知识库</h3><p>同一工作空间的 Agent 可以共享此知识库。</p><label>知识库名称<input v-model="newName" autofocus maxlength="100" placeholder="例如：产品文档、业务手册" required /></label><label>描述（选填）<textarea v-model="newDesc" rows="3" placeholder="描述资料范围，方便团队查找" /></label><div class="create-actions"><button type="button" class="btn btn-ghost" :disabled="creating" @click="showCreate = false">取消</button><button type="submit" class="btn btn-primary" :disabled="creating || !newName.trim()">{{ creating ? '创建中…' : '创建知识库' }}</button></div></form></div></Teleport>
   </div>
 </template>
-
 <script setup>
-import { ref, onMounted } from 'vue'
+import { inject as injectPageTab } from 'vue'
+const pageTabActive = injectPageTab('pageTabActive', true)
+
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { BookOpen, Plus } from 'lucide-vue-next'
 import { knowledgeApi } from '../api'
-
-const knowledgeBases = ref([])
-const kbDocs = ref({})
-const loading = ref(true)
-const showCreate = ref(false)
-const newName = ref('')
-const newDesc = ref('')
-const expandedKB = ref(null)
-const toast = ref({ show: false, message: '', type: 'success' })
-
-const showToast = (message, type = 'success') => {
-  toast.value = { show: true, message, type }
-  setTimeout(() => { toast.value.show = false }, 3000)
+import { can } from '../auth'
+import KnowledgeBaseCard from '../components/knowledge/KnowledgeBaseCard.vue'
+const knowledgeBases = ref([]), loading = ref(true), loadError = ref(''), showCreate = ref(false), newName = ref(''), newDesc = ref(''), creating = ref(false)
+const toast = (message, type = 'success') => window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }))
+let loadId = 0
+async function loadKBs() {
+  const id = ++loadId
+  loading.value = true; loadError.value = ''
+  try { const { data } = await knowledgeApi.list({ scope: 'workspace' }); if (id === loadId) knowledgeBases.value = data }
+  catch (e) { if (id === loadId) loadError.value = '知识库加载失败，请重试' }
+  finally { if (id === loadId) loading.value = false }
 }
-
-const loadKBs = async () => {
-  loading.value = true
+async function createKB() {
+  if (!newName.value.trim() || creating.value) return
+  creating.value = true
   try {
-    const { data } = await knowledgeApi.list({ scope: 'workspace' })
-    knowledgeBases.value = data
-    // Load docs for each KB
-    for (const kb of data) {
-      try {
-        const { data: detail } = await knowledgeApi.detail(kb.id)
-        kbDocs.value[kb.id] = detail.documents || []
-      } catch { kbDocs.value[kb.id] = [] }
-    }
-  } catch (e) {
-    showToast('加载失败: ' + (e.response?.data?.detail || e.message), 'error')
-  }
-  loading.value = false
+    const { data } = await knowledgeApi.create({ name: newName.value.trim(), description: newDesc.value.trim() || null })
+    knowledgeBases.value.unshift(data); newName.value = ''; newDesc.value = ''; showCreate.value = false; toast('知识库已创建')
+  } catch (e) { toast('创建失败：' + (e.response?.data?.detail || e.message), 'error') }
+  finally { creating.value = false }
 }
-
-const createKB = async () => {
-  if (!newName.value.trim()) return
-  try {
-    await knowledgeApi.create({ name: newName.value.trim(), description: newDesc.value.trim() || null })
-    newName.value = ''
-    newDesc.value = ''
-    showCreate.value = false
-    await loadKBs()
-    showToast('创建成功')
-  } catch (e) {
-    showToast('创建失败: ' + (e.response?.data?.detail || e.message), 'error')
-  }
-}
-
-const deleteKB = async (kbId) => {
-  if (!confirm('确定删除该知识库？')) return
-  try {
-    await knowledgeApi.delete(kbId)
-    await loadKBs()
-    showToast('删除成功')
-  } catch (e) {
-    showToast('删除失败', 'error')
-  }
-}
-
-const toggleExpand = async (kbId) => {
-  if (expandedKB.value === kbId) {
-    expandedKB.value = null
-    return
-  }
-  expandedKB.value = kbId
-  if (!kbDocs.value[kbId]) {
-    try {
-      const { data: detail } = await knowledgeApi.detail(kbId)
-      kbDocs.value[kbId] = detail.documents || []
-    } catch { kbDocs.value[kbId] = [] }
-  }
-}
-
-const uploadFile = async (event, kbId) => {
-  const files = event.target.files
-  if (!files) return
-  for (const file of files) {
-    try {
-      await knowledgeApi.uploadFile(kbId, file)
-      const { data: detail } = await knowledgeApi.detail(kbId)
-      kbDocs.value[kbId] = detail.documents || []
-      showToast(`上传成功: ${file.name}`)
-    } catch (e) {
-      showToast(`上传失败: ${file.name}`, 'error')
-    }
-  }
-  event.target.value = ''
-}
-
-const deleteDoc = async (kbId, docId) => {
-  try {
-    await knowledgeApi.deleteDoc(kbId, docId)
-    const { data: detail } = await knowledgeApi.detail(kbId)
-    kbDocs.value[kbId] = detail.documents || []
-    showToast('文档已删除')
-  } catch (e) {
-    showToast('删除失败', 'error')
-  }
-}
-
-const formatSize = (bytes) => {
-  if (!bytes) return ''
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
-onMounted(loadKBs)
+const removeKB = id => knowledgeBases.value = knowledgeBases.value.filter(kb => kb.id !== id)
+onMounted(() => { loadKBs(); window.addEventListener('workspace-changed', loadKBs) })
+onBeforeUnmount(() => { loadId++; window.removeEventListener('workspace-changed', loadKBs) })
 </script>
-
 <style scoped>
-.knowledge-page { padding: 24px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.page-header h1 { margin: 0; font-size: 24px; }
-.subtitle { color: #666; margin: 4px 0 0; font-size: 14px; }
-.empty-state { text-align: center; padding: 60px 20px; color: #999; }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
-.kb-list { display: flex; flex-direction: column; gap: 12px; }
-.kb-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
-.kb-card-header { display: flex; justify-content: space-between; align-items: center; }
-.kb-card-name { font-weight: 600; font-size: 16px; }
-.kb-card-meta { font-size: 13px; color: #888; margin-top: 2px; }
-.kb-card-actions { display: flex; gap: 8px; align-items: center; }
-.kb-docs { margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.kb-doc-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
-.kb-doc-name { font-size: 14px; }
-.kb-doc-meta { font-size: 12px; color: #999; margin-left: 8px; }
-.empty-hint { color: #999; font-size: 13px; padding: 8px 0; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 12px; padding: 24px; width: 480px; max-width: 90vw; }
-.modal h3 { margin: 0 0 16px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.form-group { margin-bottom: 12px; }
-.form-group label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 14px; }
-.form-group input, .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
-.btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; }
-.btn-primary { background: #3b82f6; color: #fff; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost { background: transparent; color: #374151; border: 1px solid #d1d5db; }
-.btn-danger { background: transparent; color: #ef4444; border: 1px solid #fecaca; }
-.btn-sm { padding: 4px 10px; font-size: 13px; }
-.btn-xs { padding: 2px 6px; font-size: 12px; }
-.toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 14px; z-index: 2000; }
-.toast-success { background: #10b981; }
-.toast-error { background: #ef4444; }
+.knowledge-page { width: 100%; min-width: 0; margin: 0; padding: 0; }
+.knowledge-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px 16px; margin-bottom: 16px;
+  color: var(--text2); font-size: 13px; line-height: 20px;
+}
+.scope-badge { color: var(--text3); font-size: 12px; }
+.kb-list { display: flex; flex-direction: column; gap: 20px; }
+.empty-state{text-align:center;padding:70px 20px;border:1px dashed var(--border,#ddd);border-radius:14px;color:var(--text3,#64748b);font-size:14px}.empty-state h3{font-size:18px;color:var(--text,#334155)}.empty-state p{margin-bottom:24px}.create-overlay{position:fixed;inset:0;z-index:2500;background:#10182880;display:grid;place-items:center;padding:20px}.create-dialog{width:460px;max-width:100%;box-sizing:border-box;background:var(--surface,#fff);color:var(--text,#334155);padding:26px;border-radius:16px;box-shadow:0 20px 70px #0003}.create-dialog h3{font-size:18px;margin:0 0 8px}.create-dialog p{font-size:12px;color:var(--text3,#64748b);margin-bottom:24px}.create-dialog label{display:flex;flex-direction:column;gap:8px;font-size:13px;margin-bottom:18px}.create-dialog input,.create-dialog textarea{font:inherit;border:1px solid var(--border,#ddd);border-radius:8px;padding:10px;background:var(--surface2,#f8fafc);color:inherit;resize:vertical}.create-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}button:disabled{opacity:.5;cursor:default}.spin{animation:spin 1s linear infinite}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 </style>

@@ -2,13 +2,8 @@
   <div class="meetings-page">
     <!-- Meeting List -->
     <div v-if="!viewingMeeting && !creatingMeeting">
-      <div class="page-header">
-        <div>
-          <h1>AI 会议</h1>
-          <p class="subtitle">召集 AI 智能体讨论议题、形成决策</p>
-        </div>
-        <button class="btn btn-primary" @click="creatingMeeting = true">+ 发起会议</button>
-      </div>
+      <PageHeader><button class="btn btn-primary" @click="openCreateMeeting">+ 发起会议</button>
+      </PageHeader>
 
       <div class="meeting-list" v-if="meetings.length > 0">
         <div v-for="m in meetings" :key="m.id" class="meeting-card" @click="viewMeeting(m.id)">
@@ -25,7 +20,7 @@
         </div>
       </div>
       <div v-else class="empty-state">
-        <div class="empty-icon">📋</div>
+        <div class="empty-icon"><FileText :size="48" /></div>
         <p>暂无会议，点击上方按钮发起</p>
       </div>
     </div>
@@ -52,7 +47,7 @@
           <div class="purpose-options">
             <button v-for="p in purposes" :key="p.value" :class="['purpose-btn', { active: createForm.purpose === p.value }]"
               @click="createForm.purpose = p.value">
-              {{ p.icon }} {{ p.label }}
+              <AppIcon :name="p.icon" /> {{ p.label }}
             </button>
           </div>
         </div>
@@ -62,8 +57,8 @@
             <label v-for="a in agents" :key="a.id" class="agent-checkbox">
               <input type="checkbox" :value="a.id" v-model="createForm.participant_agent_ids" />
               <span class="agent-check-avatar">
-                <img v-if="a.avatar && a.avatar.startsWith('/')" :src="a.avatar" />
-                <span v-else>{{ a.avatar || '🤖' }}</span>
+                <img v-if="a.avatar && (a.avatar.startsWith('/') || a.avatar.endsWith('.svg'))" :src="avatarUrl(a.avatar.startsWith('/') ? a.avatar : '/static/avatars/' + a.avatar)" />
+                <span v-else><AppIcon :name="resolveAvatar(a.avatar, a.name)" :size="20" /></span>
               </span>
               <div class="agent-check-info">
                 <div class="agent-check-name">{{ a.name }}</div>
@@ -75,10 +70,7 @@
         </div>
         <div class="form-group">
           <label>主持人</label>
-          <select v-model="createForm.host_agent_id">
-            <option value="">自动选择（第一个参会者）</option>
-            <option v-for="a in selectedAgents" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select>
+          <SearchSelect v-model="createForm.host_agent_id" placeholder="自动选择（第一个参会者）" :options="[{ value: '', label: '自动选择（第一个参会者）' }, ...selectedAgents.map(a => ({ value: a.id, label: a.name }))]" />
         </div>
         <div class="form-group">
           <label>最大讨论轮次</label>
@@ -97,16 +89,16 @@
               <span>{{ uploadProgress }}</span>
             </div>
             <div v-else class="upload-placeholder">
-              <span class="upload-icon">📎</span>
+              <span class="upload-icon"><Paperclip :size="16" /></span>
               <span>点击或拖拽文件到此处上传</span>
               <span class="upload-hint">支持 txt、md、csv、json、pdf、doc、docx、xlsx 等格式</span>
             </div>
           </div>
           <div v-if="createForm.attachments.length > 0" class="attachment-list">
             <div v-for="(att, idx) in createForm.attachments" :key="idx" class="attachment-item">
-              <span class="attachment-name">📄 {{ att.name }}</span>
+              <span class="attachment-name"><FileText :size="14" /> {{ att.name }}</span>
               <span class="attachment-size">{{ (att.size / 1024).toFixed(1) }} KB</span>
-              <button class="attachment-remove" @click="removeAttachment(idx)">✕</button>
+              <button class="attachment-remove" @click="removeAttachment(idx)"><AppIcon name="X" /></button>
             </div>
           </div>
         </div>
@@ -135,7 +127,9 @@
       <!-- Participants -->
       <div class="detail-participants" v-if="meetingDetail?.participants">
         <div v-for="p in meetingDetail.participants" :key="p.id" :class="['participant-chip', { host: p.is_host }]">
-          <span>{{ p.is_host ? '👑' : '🤖' }}</span>
+          <span v-if="p.is_host"><AppIcon name="Crown" /></span>
+          <span v-else-if="resolveAvatar(p.avatar, p.name).startsWith('/')" class="participant-avatar-img"><img :src="avatarUrl(resolveAvatar(p.avatar, p.name))" alt="" /></span>
+          <span v-else><AppIcon :name="resolveAvatar(p.avatar, p.name)" :size="20" /></span>
           {{ p.name }}
           <span v-if="p.is_host" class="host-badge">主持人</span>
         </div>
@@ -148,7 +142,11 @@
         </div>
         <div v-for="msg in meetingMessages" :key="msg.id || msg.tempId" :class="['msg-item', 'msg-' + msg.sender_type]">
           <div class="msg-header">
-            <span class="msg-avatar">{{ msg.sender_type === 'host' ? '👑' : '🤖' }}</span>
+            <span class="msg-avatar" v-if="msg.sender_type === 'host'"><AppIcon name="Crown" /></span>
+            <span class="msg-avatar msg-avatar-img" v-else-if="getAgentAvatar(msg.sender_agent_id).startsWith('/')">
+              <img :src="avatarUrl(getAgentAvatar(msg.sender_agent_id))" alt="" />
+            </span>
+            <span class="msg-avatar" v-else style="font-size:20px"><AppIcon :name="getAgentAvatar(msg.sender_agent_id)" :size="20" /></span>
             <span class="msg-sender">{{ msg.sender_name }}</span>
             <span v-if="msg.sender_type === 'host'" class="host-tag">主持人</span>
             <span class="msg-type-tag">{{ msgTypeText(msg.message_type) }}</span>
@@ -164,22 +162,22 @@
 
       <!-- Conclusion -->
       <div v-if="meetingConclusion" class="detail-conclusion">
-        <h3>📋 会议结论</h3>
+        <h3><FileText :size="18" /> 会议结论</h3>
         <div class="conclusion-content" v-html="formatMsg(meetingConclusion.summary)"></div>
       </div>
 
       <!-- Todos -->
       <div v-if="meetingTodos.length > 0" class="detail-todos">
-        <h3>✅ 待办事项</h3>
+        <h3><AppIcon name="Check" /> 待办事项</h3>
         <div v-for="t in meetingTodos" :key="t.id" class="todo-item">
-          <div class="todo-priority" :class="'priority-' + t.priority">{{ t.priority === 'high' ? '🔴' : t.priority === 'medium' ? '🟡' : '🟢' }}</div>
+          <div class="todo-priority" :class="'priority-' + t.priority"><AppIcon name="Circle" :size="12" /></div>
           <div class="todo-info">
             <div class="todo-title">{{ t.title }}</div>
             <div class="todo-desc" v-if="t.description">{{ t.description }}</div>
           </div>
           <div class="todo-meta">
-            <span v-if="t.assignee_name">👤 {{ t.assignee_name }}</span>
-            <span v-if="t.due_date">📅 {{ t.due_date }}</span>
+            <span v-if="t.assignee_name"><AppIcon name="User" /> {{ t.assignee_name }}</span>
+            <span v-if="t.due_date"><AppIcon name="Calendar" /> {{ t.due_date }}</span>
           </div>
         </div>
       </div>
@@ -188,8 +186,11 @@
 </template>
 
 <script setup>
+import { avatarUrl } from '../utils/avatar'
+import { FileText, Bot, Paperclip, Target, AlertTriangle, BarChart, Wrench, Lightbulb, MessageSquare } from 'lucide-vue-next'
+
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { meetingApi, agentApi } from '../api'
+import { meetingApi, usableAgentApi } from '../api'
 
 const agents = ref([])
 const meetings = ref([])
@@ -211,11 +212,11 @@ const createForm = ref({
 })
 
 const purposes = [
-  { value: 'decision', icon: '🎯', label: '做决策' },
-  { value: 'solution', icon: '💡', label: '制定方案' },
-  { value: 'risk_assessment', icon: '⚠️', label: '风险评估' },
-  { value: 'problem_solving', icon: '🔧', label: '解决问题' },
-  { value: 'analysis', icon: '📊', label: '分析情况' },
+  { value: 'decision', icon: 'Target', label: '做决策' },
+  { value: 'solution', icon: 'Lightbulb', label: '制定方案' },
+  { value: 'risk_assessment', icon: 'AlertTriangle', label: '风险评估' },
+  { value: 'problem_solving', icon: 'Wrench', label: '解决问题' },
+  { value: 'analysis', icon: 'ChartColumn', label: '分析情况' },
 ]
 
 const selectedAgents = computed(() =>
@@ -225,7 +226,7 @@ const selectedAgents = computed(() =>
 const currentWorkspace = () => localStorage.getItem('currentWorkspace')
 
 const loadAgents = async () => {
-  try { const { data } = await agentApi.list(currentWorkspace()); agents.value = data } catch {}
+  try { const { data } = await usableAgentApi.list(currentWorkspace()); agents.value = data } catch {}
 }
 const loadMeetings = async () => {
   try { const { data } = await meetingApi.list(); meetings.value = data } catch {}
@@ -314,7 +315,7 @@ const connectSSE = (meetingId) => {
   isStreaming.value = true
   streamingStatus.value = '会议启动中...'
 
-  eventSource = new EventSource(`/api/meetings/${meetingId}/stream`)
+  eventSource = new EventSource(`/api/meetings/${meetingId}/stream?workspace_id=${encodeURIComponent(currentWorkspace())}`)
 
   eventSource.onmessage = (e) => {
     const data = JSON.parse(e.data)
@@ -377,7 +378,7 @@ const handleSSEEvent = (data) => {
       break
     case 'error':
       isStreaming.value = false
-      streamingStatus.value = '❌ ' + data.error
+      streamingStatus.value = data.error
       meetingDetail.value.status = 'failed'
       if (eventSource) { eventSource.close(); eventSource = null }
       break
@@ -393,6 +394,15 @@ const cancelMeeting = async () => {
     if (eventSource) { eventSource.close(); eventSource = null }
     isStreaming.value = false
   } catch (e) { console.error(e) }
+}
+
+const openCreateMeeting = () => {
+  createForm.value = {
+    topic: '', title: '', purpose: 'analysis',
+    participant_agent_ids: [], host_agent_id: '', max_rounds: 3,
+    attachments: []
+  }
+  creatingMeeting.value = true
 }
 
 const leaveMeeting = () => {
@@ -411,8 +421,52 @@ const scrollToBottom = () => {
 }
 
 const statusText = (s) => ({ preparing: '准备中', running: '进行中', completed: '已完成', failed: '失败', cancelled: '已取消' }[s] || s)
-const purposeText = (p) => ({ decision: '🎯 做决策', solution: '💡 制定方案', risk_assessment: '⚠️ 风险评估', problem_solving: '🔧 解决问题', analysis: '📊 分析情况' }[p] || p)
+const purposeText = (p) => ({ decision: '做决策', solution: '制定方案', risk_assessment: '风险评估', problem_solving: '解决问题', analysis: '分析情况' }[p] || p)
 const msgTypeText = (t) => ({ analysis: '分析', summary: '汇总', question: '追问', response: '回应', conclusion: '结论', system: '系统' }[t] || t)
+
+// Emoji fallback by role/name keywords
+const ROLE_EMOJI_MAP = [
+  [/CEO|总裁|总经理|总/, 'Briefcase'], [/总主持|主持/, 'Crown'],
+  [/品牌/, 'Palette'], [/渠道/, 'Globe'], [/销售|营销|市场/, 'Megaphone'],
+  [/财务|会计|金融/, 'Wallet'], [/分析|研究/, 'ChartColumn'],
+  [/工程|开发|技术|研发/, 'Wrench'], [/设计/, 'Palette'],
+  [/产品|经理/, 'ClipboardList'], [/运营/, 'Settings'], [/人力|HR/, 'Users'],
+  [/法务|合规/, 'Scale'], [/采购/, 'ShoppingCart'], [/客服/, 'MessageSquare'],
+  [/战略|规划/, 'Compass'], [/数据/, 'TrendingUp'], [/安全/, 'Shield'],
+]
+
+const getEmojiForAgent = (name) => {
+  if (!name) return 'Bot'
+  for (const [re, emoji] of ROLE_EMOJI_MAP) {
+    if (re.test(name)) return emoji
+  }
+  return 'Bot'
+}
+
+const resolveAvatar = (avatar, name) => {
+  if (!avatar) return getEmojiForAgent(name)
+  // Full path like /static/avatars/xxx.svg
+  if (avatar.startsWith('/')) return avatar
+  // Relative like brand.svg → resolve to /static/avatars/brand.svg
+  if (avatar.endsWith('.svg') || avatar.endsWith('.png') || avatar.endsWith('.jpg')) {
+    return '/static/avatars/' + avatar
+  }
+  // Already an emoji or other text
+  return avatar
+}
+
+const getAgentAvatar = (agentId) => {
+  if (!agentId) return 'Bot'
+  // Try participants first
+  if (meetingDetail.value?.participants) {
+    const p = meetingDetail.value.participants.find(p => p.agent_id === agentId || p.id === agentId)
+    if (p) return resolveAvatar(p.avatar, p.name)
+  }
+  // Fallback to agents list
+  const a = agents.value.find(a => a.id === agentId)
+  if (a) return resolveAvatar(a.avatar, a.name)
+  return 'Bot'
+}
 
 const formatMsg = (c) => {
   if (!c) return ''
@@ -438,6 +492,7 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 </script>
 
 <style scoped>
+.meetings-page { width: 100%; margin: 0; padding: 0; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
 .page-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .page-header h2 { font-size: 18px; font-weight: 600; margin: 0; }
@@ -516,7 +571,11 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 .msg-host { background: #FFFBEB; border-left: 3px solid #F59E0B; }
 .msg-system { background: var(--surface2); text-align: center; font-size: 13px; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
-.msg-avatar { font-size: 16px; }
+.msg-avatar { font-size: 16px; display: inline-flex; align-items: center; }
+.msg-avatar-img { width: 24px; height: 24px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
+.msg-avatar-img img { width: 100%; height: 100%; object-fit: cover; }
+.participant-avatar-img { width: 20px; height: 20px; border-radius: 50%; overflow: hidden; display: inline-flex; vertical-align: middle; }
+.participant-avatar-img img { width: 100%; height: 100%; object-fit: cover; }
 .msg-sender { font-weight: 600; color: var(--text); }
 .msg-type-tag { padding: 1px 6px; background: var(--surface2); border-radius: 4px; font-size: 10px; color: var(--text3); }
 .msg-round { color: var(--text3); font-size: 11px; }
@@ -576,4 +635,23 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 .btn-ghost:hover { background: var(--surface2); }
 .btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(185,28,28,0.2); }
 .btn-sm { padding: 6px 14px; font-size: 13px; }
+
+/* Theme Variables */
+.page-wrap { padding: 0; }
+.page-wrap h1 { font-size: 24px; font-weight: 700; margin: 0; }
+.page-wrap .subtitle { color: var(--text3); margin: 4px 0 24px; font-size: 14px; }
+.page-wrap .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.page-wrap .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.page-wrap .card-title { font-size: 16px; font-weight: 600; }
+.page-wrap .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition); }
+.page-wrap .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-wrap .btn-primary { background: var(--primary); color: #fff; }
+.page-wrap .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.page-wrap .btn-ghost { background: transparent; color: var(--text2); }
+.page-wrap .btn-ghost:hover { background: var(--surface2); }
+.page-wrap .btn-danger { background: transparent; color: var(--danger); }
+.page-wrap .btn-danger:hover { background: var(--danger-bg); }
+.page-wrap .btn-sm { padding: 5px 12px; font-size: 13px; }
+.page-wrap .empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+
 </style>

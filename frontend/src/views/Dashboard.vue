@@ -2,28 +2,28 @@
   <div class="dashboard">
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-icon">🏢</div>
+        <div class="stat-icon"><AppIcon name="Building2" /></div>
         <div class="stat-info">
           <div class="stat-value">{{ stats.workspaces }}</div>
           <div class="stat-label">工作空间</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">🤖</div>
+        <div class="stat-icon"><Bot :size="24" /></div>
         <div class="stat-info">
           <div class="stat-value">{{ stats.agents }}</div>
           <div class="stat-label">智能体</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">🔄</div>
+        <div class="stat-icon"><AppIcon name="RefreshCw" /></div>
         <div class="stat-info">
           <div class="stat-value">{{ stats.workflows }}</div>
           <div class="stat-label">工作流</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">📋</div>
+        <div class="stat-icon"><FileText :size="24" /></div>
         <div class="stat-info">
           <div class="stat-value">{{ stats.tasks }}</div>
           <div class="stat-label">任务</div>
@@ -35,41 +35,41 @@
       <h2>快速操作</h2>
     </div>
     <div class="action-grid">
-      <div class="action-card" @click="showCreateModal = true">
-        <span class="action-icon">🏢</span>
+      <div v-if="can('workspaces.create')" class="action-card" @click="showCreateModal = true">
+        <span class="action-icon"><AppIcon name="Building2" /></span>
         <span class="action-text">创建工作空间</span>
       </div>
-      <router-link to="/agents" class="action-card">
-        <span class="action-icon">🤖</span>
+      <router-link v-if="can('agent.create')" to="/agents" class="action-card">
+        <span class="action-icon"><Bot :size="18" /></span>
         <span class="action-text">创建智能体</span>
       </router-link>
-      <router-link to="/workflows" class="action-card">
-        <span class="action-icon">🔄</span>
+      <router-link v-if="can('workflows.manage')" to="/workflows" class="action-card">
+        <span class="action-icon"><AppIcon name="RefreshCw" /></span>
         <span class="action-text">创建工作流</span>
       </router-link>
-      <router-link to="/settings" class="action-card">
-        <span class="action-icon">⚙️</span>
-        <span class="action-text">模型配置</span>
+      <router-link v-if="can('config.manage')" to="/settings" class="action-card">
+        <span class="action-icon"><Settings :size="18" /></span>
+        <span class="action-text">系统配置</span>
       </router-link>
     </div>
 
     <div class="workspace-section">
       <div class="section-header">
         <h2>工作空间</h2>
-        <button class="btn btn-primary btn-sm" @click="showCreateModal = true">+ 新建</button>
+        <button v-if="can('workspaces.create')" class="btn btn-primary btn-sm" @click="showCreateModal = true">+ 新建</button>
       </div>
       <div class="workspace-list" v-if="workspaces.length > 0">
         <div v-for="ws in workspaces" :key="ws.id" class="workspace-item" @click="selectWorkspace(ws)">
-          <div class="ws-name">🏢 {{ ws.name }}</div>
+          <div class="ws-name"><AppIcon name="Building2" /> {{ ws.name }}</div>
           <div class="ws-desc">{{ ws.description || '暂无描述' }}</div>
           <div class="ws-meta">
-            <span v-if="ws.default_model_provider">🔧 {{ ws.default_model_provider }}</span>
+            <span v-if="ws.default_model_provider">{{ ws.default_model_provider }}</span>
             <span>创建于 {{ formatDate(ws.created_at) }}</span>
           </div>
         </div>
       </div>
       <div v-else class="empty-state">
-        <p>暂无工作空间，点击上方按钮创建</p>
+        <p>尚未加入工作空间，请联系管理员分配。</p>
       </div>
     </div>
 
@@ -91,10 +91,12 @@
           </div>
           <div class="form-group">
             <label>默认模型供应商</label>
-            <select v-model="editingWorkspace.default_model_provider">
-              <option value="">不设置（使用全局默认）</option>
-              <option v-for="(p, name) in providers" :key="name" :value="name">{{ name }} ({{ p.model }})</option>
-            </select>
+            <SearchSelect
+              v-model="editingWorkspace.default_model_provider"
+              :options="providerOptions"
+              placeholder="不设置（使用全局默认）"
+              aria-label="编辑工作空间默认模型供应商"
+            />
           </div>
         </div>
         <div class="modal-footer">
@@ -122,10 +124,12 @@
           </div>
           <div class="form-group">
             <label>默认模型供应商</label>
-            <select v-model="newWorkspace.default_model_provider">
-              <option value="">不设置（使用全局默认）</option>
-              <option v-for="(p, name) in providers" :key="name" :value="name">{{ name }} ({{ p.model }})</option>
-            </select>
+            <SearchSelect
+              v-model="newWorkspace.default_model_provider"
+              :options="providerOptions"
+              placeholder="不设置（使用全局默认）"
+              aria-label="新建工作空间默认模型供应商"
+            />
           </div>
         </div>
         <div class="modal-footer">
@@ -136,12 +140,14 @@
     </div>
 
     <!-- Toast -->
-    <div v-if="toast.show" :class="['toast', 'toast-' + toast.type]">{{ toast.message }}</div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { LayoutDashboard, Users, MessageSquare, BookOpen, Activity } from 'lucide-vue-next'
+
+import { computed, ref, onMounted } from 'vue'
+import { can, auth } from '../auth'
 import { workspaceApi, configApi } from '../api'
 
 const workspaces = ref([])
@@ -151,11 +157,17 @@ const showEditModal = ref(false)
 const editingWorkspace = ref(null)
 const newWorkspace = ref({ name: '', description: '', default_model_provider: '' })
 const providers = ref({})
-const toast = ref({ show: false, message: '', type: 'success' })
+
+const providerOptions = computed(() => [
+  { value: '', label: '不设置（使用全局默认）' },
+  ...Object.entries(providers.value).map(([name, p]) => ({
+    value: name,
+    label: name + ' (' + (p.model || '未设置模型') + ')',
+  })),
+])
 
 const showToast = (message, type = 'success') => {
-  toast.value = { show: true, message, type }
-  setTimeout(() => { toast.value.show = false }, 3000)
+  window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }))
 }
 
 const formatDate = (date) => {
@@ -173,6 +185,7 @@ const loadWorkspaces = async () => {
 }
 
 const loadProviders = async () => {
+  if (!can('config.manage')) return
   try {
     const { data } = await configApi.listProviders()
     providers.value = data.providers || {}
@@ -227,7 +240,7 @@ const saveWorkspaceEdit = async () => {
 const selectWorkspace = (ws) => {
   localStorage.setItem('currentWorkspace', ws.id)
   window.dispatchEvent(new CustomEvent('workspace-changed', { detail: ws.id }))
-  editWorkspace(ws)
+  if (auth.user?.memberships.find(m => m.workspace_id === ws.id)?.permissions.includes('workspace.manage')) editWorkspace(ws)
 }
 
 onMounted(() => {
@@ -391,4 +404,23 @@ onMounted(() => {
   z-index: 10000;
 }
 .toast-success { background: var(--success); }
+
+/* Theme Variables */
+.page-wrap { padding: 0; }
+.page-wrap h1 { font-size: 24px; font-weight: 700; margin: 0; }
+.page-wrap .subtitle { color: var(--text3); margin: 4px 0 24px; font-size: 14px; }
+.page-wrap .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.page-wrap .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.page-wrap .card-title { font-size: 16px; font-weight: 600; }
+.page-wrap .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition); }
+.page-wrap .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-wrap .btn-primary { background: var(--primary); color: #fff; }
+.page-wrap .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.page-wrap .btn-ghost { background: transparent; color: var(--text2); }
+.page-wrap .btn-ghost:hover { background: var(--surface2); }
+.page-wrap .btn-danger { background: transparent; color: var(--danger); }
+.page-wrap .btn-danger:hover { background: var(--danger-bg); }
+.page-wrap .btn-sm { padding: 5px 12px; font-size: 13px; }
+.page-wrap .empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+
 </style>

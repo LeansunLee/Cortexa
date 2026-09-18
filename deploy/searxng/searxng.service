@@ -1,0 +1,22 @@
+[Unit]
+Description=SearXNG internal search for AgentDevStu
+After=network.target
+
+[Service]
+Type=simple
+User=searxng
+Group=searxng
+WorkingDirectory=/opt/searxng
+Environment=SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+Environment=SEARXNG_CACHE_PATH=/var/lib/searxng
+Environment=XDG_CACHE_HOME=/var/lib/searxng
+ExecStart=/opt/searxng/venv/bin/gunicorn --bind 127.0.0.1:8888 --workers 1 --threads 4 --timeout 40 searxng_app:app
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+MemoryLimit=450M
+
+[Install]
+WantedBy=multi-user.target

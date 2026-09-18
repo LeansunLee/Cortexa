@@ -1,0 +1,8 @@
+/* Shared glass select styles used by Vue SearchSelect and legacy fallback pages. */
+.legacy-search-select,.glass-select{position:relative;width:100%;min-width:0}
+.legacy-search-select-trigger,.glass-select-trigger{width:100%;min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--surface,#fff);color:var(--text,#111);cursor:pointer}
+.legacy-search-select-menu,.glass-select-menu{position:absolute;z-index:50;top:calc(100% + 6px);left:0;right:0;max-height:280px;overflow:auto;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:var(--surface,#fff);box-shadow:0 12px 30px rgba(15,23,42,.16);padding:6px}
+.legacy-search-select-search,.glass-select-search{width:100%;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border,#e5e7eb);border-radius:8px;background:var(--surface2,#f8fafc);color:var(--text,#111)}
+.legacy-search-select-option,.glass-select-option{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text,#111);text-align:left;cursor:pointer}
+.legacy-search-select-option:hover,.legacy-search-select-option.active,.glass-select-option:hover,.glass-select-option.active{background:var(--surface2,#f1f5f9)}
+.legacy-search-select-empty,.glass-select-empty{padding:12px;color:var(--text2,#64748b);text-align:center}

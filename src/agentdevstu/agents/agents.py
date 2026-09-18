@@ -1,4 +1,5 @@
 from __future__ import annotations
+from agentdevstu.usage.context import usage_action, annotate_usage
 
 import json
 from collections.abc import Sequence
@@ -66,6 +67,7 @@ def _extract_text(message: Any) -> str:
     return str(content)
 
 
+@usage_action("research", source="workflow")
 def researcher_node(state: AgentState) -> dict[str, Any]:
     llm = _get_model()
     response = llm.invoke(_build_messages(state, "researcher"))
@@ -106,6 +108,7 @@ def researcher_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+@usage_action("writing", source="workflow")
 def writer_node(state: AgentState) -> dict[str, Any]:
     llm = _get_model()
     response = llm.invoke(_build_messages(state, "writer"))
@@ -123,6 +126,7 @@ def writer_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+@usage_action("supervision", source="workflow")
 def supervisor_node(state: AgentState) -> dict[str, Any]:
     llm = _get_model()
     response = llm.invoke(_build_messages(state, "supervisor"))

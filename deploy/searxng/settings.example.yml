@@ -1,0 +1,27 @@
+use_default_settings:
+  engines:
+    keep_only: [360search, bing, yandex]
+general:
+  instance_name: AgentDevStu Search
+search:
+  formats: [html, json]
+  default_lang: zh-CN
+  autocomplete: ""
+server:
+  secret_key: REPLACE_WITH_RANDOM_SECRET
+  bind_address: 127.0.0.1
+  port: 8888
+  limiter: false
+  public_instance: false
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 8.0
+engines:
+  - name: 360search
+    disabled: false
+  - name: bing
+    disabled: false
+    base_url: https://cn.bing.com
+    weight: 0.4
+  - name: yandex
+    disabled: false

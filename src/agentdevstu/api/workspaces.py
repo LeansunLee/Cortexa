@@ -26,7 +26,18 @@ async def create_workspace(payload: WorkspaceCreate, db: AsyncSession = Depends(
     ws = Workspace(name=payload.name, description=payload.description, default_model_provider=payload.default_model_provider)
     db.add(ws)
     await db.flush()
-    await db.refresh(ws)
+    from agentdevstu.security.access import current_actor
+    from agentdevstu.security.models import User, Membership, MemberRole, Role
+    actor = current_actor.get()
+    if actor:
+        role = await db.scalar(select(Role).where(Role.code == 'space_admin'))
+        users = set((await db.execute(select(User.id).where(User.is_superadmin == True))).scalars())
+        users.add(actor.user_id)
+        for user_id in users:
+            member = Membership(user_id=user_id, workspace_id=ws.id, all_agents=True)
+            db.add(member)
+            await db.flush()
+            db.add(MemberRole(member_id=member.id, role_id=role.id))
     return ws
 
 

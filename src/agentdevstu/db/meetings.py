@@ -33,6 +33,8 @@ class Meeting(Base):
     """AI 会议 — 核心表"""
     __tablename__ = "t_meetings"
 
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("t_users.id"), nullable=True, index=True)
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("t_workspaces.id"), nullable=False

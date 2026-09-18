@@ -1,26 +1,48 @@
 <template>
   <div class="settings">
-    <h1>LLM 供应商配置</h1>
-    <p class="subtitle">管理 API Key、切换供应商、调整模型参数</p>
-
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">当前默认供应商</span>
-        <span v-if="defaultProvider" class="badge badge-active">使用中</span>
+    <section class="card feature-card" aria-labelledby="conversation-debug-heading">
+      <div class="feature-row">
+        <div class="feature-copy">
+          <h2 id="conversation-debug-heading" class="card-title"><Bug :size="18" /> 对话调试窗口</h2>
+          <p class="card-desc">记录并展示每轮对话的上下文组装、知识库与记忆检索、工具调用和 Agent 协作传递过程。关闭后不再采集新轨迹，已保存的历史轨迹不会删除。</p>
+        </div>
+        <label class="switch" :title="conversationDebugEnabled ? '关闭对话调试' : '开启对话调试'">
+          <input v-model="conversationDebugEnabled" type="checkbox" :disabled="savingConversationDebug" @change="saveConversationDebug" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">{{ conversationDebugEnabled ? '已开启' : '已关闭' }}</span>
+        </label>
       </div>
-      <div class="default-selector">
-        <select v-model="selectedDefault" class="select">
-          <option value="">选择供应商</option>
-          <option v-for="(p, name) in providers" :key="name" :value="name">{{ name }} ({{ p.model }})</option>
-        </select>
-        <button class="btn btn-primary" @click="saveDefault">保存</button>
-      </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">供应商列表</span>
+    <!-- LLM Providers -->
+    <section class="card llm-provider-card" aria-labelledby="llm-provider-heading">
+      <div class="card-header llm-provider-header">
+        <div>
+          <h2 id="llm-provider-heading" class="card-title"><Server :size="18" /> LLM 供应商配置</h2>
+          <p class="card-desc">管理 API 供应商和模型配置。</p>
+        </div>
         <button class="btn btn-primary btn-sm" @click="openAddModal">+ 添加供应商</button>
+      </div>
+      <div class="provider-default-section">
+        <div class="provider-section-label">
+          <label for="default-provider">当前默认供应商</label>
+          <span v-if="defaultProvider" class="badge badge-active">使用中</span>
+        </div>
+        <div class="default-selector">
+          <SearchSelect
+            id="default-provider"
+            v-model="selectedDefault"
+            class="select"
+            :options="defaultProviderOptions"
+            placeholder="选择供应商"
+            aria-label="当前默认供应商"
+          />
+          <button class="btn btn-primary" @click="saveDefault">保存</button>
+        </div>
+      </div>
+      <div class="provider-list-heading">
+        <h3>供应商列表</h3>
+        <span>{{ Object.keys(providers).length }} 个供应商</span>
       </div>
       <div class="provider-table-wrap">
         <table class="provider-table" v-if="Object.keys(providers).length > 0">
@@ -54,7 +76,7 @@
           <p>暂无供应商，点击上方按钮添加</p>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Add/Edit Modal -->
     <div v-if="showModal" class="modal" @click.self="showModal = false">
@@ -71,11 +93,12 @@
             </div>
             <div class="form-group">
               <label>类型</label>
-              <select v-model="form.kind">
-                <option value="openai">OpenAI 兼容</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="ollama">Ollama (本地)</option>
-              </select>
+              <SearchSelect
+                v-model="form.kind"
+                :options="providerKindOptions"
+                placeholder="选择供应商类型"
+                aria-label="供应商类型"
+              />
             </div>
           </div>
           <div class="form-group">
@@ -96,7 +119,7 @@
               <input v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" />
             </div>
             <div class="form-group">
-              <label>Max Tokens</label>
+              <label>最大输出词元</label>
               <input v-model.number="form.max_tokens" type="number" min="256" max="128000" />
             </div>
           </div>
@@ -109,15 +132,19 @@
     </div>
 
     <!-- Toast -->
-    <div v-if="toast.show" :class="['toast', 'toast-' + toast.type]">{{ toast.message }}</div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { Server, Bug } from 'lucide-vue-next'
+
+import { computed, ref, onMounted } from 'vue'
 import { configApi } from '../api'
 
 const testing = ref({})
+const conversationDebugEnabled = ref(false)
+const savingConversationDebug = ref(false)
+
 
 const providers = ref({})
 const defaultProvider = ref('')
@@ -125,7 +152,6 @@ const selectedDefault = ref('')
 const showModal = ref(false)
 const editMode = ref(false)
 const editingName = ref('')
-const toast = ref({ show: false, message: '', type: 'success' })
 
 const form = ref({
   name: '',
@@ -137,19 +163,50 @@ const form = ref({
   max_tokens: 4096
 })
 
+const providerKindOptions = [
+  { value: 'openai', label: 'OpenAI 兼容' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'ollama', label: 'Ollama (本地)' },
+]
+
+const defaultProviderOptions = computed(() => [
+  { value: '', label: '选择供应商' },
+  ...Object.entries(providers.value).map(([name, p]) => ({
+    value: name,
+    label: name + ' (' + (p.model || '未设置模型') + ')',
+  })),
+])
+
 const showToast = (message, type = 'success') => {
-  toast.value = { show: true, message, type }
-  setTimeout(() => { toast.value.show = false }, 3000)
+  window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }))
 }
 
 const loadConfig = async () => {
+  // Theme is already initialized from ref defaults
+
   try {
     const { data } = await configApi.get()
     providers.value = data.providers || {}
     defaultProvider.value = data.default_provider || ''
     selectedDefault.value = data.default_provider || ''
+    conversationDebugEnabled.value = Boolean(data.conversation_debug_enabled)
   } catch (e) {
     console.error(e)
+  }
+}
+
+const saveConversationDebug = async () => {
+  const enabled = conversationDebugEnabled.value
+  savingConversationDebug.value = true
+  try {
+    await configApi.saveConversationDebug(enabled)
+    window.dispatchEvent(new CustomEvent('conversation-debug-config', { detail: { enabled } }))
+    showToast(enabled ? '对话调试窗口已开启' : '对话调试窗口已关闭')
+  } catch (error) {
+    conversationDebugEnabled.value = !enabled
+    showToast('保存失败: ' + (error.response?.data?.detail || error.message), 'error')
+  } finally {
+    savingConversationDebug.value = false
   }
 }
 
@@ -229,163 +286,88 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.settings h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-.subtitle { font-size: 14px; color: var(--text2); margin-bottom: 20px; }
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 24px;
-  margin-bottom: 16px;
-}
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.card-title { font-size: 15px; font-weight: 600; }
-
-.default-selector { display: flex; gap: 12px; align-items: center; }
-.select {
-  flex: 1;
-  padding: 10px 14px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  color: var(--text);
-}
-
+.settings { padding: 0; max-width: 900px; }
+.settings h1 { font-size: 24px; font-weight: 700; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.feature-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.feature-copy { min-width: 0; }
+.feature-copy .card-title { display: flex; align-items: center; gap: 8px; margin: 0; }
+.feature-copy .card-desc { max-width: 660px; margin: 7px 0 0; line-height: 1.65; }
+.switch { display: inline-flex; align-items: center; gap: 9px; flex-shrink: 0; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch-track { width: 42px; height: 24px; padding: 2px; box-sizing: border-box; border-radius: 999px; background: var(--border); transition: background var(--transition); }
+.switch-thumb { display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform var(--transition); }
+.switch input:checked + .switch-track { background: var(--primary); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--primary); outline-offset: 2px; }
+.switch input:disabled + .switch-track { opacity: .55; }
+.switch-label { min-width: 42px; color: var(--text2); font-size: 12px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.card-title { font-size: 16px; font-weight: 600; }
+.card-desc { font-size: 13px; color: var(--text3); margin: 0 0 16px; }
+.default-selector { display: flex; gap: 8px; align-items: center; }
+.select { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; }
 .provider-table-wrap { overflow-x: auto; }
-.provider-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.provider-table th {
-  text-align: left;
-  padding: 10px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
-}
-.provider-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text2);
-}
-.provider-table tbody tr {
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.provider-table tbody tr:hover { background: var(--surface2); }
-.provider-table tbody tr.row-active { background: var(--surface2); }
-.provider-table .col-name { font-weight: 600; color: var(--text); }
-.provider-table .col-actions { text-align: right; white-space: nowrap; }
-
-.badge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.provider-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.provider-table th { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 500; color: var(--text2); font-size: 13px; }
+.provider-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.provider-table tr:hover { background: var(--surface2); }
+.col-name { font-weight: 500; }
+.col-actions { text-align: right; }
+.row-active { background: var(--primary-light) !important; }
+.badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
 .badge-active { background: var(--success-bg); color: var(--success); }
 .badge-inactive { background: var(--surface2); color: var(--text3); }
-
-.empty-state { text-align: center; padding: 32px 20px; color: var(--text3); font-size: 14px; }
-
-.modal {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
-  z-index: 9999;
-}
-.modal-box {
-  background: var(--surface);
-  border-radius: var(--radius);
-  width: 480px;
-  max-width: 90vw;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-}
-.modal-lg { width: 620px; }
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border);
-}
-.modal-header h3 { font-size: 16px; font-weight: 600; }
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  color: var(--text3);
-  cursor: pointer;
-}
-.modal-close:hover { color: var(--text); }
-.modal-body { padding: 24px; }
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-primary { background: var(--primary); color: var(--primary-text); }
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.empty-state { text-align: center; padding: 32px; color: var(--text3); }
+.btn { padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-ghost { background: transparent; color: var(--text2); }
 .btn-ghost:hover { background: var(--surface2); }
-.btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(185,28,28,0.2); }
-.btn-danger:hover { background: #FEE2E2; }
-.btn-sm { padding: 7px 14px; font-size: 13px; }
-
+.btn-danger { background: transparent; color: var(--danger); }
+.btn-danger:hover { background: var(--danger-bg); }
+.btn-sm { padding: 5px 12px; font-size: 13px; }
 .form-group { margin-bottom: 16px; }
-.form-group label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
 .form-group input, .form-group select, .form-group textarea {
-  width: 100%;
-  padding: 12px 16px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 14px;
+  width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
+  font-size: 14px; box-sizing: border-box; transition: all var(--transition);
 }
-.form-group input:focus, .form-group select:focus {
-  outline: none;
-  border-color: var(--primary);
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139,92,246,0.1);
 }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.form-row-3 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-row { display: flex; gap: 16px; }
+.form-row .form-group { flex: 1; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-box { background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 0; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-md); }
+.modal-lg { width: 640px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-header h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text3); padding: 4px 8px; }
+.modal-body { padding: 20px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--border); }
+.test-result-box { margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); font-size: 13px; }
+.test-result-box.success { background: var(--success-bg); color: var(--success); }
+.test-result-box.error { background: var(--danger-bg); color: var(--danger); }
 
-.toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  padding: 12px 20px;
-  background: var(--text);
-  color: var(--primary-text);
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  z-index: 10000;
+.llm-provider-header { align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.llm-provider-header .card-title { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 24px; }
+.llm-provider-header .card-desc { margin: 6px 0 0; line-height: 20px; }
+.llm-provider-header > button { flex-shrink: 0; }
+.provider-default-section { padding: 16px; background: var(--surface2); border-radius: 8px; }
+.provider-section-label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 550; }
+.provider-default-section .default-selector select { min-width: 0; }
+.provider-default-section .default-selector button { flex-shrink: 0; }
+.provider-list-heading { display: flex; align-items: center; gap: 10px; margin: 24px 0 8px; }
+.provider-list-heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.provider-list-heading > span { color: var(--text3); font-size: 12px; }
+.llm-provider-card .provider-table tbody tr:last-child td { border-bottom: 0; }
+@media (max-width: 640px) {
+  .feature-row { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .llm-provider-header { flex-wrap: wrap; }
+  .provider-default-section { padding: 12px; }
+  .llm-provider-card .provider-table { min-width: 580px; }
 }
-.toast-success { background: var(--success); }
 </style>

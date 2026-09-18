@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="新零售头像">
+  <title>新零售</title>
+  <rect width="100" height="100" rx="24" fill="#FCE7F3"/>
+  <circle cx="50" cy="40" r="22" fill="#F3C9A8"/><g id="hair"><path d="M25 43V29Q24 11 49 11Q75 9 75 32V57Q69 65 63 58L67 30L56 30L51 21L47 31L33 31L36 58Q27 65 24 56Z" fill="#7b3c52"/></g>
+  <circle cx="42" cy="38" r="3" fill="#25334B"/>
+  <circle cx="58" cy="38" r="3" fill="#25334B"/>
+  <path d="M42 52q8 6 16 0" fill="none" stroke="#9D493F" stroke-width="3" stroke-linecap="round"/>
+  <path d="M18 100V84q3-18 26-18h12q23 0 26 18v16Z" fill="#BE185D"/>
+  <text x="50" y="88" text-anchor="middle" fill="white" font-size="12" font-weight="700">新零售</text>
+</svg>

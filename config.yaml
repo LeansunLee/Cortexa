@@ -48,3 +48,5 @@ llm:
       api_key: ${DEEPSEEK_API_KEY}
       temperature: 0.2
       max_tokens: 4096
+features:
+  conversation_debug_enabled: false

@@ -1,6 +1,7 @@
 """Workflow execution engine using LangGraph."""
 
 from __future__ import annotations
+from agentdevstu.usage.context import usage_action, annotate_usage
 
 import json
 import time
@@ -24,6 +25,7 @@ from agentdevstu.db.models import (
 from agentdevstu.config.llm_providers import create_llm
 
 
+@usage_action("workflow_execute", source="workflow")
 async def execute_workflow(
     db: AsyncSession,
     task_id: str,
@@ -169,6 +171,7 @@ async def execute_workflow(
     return run
 
 
+@usage_action("workflow_agent")
 async def _execute_agent(
     db: AsyncSession,
     agent_version: AgentVersion,
@@ -207,6 +210,7 @@ async def _execute_agent(
 
     try:
         # Get LLM model
+        annotate_usage(agent_id=agent_version.agent_id, agent_name=snapshot.get("name"))
         model = create_llm()
 
         # Invoke LLM

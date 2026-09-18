@@ -1,17 +1,12 @@
 <template>
-  <div class="workflows-page">
-    <div class="page-header">
-      <div>
-        <h1>工作流管理</h1>
-        <p class="subtitle">配置多智能体协作流程</p>
-      </div>
-      <button class="btn btn-primary" @click="showCreateModal = true">+ 创建工作流</button>
-    </div>
+  <div class="workflows-page page-wrap">
+    <PageHeader><button class="btn btn-primary" @click="showCreateModal = true">+ 创建工作流</button>
+    </PageHeader>
 
     <div v-if="workflows.length > 0" class="workflows-list">
       <div v-for="wf in workflows" :key="wf.id" class="workflow-card">
         <div class="wf-header">
-          <span class="wf-icon">🔄</span>
+          <span class="wf-icon"><AppIcon name="RefreshCw" /></span>
           <div class="wf-info">
             <div class="wf-name">{{ wf.name }}</div>
             <div class="wf-desc">{{ wf.description || '暂无描述' }}</div>
@@ -29,7 +24,7 @@
       </div>
     </div>
     <div v-else class="empty-state">
-      <div class="empty-icon">🔄</div>
+      <div class="empty-icon"><AppIcon name="RefreshCw" /></div>
       <p>暂无工作流，点击上方按钮创建</p>
     </div>
 
@@ -56,7 +51,6 @@
       </div>
     </div>
 
-    <div v-if="toast.show" :class="['toast', 'toast-' + toast.type]">{{ toast.message }}</div>
   </div>
 </template>
 
@@ -66,14 +60,12 @@ import { workflowApi } from '../api'
 
 const workflows = ref([])
 const showCreateModal = ref(false)
-const toast = ref({ show: false, message: '', type: 'success' })
 const form = ref({ name: '', description: '' })
 
 const currentWorkspace = () => localStorage.getItem('currentWorkspace')
 
 const showToast = (message, type = 'success') => {
-  toast.value = { show: true, message, type }
-  setTimeout(() => { toast.value.show = false }, 3000)
+  window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }))
 }
 
 const loadWorkflows = async () => {
@@ -194,4 +186,23 @@ onMounted(() => {
   border-radius: var(--radius-sm); font-size: 14px; z-index: 10000;
 }
 .toast-success { background: var(--success); }
+
+/* Theme Variables */
+.page-wrap { }
+.page-wrap h1 { font-size: 24px; font-weight: 700; margin: 0; }
+.page-wrap .subtitle { color: var(--text3); margin: 4px 0 24px; font-size: 14px; }
+.page-wrap .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.page-wrap .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.page-wrap .card-title { font-size: 16px; font-weight: 600; }
+.page-wrap .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition); }
+.page-wrap .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-wrap .btn-primary { background: var(--primary); color: #fff; }
+.page-wrap .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.page-wrap .btn-ghost { background: transparent; color: var(--text2); }
+.page-wrap .btn-ghost:hover { background: var(--surface2); }
+.page-wrap .btn-danger { background: transparent; color: var(--danger); }
+.page-wrap .btn-danger:hover { background: var(--danger-bg); }
+.page-wrap .btn-sm { padding: 5px 12px; font-size: 13px; }
+.page-wrap .empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+
 </style>

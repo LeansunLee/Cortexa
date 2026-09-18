@@ -75,11 +75,16 @@ def get_provider_config(name: str | None = None, config_path: Path | None = None
 
 def create_llm(name: str | None = None, config_path: Path | None = None) -> Any:
     cfg = get_provider_config(name, config_path)
+    from agentdevstu.usage.collector import UsageCallback
+    provider_name = name or _load_yaml_config(config_path).get("llm", {}).get("default", "openai")
+    callbacks = [UsageCallback(provider_name, cfg.kind, cfg.model)]
 
     if cfg.kind == "openai":
         from langchain_openai import ChatOpenAI
 
         kwargs: dict[str, Any] = {
+            "stream_usage": True,
+            "callbacks": callbacks,
             "model": cfg.model,
             "temperature": cfg.temperature,
             "max_tokens": cfg.max_tokens,
@@ -99,7 +104,7 @@ def create_llm(name: str | None = None, config_path: Path | None = None) -> Any:
                 "anthropic provider requires: pip install langchain-anthropic"
             ) from exc
         return ChatAnthropic(
-            model=cfg.model,
+            callbacks=callbacks,            model=cfg.model,
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
             api_key=cfg.api_key,
@@ -113,7 +118,7 @@ def create_llm(name: str | None = None, config_path: Path | None = None) -> Any:
                 "ollama provider requires: pip install langchain-ollama"
             ) from exc
         return ChatOllama(
-            model=cfg.model,
+            callbacks=callbacks,            model=cfg.model,
             temperature=cfg.temperature,
             base_url=cfg.base_url or "http://localhost:11434",
         )

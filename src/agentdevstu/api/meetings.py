@@ -1,6 +1,7 @@
 """Meeting CRUD + Runtime + SSE API."""
 
 from __future__ import annotations
+from agentdevstu.usage.context import usage_action, annotate_usage
 
 import asyncio
 import json
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentdevstu.api.deps import get_db, get_current_workspace
 from agentdevstu.db.models import Agent
 from pathlib import Path
+from langchain_core.messages import AIMessage, ToolMessage
 
 from agentdevstu.db.meetings import (
     Meeting, MeetingParticipant, MeetingRound,
@@ -137,15 +139,24 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @router.post("/upload")
 async def upload_meeting_file(
     file: UploadFile = FastAPIFile(...),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Upload a file for meeting attachment."""
     import hashlib
     content_bytes = await file.read()
-    ext = Path(file.filename or "file").suffix
-    file_hash = hashlib.md5(content_bytes).hexdigest()[:8]
-    safe_name = f"{file_hash}_{file.filename}" if file.filename else f"{file_hash}_file"
+    if len(content_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(400, "文件大小不能超过 20MB")
+    safe_name = uuid.uuid4().hex + Path(file.filename or "file").suffix
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     save_path = UPLOAD_DIR / safe_name
     save_path.write_bytes(content_bytes)
+    from agentdevstu.security.access import current_actor
+    from agentdevstu.security.models import ProtectedUpload
+    actor = current_actor.get()
+    if actor:
+        db.add(ProtectedUpload(path=f"/uploads/meetings/{safe_name}", user_id=actor.user_id,
+                               workspace_id=actor.workspace_id))
+        await db.flush()
     return {
         "name": file.filename,
         "path": f"/uploads/meetings/{safe_name}",
@@ -326,6 +337,7 @@ async def stream_meeting(
     meeting_id: uuid.UUID,
 ):
     """SSE endpoint for real-time meeting updates."""
+    @usage_action("meeting_discussion")
     async def event_generator() -> AsyncGenerator[str, None]:
         from agentdevstu.db.engine import async_session_factory
         async with async_session_factory() as db:
@@ -368,40 +380,102 @@ async def stream_meeting(
 
                     yield f"data: {json.dumps({'type': 'round_start', 'round': round_num, 'topic': round_obj.topic})}\n\n"
 
-                    # Phase 1: Each non-host agent analyzes independently
+                    # Phase 1: Each non-host agent analyzes independently (with tool-calling)
                     for p in non_host:
                         agent = await db.get(Agent, p.agent_id) if p.agent_id else None
                         if not agent:
                             continue
 
-                        system_prompt = _build_agent_meeting_prompt(agent, meeting.topic, meeting.purpose, meeting.attachments)
+                        # Build tools for this agent
+                        from agentdevstu.tools.meeting_tools import MeetingToolProvider
+                        from agentdevstu.api.conversations import _load_agent_capabilities, _build_data_tools, _build_tool_usage_instructions
+                        from agentdevstu.tools.web_search import load_search_tools, SEARCH_RULES
+                        tool_provider = MeetingToolProvider(
+                            agent_id=p.agent_id,
+                            knowledge_base_ids=agent.knowledge_base_ids or [],
+                            tool_ids=[],
+                            workspace_id=meeting.workspace_id,
+                        )
+                        tools = tool_provider.get_tools()
+                        capabilities = await _load_agent_capabilities(agent.id, db, meeting.topic)
+                        annotate_usage(agent=agent, action="meeting_discussion")
+                        data_model = create_llm(agent.model)
+                        business_tools = _build_data_tools(capabilities, model=data_model, user_query=meeting.topic, context=all_messages)
+                        tools.extend(business_tools)
+                        tools.extend(await load_search_tools(agent, db, meeting.topic))
+
+                        system_prompt = _build_agent_meeting_prompt(agent, meeting.topic, meeting.purpose, meeting.attachments, tool_names=[t.name for t in tools]) + SEARCH_RULES
+                        system_prompt += _build_tool_usage_instructions(capabilities, business_tools)
                         user_content = _build_round_user_content(meeting.topic, round_num, all_messages, conflict_detected)
 
-                        yield f"data: {json.dumps({'type': 'agent_thinking', 'round': round_num, 'agent': p.name, 'agent_id': str(p.agent_id)})}\n\n"
+                        yield f"data: {json.dumps({'type': 'agent_thinking', 'round': round_num, 'agent': p.name, 'agent_id': str(p.agent_id), 'tools': [t.name for t in tools]})}\n\n"
 
                         try:
-                            model = create_llm(agent.model)
-                            response = model.invoke([
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_content},
-                            ])
-                            agent_reply = response.content if hasattr(response, 'content') else str(response)
+                            model = data_model
+                            tool_calls_log = []
+
+                            if tools:
+                                model_with_tools = model.bind_tools(tools)
+                                messages = [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_content},
+                                ]
+
+                                # Tool-calling loop (max 5 iterations)
+                                for _tool_iter in range(5):
+                                    response = await model_with_tools.ainvoke(messages)
+                                    messages.append(response)
+
+                                    tool_calls = response.tool_calls if hasattr(response, 'tool_calls') else []
+                                    if not tool_calls:
+                                        break
+
+                                    tool_map = {t.name: t for t in tools}
+                                    for tc in tool_calls:
+                                        tool_name = tc["name"]
+                                        tool_args = tc["args"]
+                                        yield f"data: {json.dumps({'type': 'agent_tool_call', 'round': round_num, 'agent': p.name, 'tool': tool_name, 'args': tool_args})}\n\n"
+
+                                        if tool_name in tool_map:
+                                            result = await tool_map[tool_name].ainvoke(tool_args)
+                                        else:
+                                            result = json.dumps({"error": f"Tool '{tool_name}' not found"})
+
+                                        messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+                                        tool_calls_log.append({"tool": tool_name, "args": tool_args, "result": str(result)[:2000]})
+
+                                        yield f"data: {json.dumps({'type': 'agent_tool_result', 'round': round_num, 'agent': p.name, 'tool': tool_name, 'result_preview': str(result)[:500]})}\n\n"
+
+                                agent_reply = response.content if hasattr(response, 'content') and response.content else str(response)
+                            else:
+                                response = model.invoke([
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_content},
+                                ])
+                                agent_reply = response.content if hasattr(response, 'content') else str(response)
                         except Exception as e:
                             agent_reply = f"[分析失败: {str(e)}]"
+                            tool_calls_log = []
 
-                        # Save message
+                        # Save message with tool call history
+                        metadata = {}
+                        if tool_calls_log:
+                            metadata["tool_calls"] = tool_calls_log
+
                         msg = MeetingMessage(
                             meeting_id=meeting_id, round_number=round_num,
                             sender_type="agent", sender_agent_id=p.agent_id,
                             sender_name=p.name, content=agent_reply,
                             message_type="analysis",
+                            metadata_json=metadata,
                         )
                         db.add(msg)
                         await db.flush()
 
                         all_messages.append({"role": p.name, "content": agent_reply, "round": round_num})
 
-                        yield f"data: {json.dumps({'type': 'agent_message', 'round': round_num, 'agent': p.name, 'agent_id': str(p.agent_id), 'content': agent_reply, 'message_id': str(msg.id)})}\n\n"
+                        yield f"data: {json.dumps({'type': 'agent_message', 'round': round_num, 'agent': p.name, 'agent_id': str(p.agent_id), 'content': agent_reply, 'tool_calls': tool_calls_log, 'message_id': str(msg.id)})}\n\n"
+
 
                     # Phase 2: Host summarizes and checks for conflicts
                     if host and host.agent_id:
@@ -415,6 +489,7 @@ async def stream_meeting(
                             ])
 
                             try:
+                                annotate_usage(agent=host_agent, action="meeting_round_summary")
                                 model = create_llm(host_agent.model)
                                 response = model.invoke([
                                     {"role": "system", "content": summary_prompt},
@@ -519,7 +594,9 @@ def _read_attachments(attachments: list) -> str:
         path = att.get("path", "")
         if not path:
             continue
-        full = base / path.lstrip("/")
+        full = (base / path.lstrip("/")).resolve()
+        if not path.startswith("/uploads/meetings/") or not full.is_relative_to((base / "uploads" / "meetings").resolve()):
+            continue
         if not full.exists():
             parts.append(f"### {name}\n[文件不存在]")
             continue
@@ -534,7 +611,7 @@ def _read_attachments(attachments: list) -> str:
     return "\n".join(parts)
 
 
-def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachments: list | None = None) -> str:
+def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachments: list | None = None, tool_names: list[str] | None = None) -> str:
     parts = [f"你正在参加一个 AI 会议。"]
     if agent.name:
         parts.append(f"你是{agent.name}。")
@@ -556,6 +633,17 @@ def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachme
     }
     parts.append(f"\n会议议题：{topic}")
     parts.append(f"会议目标：{purpose_map.get(purpose, purpose)}")
+
+    # Tool capability declaration
+    if tool_names:
+        parts.append(f"\n## 你可用的工具")
+        parts.append(f"你拥有以下工具来辅助你的分析。在回答之前，如果需要相关知识或数据支持，请主动调用工具获取信息，而不是凭空猜测。")
+        if "knowledge_search" in tool_names:
+            parts.append(f"- knowledge_search: 搜索你绑定的知识库，获取相关文档、历史决策、专业知识等")
+        if "data_query" in tool_names:
+            parts.append(f"- data_query: 查询你绑定的数据能力，获取实时业务数据（如销售、订单、指标等）")
+        parts.append(f"\n调用工具获取到信息后，请基于这些信息给出有理有据的分析。")
+
     if attachments:
         attachment_text = _read_attachments(attachments)
         if attachment_text:
@@ -605,6 +693,7 @@ def _build_round_user_content(topic: str, round_num: int, history: list, conflic
     return "\n".join(parts)
 
 
+@usage_action("meeting_conclusion")
 def _generate_conclusion_sync(topic: str, messages: list) -> str:
     """Generate conclusion using LLM (called within async context)."""
     try:
@@ -635,6 +724,7 @@ def _generate_conclusion_sync(topic: str, messages: list) -> str:
         return f"结论生成失败：{str(e)}"
 
 
+@usage_action("meeting_todos")
 def _generate_todos_sync(topic: str, conclusion: str, participants: list) -> list[dict]:
     """Generate todo items using LLM."""
     try:

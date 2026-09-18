@@ -1,0 +1,526 @@
+/* Shared theme adapters for legacy controls. Layout stays with each component. */
+:root body :is(.btn-primary, button.primary, .login-submit, .chat-send, .btn-create, .agent-btn-chat, .mem-edit-save, .validity-dialog .save, .upload-box .choose) {
+  background-color: var(--theme-button-background);
+  background-image: var(--theme-gradient);
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  color: var(--primary-text);
+  border-color: var(--theme-button-border);
+  box-shadow: var(--theme-button-shadow);
+  backdrop-filter: var(--theme-backdrop);
+}
+:root body :is(.btn-primary, button.primary, .login-submit, .chat-send, .btn-create, .agent-btn-chat, .mem-edit-save, .validity-dialog .save, .upload-box .choose):hover:not(:disabled) {
+  background-color: var(--theme-button-hover-background);
+  background-image: var(--theme-gradient-hover);
+  color: var(--primary-text);
+}
+:root body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea, select) {
+  color: var(--text);
+  background-color: var(--surface);
+  border-color: var(--border);
+  caret-color: var(--primary);
+}
+:root body :is(input, textarea)::placeholder { color: var(--text3); }
+:root body :is(input, textarea, select, button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+:root body :is(input, textarea, select):focus-visible { border-color: var(--primary); }
+:root body :is(input, textarea, select)[aria-invalid=true] { border-color: var(--danger); outline-color: var(--danger); }
+:root body :is(button, input, select, textarea):disabled { opacity: .5; cursor: not-allowed; }
+:root body :is(input, textarea)[readonly] { background-color: var(--surface2); }
+:root body select :is(option, optgroup) { background: var(--surface); color: var(--text); }
+
+/* --- Shared select / dropdown treatment ---
+   Keep the native picker for accessibility and mobile ergonomics, but make
+   the closed control consistent with the rest of the product. The browser
+   owns the expanded option popup, so the visual polish belongs here. */
+:root body select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 38px;
+  padding: 9px 38px 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 6%, transparent);
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+:root body select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background-color: var(--surface2);
+}
+:root body select:not([multiple]):not([size]):focus-visible {
+  background-color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+:root body select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  background-image: none;
+  padding-right: 12px;
+}
+:root body select[multiple],
+:root body select[size] {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+:root body select option,
+:root body select optgroup {
+  background: var(--surface);
+  color: var(--text);
+}
+
+:root[data-theme=dark] body select:not([multiple]):not([size]) {
+  background-color: var(--surface2);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 82%, #ffffff 18%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  box-shadow: 0 1px 2px rgba(0,0,0,.28);
+}
+:root[data-theme=dark] body select:not([multiple]):not([size]):hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--surface2) 88%, #ffffff 12%);
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
+}
+:root[data-theme=dark] body select:not([multiple]):not([size]):focus-visible {
+  background-color: var(--surface2);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent), 0 8px 24px rgba(0,0,0,.28);
+}
+:root[data-theme=dark] body select option,
+:root[data-theme=dark] body select optgroup {
+  background: var(--surface);
+  color: var(--text);
+}
+
+:root[data-theme=dark][data-color-theme=glass] body select:not([multiple]):not([size]) {
+  background-color: var(--glass-panel-background, color-mix(in srgb, var(--surface2) 78%, transparent));
+  background-image: var(--glass-panel-gradient, none), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, right 12px center;
+  background-size: auto, 16px;
+  border-color: var(--glass-edge-border-soft);
+  box-shadow: var(--glass-edge-shadow, none), 0 10px 28px rgba(0,0,0,.30);
+  backdrop-filter: var(--glass-control-backdrop, blur(18px) saturate(128%));
+  -webkit-backdrop-filter: var(--glass-control-backdrop, blur(18px) saturate(128%));
+}
+:root[data-theme=dark][data-color-theme=glass] body select:not([multiple]):not([size]):hover:not(:disabled),
+:root[data-theme=dark][data-color-theme=glass] body select:not([multiple]):not([size]):focus-visible {
+  background-color: var(--glass-surface-background-strong, color-mix(in srgb, var(--surface2) 86%, transparent));
+  border-color: var(--glass-edge-border);
+  box-shadow: var(--glass-edge-shadow, none), 0 0 0 1px color-mix(in srgb, var(--primary) 34%, transparent), 0 12px 32px rgba(0,0,0,.34);
+}
+:root[data-theme=dark] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select) {
+  background-color: var(--surface2) !important;
+  color: var(--text) !important;
+  border-color: color-mix(in srgb, var(--border) 82%, #ffffff 18%) !important;
+}
+:root[data-theme=dark] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select):focus,
+:root[data-theme=dark] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select):focus-visible {
+  outline: none !important;
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent), 0 8px 24px rgba(0,0,0,.28) !important;
+}
+:root[data-theme=dark][data-color-theme=glass] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select) {
+  background-color: var(--glass-panel-background, color-mix(in srgb, var(--surface2) 78%, transparent)) !important;
+  border-color: var(--glass-edge-border-soft) !important;
+  box-shadow: var(--glass-edge-shadow, none), 0 10px 28px rgba(0,0,0,.30) !important;
+  backdrop-filter: var(--glass-control-backdrop, blur(18px) saturate(128%));
+  -webkit-backdrop-filter: var(--glass-control-backdrop, blur(18px) saturate(128%));
+}
+:root[data-theme=dark][data-color-theme=glass] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select):focus,
+:root[data-theme=dark][data-color-theme=glass] body :is(select.form-select, select.select, .workspace-selector select, .form-group select, .dialog-content select, .pair-color-field select):focus-visible {
+  border-color: var(--glass-edge-border) !important;
+  box-shadow: var(--glass-edge-shadow, none), 0 0 0 1px color-mix(in srgb, var(--primary) 34%, transparent), 0 12px 32px rgba(0,0,0,.34) !important;
+}
+
+@media (max-width: 640px) {
+  :root body select:not([multiple]):not([size]) {
+    min-height: 40px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+:root body :is(input[type=checkbox], input[type=radio]) { accent-color: var(--primary); }
+:root body input[type=range] { appearance: none; height: 6px; border: 0; border-radius: 8px; background: var(--primary-light); padding: 0; accent-color: var(--primary); }
+:root body input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 8px; background-color: var(--primary-light); background-image: var(--theme-gradient); }
+:root body input[type=range]::-moz-range-track { height: 6px; border-radius: 8px; background-color: var(--primary-light); background-image: var(--theme-gradient); }
+:root body input[type=range]::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--surface); background: var(--primary); box-shadow: 0 0 0 1px var(--border); cursor: grab; }
+:root body input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface); background: var(--primary); box-shadow: 0 0 0 1px var(--border); cursor: grab; }
+:root body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
+  color: var(--navigation-color);
+  background: var(--navigation-background);
+  border-color: var(--navigation-color);
+  backdrop-filter: var(--theme-backdrop);
+}
+:root body :is(.tag, .admin-badge, .badge-published, .theme-demo-tag) {
+  background: var(--theme-tag-background);
+  color: var(--navigation-color);
+  border-color: var(--theme-button-border);
+  backdrop-filter: var(--theme-backdrop);
+}
+:root body :is(.capability-switch input:checked + .capability-switch-track, .upload-progress-fill, .total-track i, .file-track i) {
+  background-color: var(--primary);
+  background-image: var(--theme-gradient);
+}
+:root body :is(.btn-ghost, .btn-outline, .btn-secondary, .pagination button):hover:not(:disabled) { background: var(--primary-light); border-color: var(--primary); color: var(--text); }
+:root body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .user-dropdown, .agent-dropdown, .mention-popover, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog) {
+  background-color: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* --- Glass material surfaces ---
+   Large panels use restrained edge-only sheen; compact menus keep stronger refraction. */
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--glass-panel-background, var(--glass-surface-background));
+  background-image: var(--glass-panel-gradient, none);
+  background-clip: padding-box;
+  border-color: var(--glass-edge-border-soft);
+  box-shadow: var(--glass-edge-shadow), 0 16px 42px color-mix(in srgb, var(--text) 12%, transparent);
+  backdrop-filter: var(--glass-surface-backdrop);
+  -webkit-backdrop-filter: var(--glass-surface-backdrop);
+}
+:root[data-theme=dark][data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+  background-color: var(--glass-panel-background, var(--glass-surface-background)) !important;
+  background-image: var(--glass-panel-gradient, none) !important;
+  border-color: var(--glass-edge-border-soft) !important;
+  color: var(--text);
+  box-shadow: var(--glass-edge-shadow), 0 20px 54px rgba(0,0,0,.34);
+}
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before,
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) > * {
+  position: relative;
+  z-index: 1;
+}
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 11%),
+    linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 100%);
+  opacity: 1;
+  mix-blend-mode: normal;
+}
+:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+  background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)) 0%, transparent 13%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .38)),
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)),
+    inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .16));
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+  border-color: var(--glass-edge-border);
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .26)) 0%, transparent 10%),
+    linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .12)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 100%);
+  filter: saturate(1.05) contrast(1.02);
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+  background:
+    radial-gradient(ellipse at 50% -18%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)) 0%, transparent 15%),
+    radial-gradient(ellipse at 101% 12%, rgba(var(--glass-rgb), calc(var(--glass-edge-alpha) * .16)) 0%, transparent 15%),
+    linear-gradient(93deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)) 0%, transparent 9%, transparent 91%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .54)),
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .90)),
+    inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .22)),
+    inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .18));
+}
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+  background-color: var(--glass-panel-background, var(--glass-surface-background-strong));
+  border-color: var(--glass-edge-border-soft);
+}
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 0%, transparent 12%),
+    linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 0%, transparent 7%, transparent 93%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .05)) 100%);
+  filter: saturate(.94) contrast(.98) blur(.25px);
+}
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+  background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 14%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)),
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .62)),
+    inset 0 0 10px rgba(255,255,255,calc(var(--glass-edge-alpha) * .08));
+}
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, .tooltip, [role=menu]) {
+  isolation: isolate;
+  background-color: var(--glass-menu-background, var(--surface));
+  background-image: var(--glass-menu-gradient, var(--theme-gradient));
+  background-clip: padding-box;
+  border-color: var(--glass-edge-border);
+  box-shadow: var(--glass-edge-shadow), 0 18px 44px color-mix(in srgb, var(--text) 20%, transparent);
+  backdrop-filter: var(--glass-menu-backdrop);
+  -webkit-backdrop-filter: var(--glass-menu-backdrop);
+}
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::before,
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::before {
+  background: var(--glass-menu-gradient, none);
+  opacity: .34;
+  mix-blend-mode: screen;
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::before { opacity: .48; }
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::before { opacity: .24; mix-blend-mode: normal; }
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu])::after {
+  background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)), transparent 28%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .56)), inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.00)), inset 0 -10px 24px rgba(15,23,42,calc(var(--glass-edge-alpha) * .16));
+}
+:root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, [role=menu]) > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Card action menus need a readable surface above neighbouring glass cards.
+   Keep the material blur without the legacy full-surface reflection overlay. */
+:root[data-color-theme=glass] body .agents-page .agent-dropdown {
+  background: var(--glass-menu-background, var(--surface));
+  border-color: var(--border);
+  box-shadow: 0 14px 36px var(--select-glass-shadow, rgba(15,23,42,.16));
+  -webkit-backdrop-filter: var(--glass-menu-backdrop);
+  backdrop-filter: var(--glass-menu-backdrop);
+}
+:root[data-color-theme=glass] body .agents-page .agent-dropdown::before {
+  background: none;
+}
+:root[data-color-theme=glass] body .agents-page .agent-dropdown::after {
+  background: none;
+  box-shadow: inset 0 1px 0 var(--select-glass-rim, transparent);
+}
+
+:root[data-color-theme=glass] body :is(.appearance-options, .theme-group-tabs, .custom-pair-editor) {
+  background-color: var(--glass-search-background, var(--surface2)) !important;
+  border-color: var(--glass-edge-border-soft) !important;
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] body :is(.theme-color-item) {
+  background-color: var(--glass-panel-background, var(--glass-surface-background)) !important;
+  background-image: var(--glass-panel-gradient, none) !important;
+  border-color: var(--glass-edge-border-soft) !important;
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .30));
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] body :is(.theme-color-item:hover) {
+  background-color: var(--glass-surface-background-strong, var(--surface2)) !important;
+  border-color: var(--glass-edge-border) !important;
+}
+:root[data-color-theme=glass] body :is(.theme-color-item.active) {
+  background-color: var(--glass-selection-background, var(--primary-light)) !important;
+  border-color: var(--primary) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)), 0 0 0 1px var(--glass-edge-border-soft);
+}
+:root[data-theme=dark][data-color-theme=glass] body :is(.appearance-options, .theme-group-tabs, .custom-pair-editor, .theme-color-item) {
+  color: var(--text);
+}
+:root[data-theme=dark][data-color-theme=glass] body :is(.theme-group-tab.active, .appearance-option.active) {
+  background-color: var(--glass-surface-background-strong) !important;
+  color: var(--navigation-color, var(--primary));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .24));
+}
+:root[data-color-theme=glass] body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea) {
+  background-color: var(--glass-search-background);
+  border-color: var(--glass-edge-border-soft);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .56));
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page], .tag, .admin-badge, .badge-published, .theme-demo-tag) {
+  border-color: var(--glass-edge-border-soft);
+}
+:root[data-color-theme=glass] body :is(input, textarea, select):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+:root body :is(a.work-card, .agent-card, .knowledge-card, .role-preset-card, .preset-card-item):hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
+:root body :is(.user-dropdown .dropdown-item, .agent-dropdown-item, .mention-popover-item):hover { background-color: var(--primary-light); }
+:root body :is(table, [role=table]) { color: var(--text); border-color: var(--border); }
+:root body :is(th, [role=columnheader]) { background-color: var(--surface2); color: var(--text2); border-color: var(--border); }
+:root body td { border-color: var(--border); }
+:root body tbody tr:hover { background-color: var(--primary-light); }
+:root body :is(tr[aria-selected=true], .row-active) { background: var(--navigation-background) !important; }
+:root body :is(.upload-box.dragging, .upload-symbol, .preview-file-icon, .attachment-icon) { background-color: var(--primary-light); color: var(--primary); }
+:root body .preset-avatar-item.active { box-shadow: 0 0 0 3px var(--primary-light); }
+:root body .conv-rename-input { border-color: var(--primary); }
+:root body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay) { background-color: var(--overlay); }
+:root body :is(.btn-danger, .work-error, .overdue) { color: var(--danger); }
+:root body .btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
+:root body :is(.status-preparing, .review, .P0, .P1, .msg-host, .participant-chip.host) { color: var(--warning); background-color: var(--warning-bg); }
+:root body :is(.status-running, .msg-agent, .in_progress) { color: var(--info); background-color: var(--info-bg); }
+:root body :is(.status-active, .completed, .login-notice) { color: var(--success); background-color: var(--success-bg); }
+:root body .login-error { color: var(--danger); background-color: var(--danger-bg); }
+:root body .status-inactive { color: var(--text2); }
+:root body .login-page { background: var(--surface); color: var(--text); }
+:root body .login-story { background-color: var(--surface2); background-image: var(--navigation-background); color: var(--text); }
+:root body .login-story :is(.eyebrow, p, .story-footer) { color: var(--text2); }
+:root body .mention-agent-avatar { background: var(--navigation-background); color: var(--navigation-color); }
+:root body progress { accent-color: var(--primary); }
+:root body :is(.tooltip, [role=tooltip]) { background-color: var(--surface2); color: var(--text); border-color: var(--border); }
+:root body :is(.chips span, .pill) { background-color: var(--primary-light); color: var(--navigation-color); }
+:root body ::selection { background: var(--primary-light); color: var(--text); }
+:root[data-color-theme=skeuo] body ::selection { background: color-mix(in srgb, var(--primary) 28%, white); color: var(--text); }
+:root body :is(.page-content, .chat-messages, .conv-list, .sidebar-nav) { scrollbar-color: var(--border) transparent; }
+:root body :is(.flow-node-avatar:not(.success):not(.timeout), .collab-pending-avatar) { background-color: var(--theme-button-background); background-image: var(--theme-gradient); color: var(--primary-text); }
+:root body .mention-loading-dot { background: var(--primary); }
+@media (prefers-reduced-motion: reduce) {
+  :root body :is(button, input, select, textarea, .card, .tab, .nav-item, .page-tab) { transition: none; }
+}
+
+/* Skeuomorphic (wood) material: carved inputs, raised panels, pressed buttons. */
+
+
+/* Skeuomorphic material: carved inputs, raised panels, pressed buttons.
+   --skeuo-shadow and --skeuo-highlight adapt to each material's palette. */
+
+/* --- Inputs (carved / inset) --- */
+:root[data-color-theme=skeuo] body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea, select) {
+  background-color: light-dark(#F6EDDE, #402F20);
+  border-color: light-dark(#D8C6AC, #241A10);
+  box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5));
+}
+:root[data-color-theme=skeuo] body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea, select):focus-visible {
+  border-color: var(--primary);
+  box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), 0 0 0 1px var(--primary);
+}
+:root[data-color-theme=skeuo] body :is(input, textarea, select) { --tw-shadow: none; }
+
+/* --- Primary buttons (raised emboss, pressed凹) --- */
+:root[data-color-theme=skeuo] body :is(.btn-primary, button.primary, .login-submit, .chat-send, .btn-create, .agent-btn-chat, .mem-edit-save, .validity-dialog .save, .upload-box .choose) {
+  border-top: 1px solid var(--skeuo-highlight, rgba(255,255,255,.38));
+  border-left: 1px solid var(--skeuo-highlight, rgba(255,255,255,.18));
+  border-bottom: 1px solid var(--skeuo-shadow, rgba(61,42,24,.30));
+  border-right: 1px solid var(--skeuo-shadow, rgba(61,42,24,.15));
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.34)), inset 1px 0 0 var(--skeuo-highlight, rgba(255,255,255,.16)), inset 0 -2px 3px var(--skeuo-shadow, rgba(61,42,24,.32)), 0 3px 6px var(--skeuo-shadow, rgba(15,23,42,.26)), 0 1px 2px var(--skeuo-shadow, rgba(15,23,42,.2));
+}
+:root[data-color-theme=skeuo] body :is(.btn-primary, button.primary, .login-submit, .chat-send, .btn-create, .agent-btn-chat, .mem-edit-save, .validity-dialog .save, .upload-box .choose):active:not(:disabled) {
+  border-top-color: var(--skeuo-shadow, rgba(61,42,24,.30));
+  border-left-color: var(--skeuo-shadow, rgba(61,42,24,.15));
+  border-bottom-color: var(--skeuo-highlight, rgba(255,255,255,.18));
+  border-right-color: var(--skeuo-highlight, rgba(255,255,255,.10));
+  box-shadow: inset 0 3px 6px var(--skeuo-shadow, rgba(0,0,0,.45)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.16));
+  transform: translateY(1px);
+}
+
+/* --- Ghost / outline / secondary buttons --- */
+:root[data-color-theme=skeuo] body :is(.btn-ghost, .btn-outline, .btn-secondary, .pagination button) {
+  border-top: 1px solid var(--skeuo-highlight, rgba(255,255,255,.22));
+  border-left: 1px solid var(--skeuo-highlight, rgba(255,255,255,.10));
+  border-bottom: 1px solid var(--skeuo-shadow, rgba(61,42,24,.18));
+  border-right: 1px solid var(--skeuo-shadow, rgba(61,42,24,.10));
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.35)), 0 1px 3px var(--skeuo-shadow, rgba(61,42,24,.18));
+}
+:root[data-color-theme=skeuo] body :is(.btn-ghost, .btn-outline, .btn-secondary, .pagination button):active:not(:disabled) {
+  box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.3));
+  transform: translateY(1px);
+}
+
+/* --- Cards / panels / modals (raised panel) --- */
+:root[data-color-theme=skeuo] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .user-dropdown, .agent-dropdown, .mention-popover, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog) {
+  border-top: 1px solid var(--skeuo-highlight, rgba(255,255,255,.25));
+  border-bottom: 1px solid var(--skeuo-shadow, rgba(61,42,24,.16));
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.4)), 0 2px 7px var(--skeuo-shadow, rgba(61,42,24,.16));
+}
+:root[data-color-theme=skeuo] body :is(a.work-card, .agent-card, .knowledge-card, .role-preset-card, .preset-card-item):hover {
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.4)), 0 6px 14px var(--skeuo-shadow, rgba(61,42,24,.22));
+  transform: translateY(-1px);
+}
+
+/* --- Tabs / nav active --- */
+:root[data-color-theme=skeuo] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
+  border-bottom: 2px solid var(--primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)), 0 2px 5px var(--skeuo-shadow, rgba(61,42,24,.24));
+}
+
+/* --- Tags / badges --- */
+:root[data-color-theme=skeuo] body :is(.tag, .admin-badge, .badge-published, .theme-demo-tag) {
+  border-color: var(--primary);
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.4)), 0 1px 3px var(--skeuo-shadow, rgba(61,42,24,.18));
+}
+
+/* --- Range slider (knob with material reflection) --- */
+:root[data-color-theme=skeuo] body input[type=range] { box-shadow: none; }
+:root[data-color-theme=skeuo] body input[type=range]::-webkit-slider-runnable-track {
+  box-shadow: inset 0 2px 3px var(--skeuo-shadow, rgba(61,42,24,.32)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.4));
+}
+:root[data-color-theme=skeuo] body input[type=range]::-moz-range-track {
+  box-shadow: inset 0 2px 3px var(--skeuo-shadow, rgba(61,42,24,.32)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.4));
+}
+:root[data-color-theme=skeuo] body input[type=range]::-webkit-slider-thumb {
+  border-color: var(--skeuo-shadow, rgba(61,42,24,.5));
+  background: radial-gradient(circle at 32% 28%, var(--skeuo-highlight, rgba(255,255,255,.42)), var(--primary) 72%);
+  box-shadow: 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.38)), inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.42));
+}
+:root[data-color-theme=skeuo] body input[type=range]::-moz-range-thumb {
+  border-color: var(--skeuo-shadow, rgba(61,42,24,.5));
+  background: radial-gradient(circle at 32% 28%, var(--skeuo-highlight, rgba(255,255,255,.42)), var(--primary) 72%);
+  box-shadow: 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.38)), inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.42));
+}
+
+/* --- Table headers --- */
+:root[data-color-theme=skeuo] body :is(th, [role=columnheader]) {
+  background-color: light-dark(#EFE2CB, #3A2B1D);
+  border-bottom: 2px solid var(--skeuo-shadow, rgba(61,42,24,.20));
+}
+
+/* --- Progress / track fills --- */
+:root[data-color-theme=skeuo] body :is(.capability-switch input:checked + .capability-switch-track, .upload-progress-fill, .total-track i, .file-track i) {
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.35)), inset 0 -1px 2px rgba(0,0,0,.28);
+}
+
+/* --- Select dropdown arrow region --- */
+:root[data-color-theme=skeuo] body select {
+  background-image: linear-gradient(to right, transparent 85%, var(--skeuo-shadow, rgba(61,42,24,.12)) 85%);
+}
+
+/* Knowledge dialogs: persistent field borders and an opaque writing surface. */
+:root body .resource-editor .form-input {
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  box-shadow: none;
+}
+:root[data-color-theme=glass] body .resource-editor .form-input {
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+}
+:root body .resource-editor .form-input:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+:root body .resource-editor .form-input[readonly] { background-color: var(--surface2); }
+:root body .textdoc-dialog :is(.markdown-editor, .toastui-editor-defaultUI, .toastui-editor-main, .toastui-editor-ww-container, .toastui-editor-md-container, .toastui-editor-md-preview, .plain-editor) {
+  background: #fff;
+  color: #1f2937;
+  color-scheme: light;
+}
+:root body .textdoc-dialog :is(.toastui-editor-contents, .toastui-editor-contents p, .toastui-editor-contents h1, .toastui-editor-contents h2, .toastui-editor-contents h3, .toastui-editor-contents h4, .toastui-editor-contents h5, .toastui-editor-contents h6) { color: #1f2937; }
+:root body .textdoc-dialog textarea.plain-editor { background: #fff !important; color: #1f2937 !important; }
+
+:root body .textdoc-dialog :is(.toastui-editor-toolbar, .toastui-editor-defaultUI-toolbar) {
+  background: #f8fafc;
+  border-color: #d1d5db;
+}

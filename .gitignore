@@ -17,3 +17,6 @@ langgraph.json
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
+
+# Runtime document lock files
+data/documents/.locks/

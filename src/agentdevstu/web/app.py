@@ -5,11 +5,12 @@ import sys
 import re
 import traceback
 import uuid
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse as _BaseFileResponse
@@ -32,15 +33,12 @@ from agentdevstu.api.router import api_router
 from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[3]
-app = FastAPI(title="AgentDevStu", version="0.1.0")
+from agentdevstu.security.http import SecurityMiddleware, authorize_request
+app = FastAPI(title="AgentDevStu", version="0.1.0", dependencies=[Depends(authorize_request)])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from agentdevstu.usage.context import UsageMiddleware
+app.add_middleware(UsageMiddleware)
+app.add_middleware(SecurityMiddleware)
 
 app.include_router(api_router)
 
@@ -66,33 +64,48 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 load_env()
 
 
+@app.on_event("startup")
+async def start_usage_collector():
+    from agentdevstu.usage.collector import start
+    await start()
+
+
+@app.on_event("shutdown")
+async def stop_usage_collector():
+    from agentdevstu.usage.collector import stop
+    await stop()
+
+
+@app.on_event("startup")
+async def recover_knowledge_jobs() -> None:
+    """Resume PDF jobs lost with the previous process."""
+    try:
+        from agentdevstu.api import knowledge
+        knowledge._recovery_task = asyncio.create_task(knowledge.recover_pdf_jobs())
+        def report_failure(task):
+            if not task.cancelled() and task.exception():
+                print(f"[PDF] Recovery failed: {task.exception()}", file=sys.stderr)
+        knowledge._recovery_task.add_done_callback(report_failure)
+    except Exception as error:
+        # Startup must remain available even when the database is temporarily down.
+        print(f"[PDF] Startup recovery failed: {type(error).__name__}: {error}", file=sys.stderr)
+
+
+@app.on_event("shutdown")
+async def stop_knowledge_recovery() -> None:
+    from agentdevstu.api import knowledge
+    task = knowledge._recovery_task
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Create tables on startup
 # ---------------------------------------------------------------------------
-@app.on_event("startup")
-async def create_tables():
-    from agentdevstu.db.engine import engine
-    from agentdevstu.db.models import Base
-    from agentdevstu.db import meetings as _meeting_models  # noqa: F401
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        # Add new columns for existing tables
-        await conn.execute(
-            __import__("sqlalchemy").text(
-                "ALTER TABLE t_workspaces ADD COLUMN IF NOT EXISTS default_model_provider VARCHAR(128)"
-            )
-        )
-        await conn.execute(
-            __import__("sqlalchemy").text(
-                "ALTER TABLE t_agents ADD COLUMN IF NOT EXISTS agent_type VARCHAR(32) DEFAULT 'llm'"
-            )
-        )
-        await conn.execute(
-            __import__("sqlalchemy").text(
-                "ALTER TABLE t_agents ADD COLUMN IF NOT EXISTS proxy_config JSONB DEFAULT '{}'"
-            )
-        )
 
 # ---------------------------------------------------------------------------
 # In-memory session store
@@ -172,6 +185,10 @@ class DefaultPayload(BaseModel):
     default: str
 
 
+class ConversationDebugPayload(BaseModel):
+    enabled: bool
+
+
 @app.get("/api/config/providers")
 async def list_provider_names() -> dict[str, Any]:
     """Return provider names and models for model selectors."""
@@ -200,7 +217,14 @@ async def get_config() -> dict[str, Any]:
                 k, v = line.split("=", 1)
                 env_vars[k.strip()] = v.strip()
 
-    result: dict[str, Any] = {"default": default, "providers": {}}
+    result: dict[str, Any] = {
+        "default": default,
+        "default_provider": default,
+        "providers": {},
+        "conversation_debug_enabled": bool(
+            cfg.get("features", {}).get("conversation_debug_enabled", False)
+        ),
+    }
     for name, prov in providers.items():
         api_key_env = prov.get("api_key", "")
         resolved_key = ""
@@ -220,7 +244,39 @@ async def get_config() -> dict[str, Any]:
             "max_tokens": prov.get("max_tokens", 4096),
         }
 
+    # Add embedding config
+    embedding_provider = cfg.get("llm", {}).get("embedding_provider", "")
+    embedding_model = cfg.get("llm", {}).get("embedding_model", "text-embedding-3-small")
+    result["embedding_provider"] = embedding_provider
+    result["embedding_model"] = embedding_model
+
     return result
+
+
+@app.post("/api/config/conversation-debug")
+async def save_conversation_debug_config(payload: ConversationDebugPayload) -> dict[str, Any]:
+    """Enable or disable collection and display of conversation debug traces."""
+    cfg = _load_config()
+    features = cfg.setdefault("features", {})
+    features["conversation_debug_enabled"] = payload.enabled
+    _save_config(cfg)
+    return {"status": "ok", "enabled": payload.enabled}
+
+
+class EmbeddingPayload(BaseModel):
+    provider: str = ""
+    model: str = "text-embedding-3-small"
+
+
+@app.post("/api/config/embedding")
+async def save_embedding_config(payload: EmbeddingPayload) -> dict[str, Any]:
+    """Save embedding model configuration."""
+    cfg = _load_config()
+    llm = cfg.setdefault("llm", {})
+    llm["embedding_provider"] = payload.provider
+    llm["embedding_model"] = payload.model
+    _save_config(cfg)
+    return {"status": "ok", "provider": payload.provider, "model": payload.model}
 
 
 @app.post("/api/config/provider")
@@ -252,16 +308,6 @@ async def save_provider(payload: ProviderPayload) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Create tables on startup
 # ---------------------------------------------------------------------------
-@app.on_event("startup")
-async def create_tables():
-    from agentdevstu.db.engine import engine
-    from agentdevstu.db.models import Base
-    from agentdevstu.db import meetings as _meeting_models  # noqa: F401
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-    return {"status": "ok"}
-
 
 @app.post("/api/config/default")
 async def set_default_provider(payload: DefaultPayload) -> dict[str, Any]:
@@ -341,6 +387,22 @@ async def test_provider(payload: TestProviderPayload) -> dict[str, Any]:
     elif api_key_env:
         resolved_key = api_key_env
 
+    from agentdevstu.usage.context import annotate_usage
+    from agentdevstu.usage.collector import UsageCallback
+    from types import SimpleNamespace
+    annotate_usage(action="provider_test")
+    audit = UsageCallback(name, kind, model)
+    audit_id = uuid.uuid4()
+    if kind in ("openai", "anthropic", "ollama"):
+        audit.on_chat_model_start(None, None, run_id=audit_id)
+
+    def record_response(data):
+        metadata = {"usage": data.get("usage"), "model": data.get("model"), "id": data.get("id")}
+        if kind == "ollama":
+            metadata["usage"] = {"input_tokens": data.get("prompt_eval_count"), "output_tokens": data.get("eval_count")}
+        message = SimpleNamespace(response_metadata=metadata)
+        audit.finish(audit_id, SimpleNamespace(generations=[[SimpleNamespace(message=message)]]))
+
     try:
         if kind == "openai":
             import httpx
@@ -357,6 +419,7 @@ async def test_provider(payload: TestProviderPayload) -> dict[str, Any]:
                 resp = await client.post(url, json=body, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
+                record_response(data)
                 reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"status": "ok", "message": f"连接成功！模型回复: {reply[:100]}"}
 
@@ -377,6 +440,7 @@ async def test_provider(payload: TestProviderPayload) -> dict[str, Any]:
                 resp = await client.post(url, json=body, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
+                record_response(data)
                 reply = data.get("content", [{}])[0].get("text", "")
                 return {"status": "ok", "message": f"连接成功！模型回复: {reply[:100]}"}
 
@@ -392,13 +456,18 @@ async def test_provider(payload: TestProviderPayload) -> dict[str, Any]:
                 resp = await client.post(url, json=body)
                 resp.raise_for_status()
                 data = resp.json()
+                record_response(data)
                 reply = data.get("message", {}).get("content", "")
                 return {"status": "ok", "message": f"连接成功！模型回复: {reply[:100]}"}
 
         else:
             return {"status": "error", "message": f"不支持的供应商类型: {kind}"}
 
+    except asyncio.CancelledError as e:
+        audit.on_llm_error(e, run_id=audit_id)
+        raise
     except Exception as e:
+        audit.on_llm_error(e, run_id=audit_id)
         return {"status": "error", "message": f"连接失败: {str(e)}"}
 
 
@@ -551,7 +620,7 @@ async def serve_vue(request: Request, full_path: str):
     from fastapi.responses import FileResponse
     # Check if it's a static file in dist
     file_path = DIST_DIR / full_path
-    if full_path and file_path.exists() and file_path.is_file():
+    if full_path and file_path.resolve().is_relative_to(DIST_DIR.resolve()) and file_path.exists() and file_path.is_file():
         return FileResponse(file_path)
     # Otherwise serve index.html for SPA routing (no-cache for SPA)
     index_path = DIST_DIR / "index.html"
