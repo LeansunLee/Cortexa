@@ -181,7 +181,7 @@ async def update_memory(memory_id: uuid.UUID, payload: MemoryUpdate, db: AsyncSe
     if payload.expected_revision != mem.revision:
         raise HTTPException(409, "记忆已变化，请刷新")
     if payload.content is not None or payload.type is not None:
-        raise HTTPException(409, "认知内容或类别变化请使用纠正记忆")
+        raise HTTPException(409, "记忆内容或类别变化请使用纠正记忆")
     if payload.status:
         await change_state(db, mem, payload.status, expected_revision=payload.expected_revision)
     if payload.importance is not None:
@@ -375,7 +375,7 @@ async def resolve_issue(db, agent_id, issue_id, payload):
         ).all()
     )
     if not memories or any(payload.revisions.get(str(m.id)) != m.revision for m in memories):
-        raise HTTPException(409, "认知已变化，请刷新后处理")
+        raise HTTPException(409, "记忆已变化，请刷新后处理")
     if any(m.metadata_json.get("content_purged") for m in memories):
         raise HTTPException(409, "来源正文已删除，不能恢复")
     if payload.action == "confirm" and obj.issue_type == "conflict":
@@ -403,7 +403,7 @@ async def resolve_issue(db, agent_id, issue_id, payload):
             except ValueError:
                 raise HTTPException(422, "有效时间区间不正确")
             if not validated.valid_from or not validated.valid_to:
-                raise HTTPException(422, "每条认知需明确有效区间")
+                raise HTTPException(422, "每条记忆需明确有效区间")
             payload.periods[str(m.id)] = {"valid_from": validated.valid_from, "valid_to": validated.valid_to}
         periods = [(payload.periods[str(m.id)]["valid_from"], payload.periods[str(m.id)]["valid_to"]) for m in memories]
         if len(periods) == 2 and periods[0][0] < periods[1][1] and periods[1][0] < periods[0][1]:

@@ -57,7 +57,7 @@
       </section>
       <section v-if="tab === 'memory'" class="resource-panel">
         <AgentMemory v-if="can('agent.operate')" :agent-id="agentId" />
-        <p v-else class="hint">需要 Agent 运维权限才能管理认知；使用 Agent 时会自动召回授权范围内的记忆。</p>
+        <p v-else class="hint">需要 Agent 运维权限才能管理记忆；使用 Agent 时会自动召回授权范围内的记忆。</p>
       </section>
     </template>
     <CreateAgentKnowledgeDialog v-if="showCreateKnowledge" :agent-id="agentId" :management="management" @close="showCreateKnowledge = false" @created="knowledgeCreated" />

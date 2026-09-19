@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, unref, watch } from 'vue'
 import { ChevronDown, Search } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -66,6 +66,7 @@ const props = defineProps({
   ariaLabel: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue', 'change'])
+const pageTabActive = inject('pageTabActive', true)
 
 const root = ref(null)
 const trigger = ref(null)
@@ -144,6 +145,7 @@ document.addEventListener('pointerdown', outside)
 window.addEventListener('resize', reposition)
 window.addEventListener('scroll', reposition, true)
 watch(() => props.disabled, value => { if (value) hide() })
+watch(() => unref(pageTabActive), value => { if (!value) hide() })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', outside)
   window.removeEventListener('resize', reposition)

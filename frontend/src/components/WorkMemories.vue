@@ -1,7 +1,7 @@
 <template>
   <section class="work-panel memory-panel">
     <div class="section-heading"><h3>沉淀 Agent 记忆 <span class="count">{{ saved.length }}</span></h3><button :disabled="busy" @click="add">＋ 添加一条</button></div>
-    <p class="hint">验收通过不会自动生成记忆。请人工选择目标 Agent 和最小必要认知；该 Agent 的所有使用者均可使用。</p>
+    <p class="hint">验收通过不会自动生成记忆。请人工选择目标 Agent 和最小必要记忆；该 Agent 的所有使用者均可使用。</p>
     <p v-if="error" class="work-error" role="alert">{{ error }}</p><p v-if="notice" class="hint" role="status">{{ notice }}</p>
     <form @submit.prevent="save">
       <fieldset v-for="(entry,index) in entries" :key="entry.key" class="memory-entry" :disabled="busy || entry.saved">
@@ -20,7 +20,7 @@ import { computed, ref } from 'vue'
 import { workApi } from '../api'
 const props = defineProps({workId:String, workTitle:String, agents:Array, events:Array})
 const emit = defineEmits(['changed'])
-const outcomes={created:'已形成认知',merged:'已合并依据',existing:'已处理，无需重复',candidate:'待核验',conflict:'存在冲突，请在 Agent 运维中处理',rejected:'未通过长期记忆校验',superseded:'已更新认知'}
+const outcomes={created:'已形成记忆',merged:'已合并依据',existing:'已处理，无需重复',candidate:'待核验',conflict:'存在冲突，请在 Agent 运维中处理',rejected:'未通过长期记忆校验',superseded:'已更新记忆'}
 const types = {semantic:'事实',episodic:'事件',focus:'关注'}
 let key = 0
 const entries = ref([]), busy = ref(false), error = ref(''), notice = ref('')

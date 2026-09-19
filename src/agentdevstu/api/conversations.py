@@ -1245,7 +1245,7 @@ async def create_message_stream(
                     memory_started = time.time()
                     debug_event = await _debug(
                         "memory", "开始检索记忆", status="running",
-                        summary="检索当前 Agent 的长期认知",
+                        summary="检索当前 Agent 的长期记忆",
                         detail={"query": payload.content, "workspace_id": str(conv.workspace_id), "agent_id": str(agent.id), "top_k": 5},
                     )
                     if debug_event:

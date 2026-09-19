@@ -87,7 +87,7 @@ async def block_records(db, ids, *, purge, reason):
         if purge:
             meta["content_purged"] = True
             values.update(
-                content="[来源已删除，认知正文已清除]",
+                content="[来源已删除，记忆正文已清除]",
                 status="archived",
                 search_terms=[],
                 normalized_hash=None,
