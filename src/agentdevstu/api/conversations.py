@@ -218,7 +218,17 @@ async def list_messages(
         .where(ConversationMessage.conversation_id == conv_id)
         .order_by(ConversationMessage.created_at)
     )
-    return list(result.scalars().all())
+    messages=list(result.scalars().all())
+    from agentdevstu.security.access import actor_required
+    if not actor_required().has('agent.operate'):
+        from sqlalchemy.orm.attributes import set_committed_value
+        for msg in messages:
+            meta=dict(msg.metadata_json or {})
+            meta.pop('memory_trace',None)
+            if isinstance(meta.get('debug_trace'),list):
+                meta['debug_trace']=[item for item in meta['debug_trace'] if item.get('stage')!='memory']
+            set_committed_value(msg,'metadata_json',meta)
+    return messages
 
 
 @router.post("/{conv_id}/messages", response_model=ConversationMessageOut, status_code=201)
@@ -412,6 +422,8 @@ async def create_message(
 
     await db.flush()
     await db.refresh(msg)
+    from agentdevstu.memory.integration import register_extraction
+    await register_extraction(db,conv_id,msg.id)
     return msg
 
 
@@ -423,6 +435,8 @@ async def delete_conversation(
     conv = await db.get(Conversation, conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    from agentdevstu.memory.lifecycle import source_deleted
+    await source_deleted(db,"conversation",conv.id)
     await db.delete(conv)
     # Complete deletion before a 204 lets the client reload the list.
     await db.commit()
@@ -824,6 +838,8 @@ async def regenerate_message(
     # Delete the last assistant message
     for msg in msgs:
         if msg.role == "assistant":
+            from agentdevstu.memory.lifecycle import source_deleted
+            await source_deleted(db,"conversation",conv_id,message_id=msg.id)
             await db.delete(msg)
 
     # Find the last user message content
@@ -912,6 +928,11 @@ async def regenerate_message(
     await db.refresh(assistant_msg)
     await db.commit()
 
+    from agentdevstu.memory.integration import register_extraction
+    for user_message in msgs:
+        if user_message.role == "user":
+            await register_extraction(db,conv_id,user_message.id)
+            break
     return assistant_msg
 
 
@@ -925,6 +946,8 @@ async def delete_message(
     msg = await db.get(ConversationMessage, msg_id)
     if not msg or msg.conversation_id != conv_id:
         raise HTTPException(status_code=404, detail="Message not found")
+    from agentdevstu.memory.lifecycle import source_deleted
+    await source_deleted(db,"conversation",conv_id,message_id=msg_id)
     await db.delete(msg)
     await db.flush()
 
@@ -1101,6 +1124,8 @@ async def create_message_stream(
                     await db.refresh(assistant_msg)
 
                     await db.commit()
+                    from agentdevstu.memory.integration import register_extraction
+                    await register_extraction(db,conv_id,user_msg.id)
                     proxy_status = "proxy_done" if result["success"] else ("proxy_input_required" if result.get("requires_input") else "proxy_failed")
                     proxy_message = "需要补充参数" if result.get("requires_input") else ("完成" if result["success"] else "失败")
                     yield await _status(proxy_status, message=f"Proxy 参数解析{proxy_message} ({duration_ms}ms)")
@@ -1220,7 +1245,7 @@ async def create_message_stream(
                     memory_started = time.time()
                     debug_event = await _debug(
                         "memory", "开始检索记忆", status="running",
-                        summary="检索 Agent 私有记忆与空间级记忆",
+                        summary="检索当前 Agent 的长期认知",
                         detail={"query": payload.content, "workspace_id": str(conv.workspace_id), "agent_id": str(agent.id), "top_k": 5},
                     )
                     if debug_event:
@@ -1243,14 +1268,7 @@ async def create_message_stream(
                             debug_event = await _debug(
                                 "memory", "记忆检索完成", status="success",
                                 summary=f"命中 {len(relevant_memories)} 条记忆 · {round((time.time() - memory_started) * 1000)}ms",
-                                detail={
-                                    "memories": [{
-                                        "id": str(memory.id), "type": memory.type, "content": memory.content,
-                                        "importance": memory.importance, "confidence": memory.confidence,
-                                        "scope": "workspace" if memory.agent_id is None else "agent",
-                                    } for memory in relevant_memories],
-                                    "injected_context": memory_text,
-                                },
+                                detail={"memory_trace": __import__('agentdevstu.memory.retrieval',fromlist=['last_trace']).last_trace.get()} if __import__('agentdevstu.security.access',fromlist=['actor_required']).actor_required().has('agent.operate') else {"count":len(relevant_memories)},
                             )
                         else:
                             yield await _status("memory_done", message="ℹ️ 暂无相关记忆")
@@ -1987,6 +2005,10 @@ async def create_message_stream(
                     **usage.stats(),
                     "model": agent.model,
                 }
+                from agentdevstu.memory.retrieval import last_trace
+                trace=last_trace.get()
+                if trace and trace.get("agent_id")==str(agent.id):
+                    meta["memory_trace"]=trace
                 if debug_enabled:
                     meta["debug_trace"] = debug_trace
                 assistant_msg = ConversationMessage(
@@ -1999,44 +2021,11 @@ async def create_message_stream(
                 await db.flush()
                 await db.commit()
                 reply_saved = True
+                from agentdevstu.memory.integration import register_extraction
+                await register_extraction(db,conv_id,user_msg.id)
 
                 yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': debug_trace} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
-                # ── Phase 6: Memory extraction ──
-                try:
-                    recent_for_extract = [{"role": m.role, "content": history_text(m.content)[:500]} for m in history_msgs[-8:]]
-                    recent_for_extract.append({"role": "user", "content": payload.content[:500]})
-                    recent_for_extract.append({"role": "assistant", "content": full_reply[:500]})
-
-                    candidates = await asyncio.wait_for(
-                        extract_memories(
-                            agent=agent,
-                            conversation_id=conv_id,
-                            current_message=payload.content,
-                            recent_messages=recent_for_extract,
-                            db=db,
-                        ),
-                        timeout=40
-                    )
-                    stored_count = 0
-                    for cand in candidates:
-                        await store_memory(
-                            workspace_id=conv.workspace_id,
-                            agent_id=agent.id,
-                            memory_data=cand,
-                            source_type="conversation",
-                            source_id=conv_id,
-                            db=db,
-                        )
-                        stored_count += 1
-                    if stored_count > 0:
-                        print(f"[MEMORY] Stored {stored_count} memories from conv {conv_id}", flush=True)
-                    else:
-                        print(f"[MEMORY] No memories extracted from conv {conv_id}", flush=True)
-                except Exception as e:
-                    print(f"[MEMORY] Extraction failed: {type(e).__name__}: {e}", flush=True)
-
-                await db.commit()
 
             except asyncio.CancelledError:
                 if full_reply and not reply_saved:
@@ -2102,3 +2091,17 @@ def _build_tool_usage_instructions(cap_list: list[dict], business_tools: list) -
 
 补充提示词不能增加 SQL 未提供的查询能力，也不能绕过权限及执行限制。
 """
+
+
+@router.post('/{conv_id}/messages/{message_id}/memory-retry',status_code=202)
+async def retry_memory_extraction(conv_id:uuid.UUID,message_id:uuid.UUID,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.memory.integration import register_extraction
+    from agentdevstu.security.access import require_agent_use
+    conv=await db.get(Conversation,conv_id)
+    msg=await db.get(ConversationMessage,message_id)
+    if not conv or not msg or msg.conversation_id!=conv.id:
+        raise HTTPException(404,'对话消息不存在或无权访问')
+    await require_agent_use(db,conv.agent_id)
+    if msg.role!='user':raise HTTPException(422,'只能重新提取用户消息')
+    await register_extraction(db,conv.id,msg.id)
+    return {'status':'registered'}

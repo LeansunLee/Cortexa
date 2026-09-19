@@ -39,6 +39,16 @@
             </div>
             <div class="event-title">{{ entry.title }}</div>
             <div v-if="entry.summary" class="event-summary">{{ entry.summary }}</div>
+            <div v-if="entry.detail?.memory_trace" class="memory-trace">
+              <p>候选 {{ entry.detail.memory_trace.candidate_count || 0 }} 条 · 注入上下文 {{ entry.detail.memory_trace.injected_ids?.length || 0 }} 条 · {{ entry.detail.memory_trace.duration_ms || 0 }} ms</p>
+              <p v-if="entry.detail.memory_trace.time?.historical">历史时间查询：{{ entry.detail.memory_trace.time.from }} 至 {{ entry.detail.memory_trace.time.to }}</p>
+              <article v-for="m in entry.detail.memory_trace.candidates || []" :key="m.memory_id">
+                <strong>{{ m.injected ? '已进入上下文' : '未注入' }} · {{ m.category }} · {{ m.kind || '未知类型' }}</strong>
+                <small>{{ m.memory_id }}</small>
+                <span>相关性 {{ m.relevance }} · 可信度 {{ m.confidence }} · 得分 {{ m.final_score }}</span>
+                <span v-if="m.filter_reason">筛除原因：{{ m.filter_reason }}</span>
+              </article>
+            </div>
             <details v-if="hasDetail(entry.detail)" class="event-detail">
               <summary>查看传递内容</summary>
               <pre>{{ formatDetail(entry.detail) }}</pre>
@@ -122,6 +132,9 @@ const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { ho
 .event-heading time { color: var(--text3); font-size: 10px; font-variant-numeric: tabular-nums; }
 .event-title { margin-top: 5px; color: var(--text); font-size: 12px; font-weight: 600; }
 .event-summary { margin-top: 4px; color: var(--text2); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.memory-trace {font-size:11px;overflow-wrap:anywhere;color:var(--text2)}
+.memory-trace article{display:grid;gap:4px;border-top:1px solid var(--border);padding:8px 0}
+.memory-trace small{color:var(--text3)}
 .event-detail { margin-top: 7px; }
 .event-detail summary { color: var(--text3); cursor: pointer; font-size: 11px; }
 .event-detail pre { max-height: 320px; overflow: auto; margin: 7px 0 0; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text2); font: 10px/1.55 'SFMono-Regular', Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

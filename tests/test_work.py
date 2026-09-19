@@ -293,7 +293,8 @@ async def integration(tmp_path, monkeypatch):
             url + "/memory",
             json={"agent_id": str(agent.id), "content": "主要竞品价格集中在100元", "type": "semantic"},
         )
-        assert any(x["id"] == mem["memory_id"] for x in await call(a, "GET", "/api/memories"))
+        assert mem["memory_id"] and mem["outcome"] in {"created","candidate","merged"}
+        await call(a,"GET","/api/memories",403)
         for kind in ("episodic", "focus"):
             body = {"agent_id": str(agent.id), "content": "持续关注竞品变化" + kind, "type": kind}
             first = await call(a, "POST", url + "/memory", json=body)

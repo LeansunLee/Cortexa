@@ -34,6 +34,8 @@ class ExtractInput(BaseModel):
 
 
 class MemoryInput(BaseModel):
+    memory_kind: Literal["fact", "preference", "relationship", "decision", "event", "observation", "outcome", "concern", "other"] | None = None
+    deliverable_id: uuid.UUID | None = None
     agent_id: uuid.UUID
     type: Literal["semantic", "episodic", "focus"] = "semantic"
     content: str = Field(min_length=1, max_length=2000)

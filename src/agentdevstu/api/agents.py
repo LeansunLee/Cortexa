@@ -198,6 +198,9 @@ async def delete_agent(
     agent = await db.get(Agent, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    from agentdevstu.db.models import Memory
+    if await db.scalar(select(Memory.__table__.c.id).where(Memory.__table__.c.agent_id==agent.id).limit(1)):
+        raise HTTPException(409,"此 Agent 有长期记忆，请先明确清理其记忆及派生关系")
     await db.delete(agent)
 
 

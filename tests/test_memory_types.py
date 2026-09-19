@@ -24,14 +24,17 @@ def test_focus_accepts_importance_boundaries(importance):
     assert payload.importance == importance
 
 
-def test_edit_type_and_importance_including_zero():
-    memory = SimpleNamespace(type="semantic", content="旧内容", importance=0.7)
-    db = SimpleNamespace(get=AsyncMock(return_value=memory), flush=AsyncMock(), refresh=AsyncMock())
-    result = asyncio.run(update_memory(uuid.uuid4(), MemoryUpdate(type="focus", importance=0), db))
-    assert result.type == "focus"
-    assert result.importance == 0
-    assert result.content == "旧内容"
-    db.flush.assert_awaited_once()
+def test_edit_requires_correction_and_preserves_zero_importance(monkeypatch):
+    from agentdevstu.api import memories as api
+    from fastapi import HTTPException
+    memory = SimpleNamespace(id=uuid.uuid4(),type="semantic",content="旧内容",importance=.7,revision=1,metadata_json={},source_type='manual')
+    monkeypatch.setattr(api,'memory_access',AsyncMock(return_value=memory))
+    monkeypatch.setattr(api,'event',AsyncMock())
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(update_memory(memory.id,MemoryUpdate(type='focus',expected_revision=1),None))
+    assert error.value.status_code==409
+    result=asyncio.run(update_memory(memory.id,MemoryUpdate(importance=0,expected_revision=1),None))
+    assert result['importance']==0 and result['content']=='旧内容' and result['revision']==2
 
 
 def test_all_memory_labels_in_prompt():

@@ -177,6 +177,7 @@ async def execute_handoff(
 
         # 使用独立的 LLM session 执行（不依赖源 Agent 的 session）
         search_sources = []
+        memory_state = {}
         result_content = await asyncio.wait_for(
             _execute_target_agent(
                 target_agent=target_agent,
@@ -186,6 +187,7 @@ async def execute_handoff(
                 on_token=on_token,
                 usage=usage,
                 sources=search_sources,
+                memory_state=memory_state,
             ),
             timeout=timeout_seconds,
         )
@@ -210,6 +212,7 @@ async def execute_handoff(
             collaboration.status = "success"
             collaboration.result_summary = handoff_result.summary
             collaboration.result_content = handoff_result.result
+            collaboration.result_sources = {"items":search_sources,"memory_trace":memory_state.get("trace")}
             collaboration.confidence = handoff_result.confidence
             collaboration.duration_ms = duration_ms
             collaboration.completed_at = datetime.now(timezone.utc)
@@ -322,6 +325,7 @@ async def _execute_target_agent(
     on_token=None,
     usage=None,
     sources=None,
+    memory_state=None,
 ) -> str:
     """
     使用目标 Agent 的 LLM 配置独立执行任务。
@@ -390,6 +394,7 @@ async def _execute_target_agent(
     # 在独立 session 中获取知识库和数据能力
     business_tools = []
     data_tools = []
+    memory_ids = set()
     try:
         async with async_session_factory() as kb_db:
             from agentdevstu.agents.context import organization_reference
@@ -410,6 +415,12 @@ async def _execute_target_agent(
                 ), timeout=5) if plan.memory else []
                 if memories:
                     messages.append(reference_message("相关记忆", format_memories_for_prompt(memories)))
+                    memory_ids = {str(m.id) for m in memories}
+                    messages[0]["content"] += "\n实际依据某条记忆回答时，在结论旁标注 [[memory:记忆UUID]]；未使用的不要标注。"
+                if memory_state is not None:
+                    from agentdevstu.memory.retrieval import last_trace
+                    memory_state['trace'] = last_trace.get()
+                await kb_db.commit()
             except Exception as error:
                 print(f"[COLLAB] Memory retrieval failed: {error}", flush=True)
 
@@ -503,7 +514,12 @@ async def _execute_target_agent(
         response = await call_model(llm)
         content = response.content if hasattr(response, "content") else str(response)
 
-    return "".join(streamed_content) if on_token is not None else content
+    final_content = "".join(streamed_content) if on_token is not None else content
+    if sources is not None and memory_ids:
+        import re
+        cited=set(re.findall(r"\[\[memory:([0-9a-fA-F-]{36})\]\]", final_content)) & memory_ids
+        sources.extend({'type':'memory','memory_id':ident,'agent_id':str(target_agent.id),'used':True} for ident in sorted(cited))
+    return final_content
 
 
 async def get_collaboration_history(

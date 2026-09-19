@@ -5,7 +5,9 @@ from agentdevstu.api.conversations import create_conversation, delete_conversati
 from agentdevstu.api.schemas import ConversationCreate
 
 
-def test_create_and_delete_commit_before_returning_success():
+def test_create_and_delete_commit_before_returning_success(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("agentdevstu.memory.lifecycle.source_deleted",AsyncMock())
     actions = []
     class Session:
         def add(self, obj): actions.append('add')

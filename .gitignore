@@ -20,3 +20,6 @@ langgraph.json
 
 # Runtime document lock files
 data/documents/.locks/
+
+# Local runtime telemetry outbox (never source data)
+data/usage/

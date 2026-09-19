@@ -45,27 +45,12 @@ class KnowledgeBaseCreate(BaseModel):
     type: str = "documents"
 
 
-class MemoryCreate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-    type: Literal["semantic", "episodic", "focus"] = "semantic"
-    content: str = Field(min_length=1)
-    importance: float = Field(default=0.7, ge=0, le=1)
-    confidence: float = Field(default=0.8, ge=0, le=1)
+from agentdevstu.memory.schemas import Candidate, MemoryConfig
+from agentdevstu.api.memories import MemoryUpdate, Resolution
 
 
-class MemoryUpdate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-    type: Literal["semantic", "episodic", "focus"] | None = None
-    content: str | None = Field(default=None, min_length=1)
-    importance: float | None = Field(default=None, ge=0, le=1)
-    status: Literal["active", "archived", "rejected"] | None = None
-
-    @field_validator("type", "content", "importance", "status")
-    @classmethod
-    def disallow_null(cls, value):
-        if value is None:
-            raise ValueError("不能保存空值")
-        return value
+class MemoryCreate(Candidate):
+    pass
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -94,19 +79,9 @@ def _tool_item(tool: Tool) -> dict:
     }
 
 
-def _memory_item(memory: Memory) -> dict:
-    return {
-        "id": str(memory.id),
-        "agent_id": str(memory.agent_id) if memory.agent_id else None,
-        "type": memory.type,
-        "content": memory.content,
-        "importance": memory.importance,
-        "confidence": memory.confidence,
-        "status": memory.status,
-        "source_type": memory.source_type,
-        "created_at": _iso(memory.created_at),
-        "updated_at": _iso(memory.updated_at),
-    }
+def _memory_item(memory):
+    from agentdevstu.api.memories import memory_item
+    return memory_item(memory)
 
 
 async def _agent(agent_id: uuid.UUID, db: AsyncSession) -> Agent:
@@ -154,9 +129,8 @@ async def resource_summary(agent: Agent, db: AsyncSession) -> dict:
     memories = (
         await db.execute(
             select(Memory)
-            .where(Memory.workspace_id == workspace_id, Memory.agent_id == agent_id,
-                   Memory.owner_user_id == actor_required().user_id)
-            .order_by(Memory.created_at.desc())
+            .where(Memory.workspace_id == workspace_id, Memory.agent_id == agent_id)
+            .order_by(Memory.created_at.desc()).limit(30)
         )
     ).scalars().all()
 
@@ -310,59 +284,79 @@ async def delete_data_binding(
 
 
 @router.post("/{agent_id}/memories", status_code=201)
-async def create_agent_memory(
-    agent_id: uuid.UUID,
-    payload: MemoryCreate,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    agent = await _agent(agent_id, db)
-    memory = Memory(
-        workspace_id=agent.workspace_id,
-        agent_id=agent.id,
-        owner_user_id=actor_required().user_id,
-        type=payload.type,
-        content=payload.content.strip(),
-        importance=payload.importance,
-        confidence=payload.confidence,
-        status="active",
-        source_type="manual",
-    )
-    db.add(memory)
-    await db.flush()
-    await db.refresh(memory)
-    return _memory_item(memory)
+async def create_agent_memory(agent_id: uuid.UUID, payload: MemoryCreate, db: AsyncSession = Depends(get_db)):
+    from agentdevstu.api.memories import MemoryCreate as Input, create_memory
+    return await create_memory(Input(agent_id=agent_id, **payload.model_dump()), db)
 
 
-async def _owned_memory(agent_id: uuid.UUID, memory_id: uuid.UUID, db: AsyncSession) -> Memory:
-    agent = await _agent(agent_id, db)
-    memory = await db.get(Memory, memory_id)
-    if (not memory or memory.agent_id != agent.id or memory.workspace_id != agent.workspace_id
-            or memory.owner_user_id != actor_required().user_id):
-        raise HTTPException(404, "Agent 记忆不存在")
-    return memory
+async def _owned_memory(agent_id, memory_id, db):
+    from agentdevstu.memory.access import memory_access
+    await _agent(agent_id, db)
+    mem=await memory_access(db,memory_id,manage=True)
+    if mem.agent_id!=agent_id:
+        raise HTTPException(404,'Agent 记忆不存在')
+    return mem
 
 
 @router.patch("/{agent_id}/memories/{memory_id}")
-async def update_agent_memory(
-    agent_id: uuid.UUID,
-    memory_id: uuid.UUID,
-    payload: MemoryUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    memory = await _owned_memory(agent_id, memory_id, db)
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(memory, field, value.strip() if field == "content" and isinstance(value, str) else value)
-    await db.flush()
-    await db.refresh(memory)
-    return _memory_item(memory)
+async def update_agent_memory(agent_id: uuid.UUID, memory_id: uuid.UUID, payload: MemoryUpdate, db: AsyncSession = Depends(get_db)):
+    from agentdevstu.api.memories import update_memory
+    await _owned_memory(agent_id,memory_id,db)
+    return await update_memory(memory_id,payload,db)
 
 
-@router.delete("/{agent_id}/memories/{memory_id}", status_code=204)
-async def archive_agent_memory(
-    agent_id: uuid.UUID,
-    memory_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-) -> None:
-    memory = await _owned_memory(agent_id, memory_id, db)
-    memory.status = "archived"
-    await db.flush()
+@router.delete("/{agent_id}/memories/{memory_id}",status_code=204)
+async def archive_agent_memory(agent_id: uuid.UUID,memory_id: uuid.UUID,db: AsyncSession = Depends(get_db)):
+    from agentdevstu.memory.governance import change_state
+    mem=await _owned_memory(agent_id,memory_id,db)
+    await change_state(db,mem,'archived')
+
+
+@router.get('/{agent_id}/memory-summary')
+async def memory_summary(agent_id:uuid.UUID,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.api.memories import summary
+    return await summary(db,agent_id)
+
+
+@router.get('/{agent_id}/memory-issues')
+async def memory_issues(agent_id:uuid.UUID,cursor:uuid.UUID|None=None,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.memory.models import MemoryIssue
+    from agentdevstu.api.memories import memory_item
+    await _agent(agent_id,db)
+    stmt=select(MemoryIssue).where(MemoryIssue.agent_id==agent_id,MemoryIssue.status.in_(['open','deferred']))
+    if cursor:stmt=stmt.where(MemoryIssue.id<cursor)
+    rows=(await db.scalars(stmt.order_by(MemoryIssue.id.desc()).limit(31))).all()
+    more=len(rows)>30;rows=rows[:30];items=[]
+    for row in rows:
+        ids=[uuid.UUID(x) for x in row.related_memory_ids]
+        memories=(await db.scalars(select(Memory).where(Memory.agent_id==agent_id,Memory.id.in_(ids)).order_by(Memory.id))).all()
+        items.append({'id':row.id,'issue_type':row.issue_type,'severity':row.severity,'status':row.status,
+            'reason_code':row.reason_code,'created_at':row.created_at,'memories':[memory_item(m) for m in memories]})
+    return {'items':items,'has_more':more,'next_cursor':str(rows[-1].id) if more else None}
+
+
+@router.post('/{agent_id}/memory-issues/{issue_id}/resolve')
+async def memory_issue_resolve(agent_id:uuid.UUID,issue_id:uuid.UUID,payload:Resolution,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.api.memories import resolve_issue
+    return await resolve_issue(db,agent_id,issue_id,payload)
+
+
+@router.post('/{agent_id}/memory-consolidation')
+async def memory_consolidation(agent_id:uuid.UUID,cursor:str|None=None,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.memory.lifecycle import consolidate
+    return await consolidate(db,agent_id,cursor)
+
+
+@router.get('/{agent_id}/memory-config')
+async def get_memory_config(agent_id:uuid.UUID,db:AsyncSession=Depends(get_db)):
+    from agentdevstu.memory.policy import config
+    return config(await _agent(agent_id,db)).model_dump()
+
+
+@router.patch('/{agent_id}/memory-config')
+async def set_memory_config(agent_id:uuid.UUID,payload:MemoryConfig,db:AsyncSession=Depends(get_db)):
+    agent=await _agent(agent_id,db)
+    agent.memory_config={**(agent.memory_config or {}),'memory2':payload.model_dump()}
+    from agentdevstu.security.models import AuditLog
+    db.add(AuditLog(actor_id=actor_required().user_id,action='memory.policy_changed',target=str(agent.id),detail={'config':payload.model_dump()}))
+    return payload.model_dump()

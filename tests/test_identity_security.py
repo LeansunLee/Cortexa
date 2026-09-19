@@ -173,7 +173,7 @@ async def run_integration():
             assert (await client.post("/api/conversations", json={"agent_id": str(ag3.id)})).status_code == 403
             assert (await client.get(f"/api/conversations/{private.id}/messages")).status_code == 404
             assert (await client.get(f"/api/conversations/{legacy.id}")).status_code == 404
-            assert (await client.get("/api/memories")).json() == []
+            assert (await client.get("/api/memories")).status_code == 403
             response = await client.post("/api/conversations", json={"agent_id": str(ag1.id), "title": "Alice own"})
             assert response.status_code == 201, response.text
             conv = response.json()["id"]

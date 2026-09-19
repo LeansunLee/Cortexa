@@ -9,8 +9,17 @@
     <template v-if="resources">
       <div class="agent-heading"><img v-if="resources.agent.avatar" :src="avatarUrl(resources.agent.avatar)" alt="" /><Bot v-else :size="32" /><div><strong>{{ resources.agent.name }}</strong><p>{{ resources.agent.description || '管理此 Agent 的使用资源' }}</p></div></div>
       <p v-if="resources.agent.agent_type === 'proxy'" class="notice">Proxy Agent 的知识和工具由外部系统执行；此处维护的平台资源不会自动同步到外部服务。</p>
-      <nav class="resource-tabs" aria-label="资源类型"><button v-for="item in tabs" :key="item.id" class="btn btn-ghost" :class="{ active: tab === item.id }" :aria-pressed="tab === item.id" @click="tab = item.id"><component :is="item.icon" :size="16" />{{ item.label }}</button></nav>
-      <AgentResources :key="agentId + revision" :agent-id="agentId" :section="tab" />
+      <div class="resource-layout">
+        <nav class="resource-nav" aria-label="资源类型">
+          <div class="resource-nav-label">资源管理</div>
+          <button v-for="item in tabs" :key="item.id" class="resource-nav-item" :class="{ active: tab === item.id }" :aria-pressed="tab === item.id" @click="tab = item.id">
+            <span class="resource-nav-indicator"></span>
+            <component :is="item.icon" :size="16" />
+            <span>{{ item.label }}</span>
+          </button>
+        </nav>
+        <AgentResources :key="agentId + revision" class="resource-content" :agent-id="agentId" :section="tab" />
+      </div>
     </template>
   </div>
 </template>
@@ -39,8 +48,23 @@ onMounted(load)
 .agent-heading > div {min-width:0;overflow-wrap:anywhere}.agent-heading > svg {flex-shrink:0}
 .agent-heading img {flex-shrink:0;width:48px;height:48px;border-radius:12px;object-fit:cover}
 .agent-heading strong {font-size:18px;line-height:26px}.agent-heading p {font-size:13px;color:var(--text2);margin:4px 0 0;line-height:22px}
-.resource-tabs {display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px}.resource-tabs .active {color:var(--primary);background:var(--primary-light);border-color:var(--primary)}
+.resource-layout { display:flex; align-items:flex-start; gap:24px; min-width:0; }
+.resource-nav { width:200px; padding:16px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); flex:0 0 auto; }
+.resource-nav-label { padding:0 12px; margin-bottom:6px; color:var(--text3); font-size:11px; font-weight:600; letter-spacing:.5px; }
+.resource-nav-item { position:relative; display:flex; align-items:center; gap:10px; width:100%; padding:9px 12px; margin-bottom:2px; border:0; border-radius:var(--radius-sm); background:transparent; color:var(--text2); cursor:pointer; font:inherit; font-size:14px; text-align:left; transition:all var(--transition); }
+.resource-nav-item:hover { background:var(--surface2); color:var(--text); }
+.resource-nav-item.active { background:var(--primary-light); color:var(--primary); font-weight:600; }
+.resource-nav-indicator { position:absolute; left:0; width:3px; height:0; border-radius:2px; background:var(--primary); transition:height var(--transition); }
+.resource-nav-item.active .resource-nav-indicator { height:20px; }
+.resource-content { flex:1 1 auto; min-width:0; }
 .notice {padding:12px 16px;background:var(--surface2);border-radius:8px;margin-bottom:16px;font-size:13px}.error {color:var(--danger)}
 .btn {white-space:nowrap;flex-shrink:0;line-height:20px}.notice {line-height:22px;overflow-wrap:anywhere}
-@media(max-width:700px) {.resource-tabs {gap:6px}.resource-tabs .btn {padding:8px 10px}}
+@media(max-width:700px) {
+  .resource-layout { display:block; }
+  .resource-nav { display:flex; align-items:center; gap:4px; width:auto; padding:8px; margin-bottom:16px; overflow-x:auto; }
+  .resource-nav-label { display:none; }
+  .resource-nav-item { width:auto; flex:0 0 auto; gap:8px; padding:8px 10px; white-space:nowrap; }
+  .resource-nav-indicator { left:8px; bottom:0; width:20px; height:0; }
+  .resource-nav-item.active .resource-nav-indicator { height:3px; }
+}
 </style>

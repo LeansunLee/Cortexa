@@ -1,4 +1,4 @@
-"""Agent maintenance must respect grants, workspace boundaries and private memory."""
+"""Agent maintenance must respect grants, workspace boundaries and Agent-owned memory."""
 import asyncio
 import uuid
 from types import SimpleNamespace
@@ -93,33 +93,28 @@ def test_private_or_foreign_knowledge_cannot_be_bound_as_shared(actor):
     assert agent.knowledge_base_ids == []
 
 
-def test_memory_archive_cannot_target_another_agent(actor):
+def test_memory_archive_cannot_target_another_agent(actor,monkeypatch):
     _, agent = actor
-    db = database(agent)
-    db.get.return_value = SimpleNamespace(agent_id=uuid.uuid4(), workspace_id=agent.workspace_id, status='active')
+    db=database(agent)
+    from agentdevstu.memory import access
+    monkeypatch.setattr(access,'memory_access',AsyncMock(return_value=SimpleNamespace(agent_id=uuid.uuid4())))
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(ops.archive_agent_memory(agent.id, uuid.uuid4(), db))
-    assert exc.value.status_code == 404
-    assert db.get.return_value.status == 'active'
+        asyncio.run(ops.archive_agent_memory(agent.id,uuid.uuid4(),db))
+    assert exc.value.status_code==404
 
 
-def test_memory_archive_preserves_record(actor):
-    user, agent = actor
-    db = database(agent)
-    db.get.return_value = SimpleNamespace(agent_id=agent.id, workspace_id=agent.workspace_id, owner_user_id=user.user_id, status='active')
-    asyncio.run(ops.archive_agent_memory(agent.id, uuid.uuid4(), db))
-    assert db.get.return_value.status == 'archived'
+def test_memory_archive_preserves_record_from_another_creator(actor,monkeypatch):
+    _, agent=actor
+    from agentdevstu.memory import access,governance
+    mem=SimpleNamespace(id=uuid.uuid4(),agent_id=agent.id,created_by_user_id=uuid.uuid4(),status='active',revision=1)
+    db=database(agent)
+    monkeypatch.setattr(access,'memory_access',AsyncMock(return_value=mem))
+    monkeypatch.setattr(governance,'agent_access',AsyncMock(return_value=agent))
+    monkeypatch.setattr(governance,'lock_agent',AsyncMock())
+    monkeypatch.setattr(governance,'event',AsyncMock())
+    asyncio.run(ops.archive_agent_memory(agent.id,mem.id,db))
+    assert mem.status=='archived' and mem.revision==2
     db.delete.assert_not_called()
-
-
-def test_memory_archive_cannot_target_another_user(actor):
-    _, agent = actor
-    db = database(agent)
-    db.get.return_value = SimpleNamespace(agent_id=agent.id, workspace_id=agent.workspace_id, owner_user_id=uuid.uuid4(), status='active')
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(ops.archive_agent_memory(agent.id, uuid.uuid4(), db))
-    assert exc.value.status_code == 404
-    assert db.get.return_value.status == 'active'
 
 
 def test_knowledge_maintenance_is_scoped_to_authorized_private_kb(actor):

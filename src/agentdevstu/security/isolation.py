@@ -9,7 +9,7 @@ from agentdevstu.db import models as m
 from agentdevstu.db import meetings as mm
 from .access import current_actor
 
-PRIVATE = (m.Conversation, m.Memory, mm.Meeting, m.Task, m.AgentRun, m.TaskRun, m.DataQuery)
+PRIVATE = (m.Conversation, mm.Meeting, m.Task, m.AgentRun, m.TaskRun, m.DataQuery)
 
 
 def criteria(actor):
@@ -35,6 +35,19 @@ def criteria(actor):
                 else m.Agent.id.in_(list(member.get("agent_ids", [])))
             )
             rules[m.Agent] = and_(m.Agent.workspace_id == ws, m.Agent.status == "active", allowed)
+    from agentdevstu.memory.models import MemoryEvidence, MemoryEvent, MemoryIssue, MemoryRelation
+    member = actor.memberships.get(ws, {})
+    agent_allowed = True if actor.superadmin or member.get("all_agents") else m.Agent.id.in_(list(member.get("agent_ids", [])))
+    memory_agents = select(m.Agent.__table__.c.id).where(
+        m.Agent.__table__.c.workspace_id == ws, m.Agent.__table__.c.status == "active",
+        agent_allowed, actor.has("agent.use"),
+    )
+    rules[m.Memory] = and_(m.Memory.workspace_id == ws, m.Memory.agent_id.in_(memory_agents))
+    for child in (MemoryEvidence, MemoryEvent, MemoryIssue):
+        rules[child] = and_(child.workspace_id == ws, child.agent_id.in_(memory_agents))
+    visible_memories = select(m.Memory.__table__.c.id).where(rules[m.Memory])
+    rules[MemoryRelation] = and_(MemoryRelation.workspace_id == ws,
+        MemoryRelation.from_memory_id.in_(visible_memories), MemoryRelation.to_memory_id.in_(visible_memories))
     from agentdevstu.work.models import Work, WorkCandidate, WorkDeliverable, WorkActivity
     from agentdevstu.work.service import visibility
     rules[Work] = visibility(actor)
@@ -69,7 +82,12 @@ def criteria(actor):
 @event.listens_for(Session, "do_orm_execute")
 def scope_reads(state):
     actor = current_actor.get()
-    if actor is None or state.execution_options.get("security_unscoped") or not state.is_select:
+    if state.execution_options.get("security_unscoped") or not state.is_select:
+        return
+    if actor is None:
+        from agentdevstu.memory.models import MemoryEvidence, MemoryEvent, MemoryIssue, MemoryRelation
+        for model in (m.Memory, MemoryEvidence, MemoryEvent, MemoryIssue, MemoryRelation):
+            state.statement = state.statement.options(with_loader_criteria(model, False, include_aliases=True))
         return
     for model, condition in criteria(actor).items():
         state.statement = state.statement.options(with_loader_criteria(model, condition, include_aliases=True))
@@ -88,7 +106,7 @@ def scope_writes(session, flush_context, instances):
             continue  # Workspace creation is system-authorized and auto-enrolls its creator.
         if hasattr(obj, "workspace_id") and obj.workspace_id != actor.workspace_id:
             raise HTTPException(403, "资源不属于当前工作空间")
-        if hasattr(obj, "owner_user_id"):
+        if hasattr(obj, "owner_user_id") and not isinstance(obj, m.Memory):
             if is_new:
                 obj.owner_user_id = actor.user_id
             elif obj.owner_user_id != actor.user_id:

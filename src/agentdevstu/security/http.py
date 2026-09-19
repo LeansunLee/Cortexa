@@ -64,6 +64,8 @@ class SecurityMiddleware:
                         actor.workspace_id = upload.workspace_id
                     elif not path.startswith("/uploads/avatars/"):
                         raise HTTPException(404, "历史附件尚未分配所有者")
+            from agentdevstu.memory.integration import request_session_token
+            session_ctx = request_session_token.set(token)
             ctx_token = current_actor.set(actor)
             initial = actor.signature()
             started = False
@@ -141,6 +143,7 @@ class SecurityMiddleware:
                     except asyncio.CancelledError:
                         pass
                 current_actor.reset(ctx_token)
+                request_session_token.reset(session_ctx)
         except HTTPException as exc:
             await JSONResponse({"detail": exc.detail}, status_code=exc.status_code)(scope, receive, send)
 
@@ -274,7 +277,7 @@ async def authorize_request(request: Request):
             "tools": "tools.manage",
             "workflows": "workflows.manage",
             "tasks": "tasks.manage",
-            "memories": "memory.manage",
+            "memories": "agent.operate",
         }.get(module)
         if module == "knowledge":
             # Grant maintenance only to this Agent's private knowledge base.

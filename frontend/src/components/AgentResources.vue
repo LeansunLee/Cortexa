@@ -55,18 +55,9 @@
           </article>
         </div>
       </section>
-      <section v-show="tab === 'memory'" class="resource-panel">
-        <div class="section-heading"><div><h3>我的 Agent 记忆</h3><p class="hint">仅当前账号可见；归档后不再参与检索。</p></div><button v-if="canMemory" class="btn btn-primary" :disabled="!!busy" @click="editMemory()"><Plus :size="16" />新增记忆</button></div>
-        <form v-if="memoryForm" class="memory-form" @submit.prevent="saveMemory">
-          <fieldset :disabled="!!busy"><h4>{{ memoryForm.id ? '编辑记忆' : '新增记忆' }}</h4>
-            <div class="memory-fields"><label>记忆类型<SearchSelect v-model="memoryForm.type" :options="memoryTypes" aria-label="记忆类型" /></label><label>重要性 {{ Math.round(memoryForm.importance * 100) }}%<input v-model.number="memoryForm.importance" type="range" min="0" max="1" step="0.01" /></label></div>
-            <label>记忆内容<textarea v-model.trim="memoryForm.content" class="form-input" rows="4" required maxlength="20000"></textarea></label>
-            <div class="actions"><button class="btn btn-primary" :disabled="!memoryForm.content">{{ busy === 'memory' ? '保存中…' : '保存记忆' }}</button><button type="button" class="btn btn-ghost" @click="memoryForm = null">取消</button></div>
-          </fieldset>
-        </form>
-        <div class="memory-toolbar"><div class="resource-tabs" aria-label="记忆类型筛选"><button v-for="item in [{value: 'all', label: '全部'}, ...memoryTypes]" :key="item.value" class="btn btn-ghost btn-sm" :class="{active: memoryFilter === item.value}" :aria-pressed="memoryFilter === item.value" @click="memoryFilter = item.value">{{ item.label }}</button></div><label class="check"><input v-model="showArchived" type="checkbox" />显示已归档记忆</label></div>
-        <p v-if="!visibleMemories.length" class="empty">暂无记忆</p>
-        <div v-else class="resource-list"><article v-for="memory in visibleMemories" :key="memory.id" class="resource-row memory-row"><div class="row-copy"><small>{{ memoryTypes.find(t => t.value === memory.type)?.label || memory.type }} · 重要性 {{ Math.round(memory.importance * 100) }}% · {{ memory.status === 'active' ? '生效中' : '已归档' }}</small><p class="memory-content">{{ memory.content }}</p><small>{{ formatDate(memory.updated_at || memory.created_at) }}</small></div><div class="actions"><button v-if="canMemory" class="btn btn-ghost" :disabled="!!busy" @click="editMemory(memory)">编辑</button><button v-if="canMemory && memory.status === 'active'" class="btn btn-ghost" :disabled="!!busy" @click="archiveMemory(memory)">归档</button></div></article></div>
+      <section v-if="tab === 'memory'" class="resource-panel">
+        <AgentMemory v-if="can('agent.operate')" :agent-id="agentId" />
+        <p v-else class="hint">需要 Agent 运维权限才能管理认知；使用 Agent 时会自动召回授权范围内的记忆。</p>
       </section>
     </template>
     <CreateAgentKnowledgeDialog v-if="showCreateKnowledge" :agent-id="agentId" :management="management" @close="showCreateKnowledge = false" @created="knowledgeCreated" />
@@ -75,7 +66,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
-import { agentOpsApi, agentApi, dataApi, memoryApi } from '../api'
+import AgentMemory from './AgentMemory.vue'
+import { agentOpsApi, agentApi, dataApi } from '../api'
 import { can } from '../auth'
 import KnowledgeBaseCard from '../components/knowledge/KnowledgeBaseCard.vue'
 import CreateAgentKnowledgeDialog from './knowledge/CreateAgentKnowledgeDialog.vue'
@@ -88,13 +80,11 @@ const tab = computed(() => props.section)
 const canKnowledge = computed(() => management ? can('knowledge.manage') : can('agent.operate'))
 const canReadSharedKnowledge = computed(() => can('knowledge.manage') || can('knowledge.use'))
 const canEdit = computed(() => management ? can('agent.update') : can('agent.operate'))
-const canMemory = computed(() => management ? can('memory.manage') : can('agent.operate'))
 const canData = computed(() => management ? can('data.manage') : can('agent.operate'))
-const publicKBRevision = ref(0), memoryFilter = ref('all')
+const publicKBRevision = ref(0)
 const resources = ref(null), loading = ref(false), busy = ref(''), error = ref(''), notice = ref('')
 watch(tab, () => { notice.value = ''; error.value = '' })
-const knowledgeIds = ref([]), toolIds = ref([]), showCreateKnowledge = ref(false), capabilityId = ref(''), memoryForm = ref(null), showArchived = ref(false)
-const memoryTypes = [{ value: 'semantic', label: '事实与偏好' }, { value: 'episodic', label: '事件' }, { value: 'focus', label: '关注事项' }]
+const knowledgeIds = ref([]), toolIds = ref([]), showCreateKnowledge = ref(false), capabilityId = ref('')
 const sharedKnowledge = computed(() => (resources.value?.knowledge_bases || []).filter(k => !k.agent_id))
 const privateKnowledge = computed(() => (resources.value?.knowledge_bases || []).filter(k => k.agent_id === agentId))
 const selectableTools = computed(() => (resources.value?.tools || []).filter(tool => !management || tool.name !== 'web_search'))
@@ -120,7 +110,6 @@ const different = (a, b) => JSON.stringify([...a].sort()) !== JSON.stringify([..
 const knowledgeChanged = computed(() => different(knowledgeIds.value, sharedKnowledge.value.filter(k => resources.value.knowledge_base_ids.includes(k.id)).map(k => k.id)))
 const toolsChanged = computed(() => different(toolIds.value, resources.value?.tool_ids || []))
 const unboundCapabilities = computed(() => (resources.value?.capabilities || []).filter(c => c.status === 'active' && !resources.value.bindings.some(b => b.data_capability_id === c.id)))
-const visibleMemories = computed(() => (resources.value?.memories || []).filter(m => (memoryFilter.value === 'all' || m.type === memoryFilter.value) && (m.status === 'active' || (showArchived.value && m.status === 'archived'))))
 const capability = binding => resources.value.capabilities.find(c => c.id === binding.data_capability_id) || {}
 const formatDate = value => value ? new Date(value).toLocaleString('zh-CN') : ''
 function report(e) { const detail = e.response?.data?.detail; error.value = typeof detail === 'string' ? detail : '操作失败，请稍后重试' }
@@ -159,15 +148,6 @@ function knowledgeCreated(data) {
 function removeKnowledge(id) { resources.value.knowledge_bases = resources.value.knowledge_bases.filter(k => k.id !== id); resources.value.knowledge_base_ids = resources.value.knowledge_base_ids.filter(k => k !== id); if (management) emit('bindings-change', {knowledge_base_ids: [...resources.value.knowledge_base_ids]}) }
 const bindData = () => perform('data', async () => { const { data } = await (management ? dataApi.createBinding({agent_id: agentId, data_capability_id: capabilityId.value}) : agentOpsApi.bindData(agentId, capabilityId.value)); resources.value.bindings.push(data); capabilityId.value = '' }, '数据能力已绑定')
 const unbindData = binding => perform('data', async () => { await (management ? dataApi.deleteBinding(binding.id) : agentOpsApi.unbindData(agentId, binding.id)); resources.value.bindings = resources.value.bindings.filter(b => b.id !== binding.id) }, '数据能力已解绑')
-function editMemory(memory) { memoryForm.value = memory ? { id: memory.id, type: memory.type, content: memory.content, importance: memory.importance } : { type: 'semantic', content: '', importance: 0.7 } }
-const saveMemory = () => perform('memory', async () => {
-  const { id, ...payload } = memoryForm.value
-  const { data } = management ? (id ? await memoryApi.update(id, payload) : await memoryApi.create({agent_id: agentId, ...payload})) : (id ? await agentOpsApi.updateMemory(agentId, id, payload) : await agentOpsApi.createMemory(agentId, payload))
-  if (id) resources.value.memories = resources.value.memories.map(m => m.id === id ? data : m)
-  else resources.value.memories.unshift(data)
-  memoryForm.value = null
-}, '记忆已保存')
-const archiveMemory = memory => perform('memory', async () => { await (management ? memoryApi.delete(memory.id) : agentOpsApi.archiveMemory(agentId, memory.id)); memory.status = 'archived'; if (memoryForm.value?.id === memory.id) memoryForm.value = null }, '记忆已归档')
 onMounted(load)
 </script>
 

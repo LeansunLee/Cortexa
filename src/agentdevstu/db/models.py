@@ -37,9 +37,12 @@ from sqlalchemy import (
     Text,
     JSON,
     UniqueConstraint,
+    ForeignKeyConstraint,
+    CheckConstraint,
+    Index,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .engine import Base
@@ -166,7 +169,7 @@ class Agent(Base):
     """
     智能体表 - AI 数字员工的核心配置
     """
-    __table_args__ = {'comment': '智能体表 - AI 数字员工的核心配置，定义角色、职责、能力边界和输入输出接口'}
+    __table_args__ = (UniqueConstraint('workspace_id', 'id', name='uq_agent_workspace_id'), {'comment': '智能体表 - AI 数字员工的核心配置'})
     """
     智能体表 - AI 数字员工的核心配置
 
@@ -358,7 +361,8 @@ class Agent(Base):
         back_populates="agent"
     )
     memories: Mapped[list["Memory"]] = relationship(
-        back_populates="agent"
+        back_populates="agent", foreign_keys="Memory.agent_id",
+        primaryjoin="Agent.id == Memory.agent_id", passive_deletes="all",
     )
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="agent"
@@ -1297,84 +1301,65 @@ class ConversationMessage(Base):
 # 记忆 (Memory)
 # =============================================================================
 class Memory(Base):
-    """记忆表 - Agent 的跨会话记忆，分为 episodic（事件）和 semantic（事实/偏好）"""
-    __table_args__ = {'comment': '记忆表 - Agent 跨会话记忆'}
+    """Agent-owned cognition. Legacy owner is provenance only, never an ACL."""
     __tablename__ = "t_memories"
-
-    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("t_users.id"), nullable=True, index=True)
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=_uuid,
-        comment="记忆唯一标识符"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "agent_id"], ["t_agents.workspace_id", "t_agents.id"],
+                             name="fk_memory_agent_scope", ondelete="RESTRICT"),
+        UniqueConstraint("workspace_id", "agent_id", "id", name="uq_memory_scope_id"),
+        UniqueConstraint("workspace_id", "id", name="uq_memory_workspace_id"),
+        CheckConstraint("importance >= 0 AND importance <= 1", name="ck_memory_importance"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_memory_confidence"),
+        CheckConstraint("revision > 0", name="ck_memory_revision"),
+        CheckConstraint("valid_to IS NULL OR valid_from IS NULL OR valid_to > valid_from", name="ck_memory_validity"),
+        Index("ix_memory_scope_status", "workspace_id", "agent_id", "status", "updated_at", "id"),
+        Index("ix_memory_subject", "workspace_id", "agent_id", "subject_type", "subject_id"),
+        Index("ix_memory_claim", "workspace_id", "agent_id", "claim_key"),
+        Index("ix_memory_hash", "workspace_id", "agent_id", "normalized_hash"),
+        Index("ix_memory_valid_from", "workspace_id", "agent_id", "valid_from"),
+        Index("ix_memory_valid_to", "workspace_id", "agent_id", "valid_to"),
+        Index("ix_memory_occurred", "workspace_id", "agent_id", "occurred_at"),
+        Index("ix_memory_expiry", "expires_at"),
+        Index("ix_memory_terms", "search_terms", postgresql_using="gin"),
     )
-    workspace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("t_workspaces.id"), nullable=False,
-        comment="所属工作空间 ID"
-    )
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("t_agents.id"), nullable=True,
-        comment="关联的智能体 ID，为空则为工作空间级记忆"
-    )
-    type: Mapped[str] = mapped_column(
-        String(32), default="semantic",
-        comment="类型：episodic(事件), semantic(事实/偏好)"
-    )
-    content: Mapped[str] = mapped_column(
-        Text, nullable=False,
-        comment="记忆内容"
-    )
-    importance: Mapped[float] = mapped_column(
-        default=0.5, comment="重要性 0~1"
-    )
-    confidence: Mapped[float] = mapped_column(
-        default=0.5, comment="置信度 0~1"
-    )
-    status: Mapped[str] = mapped_column(
-        String(32), default="active",
-        comment="状态：active / archived / rejected"
-    )
-    source_type: Mapped[str] = mapped_column(
-        String(32), default="conversation",
-        comment="来源类型：conversation / meeting / todo / workflow / user_confirmed"
-    )
-    source_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True,
-        comment="来源 ID（如 conversation_id）"
-    )
-    last_accessed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
-        comment="最后访问时间"
-    )
-    access_count: Mapped[int] = mapped_column(
-        default=0, comment="被检索命中次数"
-    )
-    metadata_json: Mapped[dict] = mapped_column(
-        JSON, default=dict,
-        comment="元数据"
-    )
-    embedding: Mapped[list | None] = mapped_column(
-        JSON, nullable=True,
-        comment="向量嵌入（预留）"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        comment="创建时间"
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        comment="更新时间"
-    )
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
-        comment="过期时间（预留）"
-    )
-
-    workspace: Mapped["Workspace"] = relationship(
-        back_populates="memories"
-    )
-    agent: Mapped["Agent"] = relationship(
-        back_populates="memories"
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("t_users.id"), index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("t_workspaces.id"))
+    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    type: Mapped[str] = mapped_column(String(32), default="semantic")
+    content: Mapped[str] = mapped_column(Text)
+    importance: Mapped[float] = mapped_column(default=0.5)
+    confidence: Mapped[float] = mapped_column(default=0.5)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    source_type: Mapped[str] = mapped_column(String(32), default="conversation")
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    access_count: Mapped[int] = mapped_column(default=0)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    embedding: Mapped[list | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    memory_kind: Mapped[str | None] = mapped_column(String(32))
+    subject_type: Mapped[str | None] = mapped_column(String(64))
+    subject_id: Mapped[str | None] = mapped_column(String(128))
+    subject_name: Mapped[str | None] = mapped_column(String(255))
+    claim_key: Mapped[str | None] = mapped_column(String(255))
+    source_mode: Mapped[str | None] = mapped_column(String(32))
+    created_by_type: Mapped[str | None] = mapped_column(String(32))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("t_users.id", ondelete="SET NULL"))
+    created_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("t_agents.id", ondelete="SET NULL"))
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    risk_level: Mapped[str] = mapped_column(String(16), default="unknown")
+    has_conflict: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    normalized_hash: Mapped[str | None] = mapped_column(String(64))
+    search_terms: Mapped[list] = mapped_column(JSONB, default=list)
+    workspace: Mapped["Workspace"] = relationship(back_populates="memories", foreign_keys=[workspace_id])
+    agent: Mapped["Agent"] = relationship(back_populates="memories", foreign_keys=[agent_id],
+                                          primaryjoin="Agent.id == Memory.agent_id")
 
 
 # =============================================================================
@@ -1852,3 +1837,5 @@ class AgentCollaboration(Base):
 
 # Register identity tables referenced by ownership foreign keys.
 from agentdevstu.security import models as _identity_models  # noqa: E402,F401
+
+from agentdevstu.memory import models as _memory_models  # noqa: E402,F401

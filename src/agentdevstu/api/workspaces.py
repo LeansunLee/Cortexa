@@ -68,4 +68,7 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     ws = await db.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    from sqlalchemy import delete
+    from agentdevstu.db.models import Memory
+    await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id==ws.id))
     await db.delete(ws)

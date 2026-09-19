@@ -2,6 +2,9 @@
 
 ## 当前开发资料
 
+- [最新产品设计与 Memory 2.0 实施基线（2026-09-19）](docs/PRODUCT_DESIGN_20260919.md)
+- [Memory 2.0 现状审计（2026-09-19）](docs/MEMORY_2_AUDIT_20260919.md)
+- [Memory 2.0 数据库与领域模型方案（已批准，设计留档）](docs/MEMORY_2_DESIGN_PROPOSAL_20260919.md)
 - [产品设计说明书（2026-09-18）](docs/PRODUCT_DESIGN_20260918.md)
 - [知识库设计与编码规范（暂定版，2026-09-16）](docs/KNOWLEDGE_BASELINE_20260916.md)
 - [项目需求、系统架构与下一期开发基线（2026-09-16）](docs/PROJECT_BASELINE_20260916.md)

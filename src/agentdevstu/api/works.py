@@ -340,41 +340,40 @@ async def knowledge(
 
 @router.post("/works/{work_id}/memory")
 async def memory(work_id: uuid.UUID, payload: MemoryInput, db: AsyncSession = Depends(get_db)):
-    from agentdevstu.memory.service import store_memory
-
-    w = await s.get_work(db, work_id, True)
-    s.allowed(w, "memory")
-    await require_agent_use(db, payload.agent_id)
-    content = payload.content.strip()
-    if not content:
-        raise HTTPException(422, "请填写记忆内容")
-    # Under the work lock, identical repeated clicks return the original memory.
-    previous = (
-        await db.execute(select(WorkActivity).where(WorkActivity.work_id == w.id, WorkActivity.action == "memory"))
-    ).scalars()
+    from agentdevstu.memory.governance import ingest
+    from agentdevstu.memory.evidence import Source, append_evidence
+    from agentdevstu.memory.policy import digest
+    w=await s.get_work(db,work_id,True)
+    s.allowed(w,"memory")
+    await require_agent_use(db,payload.agent_id)
+    content=payload.content.strip()
+    if not content:raise HTTPException(422,"请填写记忆内容")
+    signature=digest([str(payload.agent_id),content,payload.type,payload.memory_kind,str(payload.deliverable_id)])
+    previous=(await db.scalars(select(WorkActivity).where(WorkActivity.work_id==w.id,WorkActivity.action=="memory"))).all()
     for item in previous:
-        data = item.data_json
-        if (
-            data.get("agent_id") == str(payload.agent_id)
-            and data.get("content") == content
-            and data.get("type") == payload.type
-        ):
-            return {"memory_id": data["memory_id"], "existing": True}
-    mem = await store_memory(
-        w.workspace_id,
-        payload.agent_id,
-        {"content": content, "type": payload.type, "importance": 0.7, "confidence": 0.9},
-        source_type="work",
-        source_id=w.id,
-        db=db,
-    )
-    await s.event(
-        db,
-        w,
-        "memory",
-        {"memory_id": str(mem.id), "agent_id": str(payload.agent_id), "type": payload.type, "content": content},
-    )
-    return {"memory_id": mem.id}
+        data=item.data_json
+        if data.get('request_hash')==signature or (data.get('agent_id')==str(payload.agent_id) and data.get('content')==content and data.get('type')==payload.type):
+            return {'memory_id':data['memory_id'],'existing':True,'outcome':data.get('outcome','existing')}
+    acceptance=await db.scalar(select(WorkActivity).where(WorkActivity.work_id==w.id,WorkActivity.action=='approved').order_by(WorkActivity.created_at.desc()).limit(1))
+    deliverable=None
+    if payload.deliverable_id:
+        deliverable=await db.scalar(select(WorkDeliverable).where(WorkDeliverable.id==payload.deliverable_id,WorkDeliverable.work_id==w.id))
+        if not deliverable:raise HTTPException(404,'交付物不存在或无权访问')
+    confirmed_outcome=bool(acceptance and payload.type=='episodic' and content==f'工作「{w.title}」已验收通过。')
+    source=Source('work',str(w.id),sub_type='work_activity' if acceptance else None,
+        sub_id=str(acceptance.id) if acceptance else None,revision=str(acceptance.id) if acceptance else None,
+        mode='system' if confirmed_outcome else 'explicit',user_id=s.actor().user_id)
+    mem=await ingest(db,payload.agent_id,{'content':content,'type':payload.type,
+        'memory_kind':payload.memory_kind or ('outcome' if payload.type=='episodic' else 'fact'),
+        'importance':.7,'source_mode':source.mode,'occurred_at':w.completed_at if payload.type=='episodic' else None,
+        'subject_type':'work','subject_id':str(w.id),'subject_name':w.title},source)
+    if deliverable:
+        await append_evidence(db,mem,Source('work_deliverable',str(deliverable.id),mode='explicit',
+            user_id=deliverable.submitted_by,roots=[source.key]))
+    outcome=getattr(mem,'governance_outcome','created')
+    await s.event(db,w,'memory',{'memory_id':str(mem.id),'agent_id':str(payload.agent_id),
+        'type':payload.type,'request_hash':signature,'outcome':outcome})
+    return {'memory_id':mem.id,'outcome':outcome,'status':mem.status,'existing':outcome in {'merged','existing'}}
 
 
 @router.get("/conversations/{conv_id}/work-candidates")

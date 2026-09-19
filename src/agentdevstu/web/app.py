@@ -632,3 +632,11 @@ async def serve_vue(request: Request, full_path: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+@app.on_event("shutdown")
+async def stop_memory_extraction():
+    from agentdevstu.memory.integration import tasks
+    pending=list(tasks)
+    for task in pending:task.cancel()
+    if pending:await asyncio.gather(*pending,return_exceptions=True)
