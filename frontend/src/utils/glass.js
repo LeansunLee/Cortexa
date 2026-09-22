@@ -52,6 +52,7 @@ export function glassSwatch(value, finish = 'clear', glow = 20) {
   const rgb = [1, 3, 5].map(index => parseInt(value.slice(index, index + 2), 16))
   const frosted = finish === 'frosted'
   return {
+    '--glass-light-color': rgb.join(','),
     '--glass-edge-alpha': glassEdgeAlpha(glow),
     backgroundColor: frosted ? 'light-dark(rgba(240,245,249,.82),rgba(227,235,243,.16))' : 'light-dark(rgba(255,255,255,.10),rgba(255,255,255,.018))',
     backgroundImage: glassImage(rgb, frosted ? 0.22 : 0.26, finish),

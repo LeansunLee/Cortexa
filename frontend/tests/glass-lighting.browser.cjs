@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 (async () => {
   const { themeVariables } = await import('../src/utils/theme.js');
+  const { glassPresets, glassSwatch } = await import('../src/utils/glass.js');
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
@@ -18,7 +19,10 @@ const assert = require('node:assert/strict');
     </style><button id="left" class="btn btn-primary">按钮一</button>
     <button id="right" class="btn btn-primary">按钮二</button>
     <button id="disabled" class="btn btn-primary" disabled>禁用</button>
-    <section id="card" class="card"><h2>玻璃卡片</h2><p>光源只从最近的边缘进入。</p></section>`);
+    <section id="card" class="card"><h2>玻璃卡片</h2><p>光源只从最近的边缘进入。</p></section>
+    <div class="theme-color-item" style="position:absolute;left:800px;top:100px">
+      <span id="swatch" class="color-preview" style="display:block;width:48px;height:48px"></span>
+    </div>`);
     const source = fs.readFileSync(path.resolve(__dirname, '../src/utils/glassLighting.js'), 'utf8');
     await page.addScriptTag({ content: source.replaceAll('export function', 'function') + '\nwindow.disposeLighting = installGlassLighting();' });
     const inline = id => page.locator('#' + id).evaluate(e => e.style.backgroundImage);
@@ -55,6 +59,36 @@ const assert = require('node:assert/strict');
       assert.equal(await inline('card'), '');
       await page.evaluate(() => document.dispatchEvent(new PointerEvent('pointermove', { clientX: 440, clientY: 440, pointerType: 'touch' })));
       assert.equal(await inline('card'), '');
+    }
+    // Preview reflections use each candidate color even while blue is selected.
+    for (const finish of ['clear', 'frosted']) for (const appearance of ['light', 'dark']) {
+      const vars = themeVariables({ value: '#0067E0', mode: 'glass', finish });
+      await page.evaluate(({ finish, appearance, vars }) => {
+        const root = document.documentElement;
+        Object.assign(root.dataset, { colorTheme: 'glass', glassFinish: finish, theme: appearance });
+        root.style.colorScheme = appearance;
+        Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
+        window.dispatchEvent(new Event('theme-change'));
+      }, { finish, appearance, vars });
+      for (const preset of glassPresets) {
+        await page.evaluate(style => {
+          window.dispatchEvent(new Event('theme-change'));
+          const swatch = document.getElementById('swatch');
+          for (const [key, value] of Object.entries(style)) {
+            if (key.startsWith('--')) swatch.style.setProperty(key, value);
+            else swatch.style[key] = value;
+          }
+        }, glassSwatch(preset.value, finish));
+        const base = await inline('swatch');
+        await move(812, 106);
+        const rgb = [1, 3, 5].map(i => parseInt(preset.value.slice(i, i + 2), 16));
+        assert.equal((await inline('swatch')).match(/rgba\((\d+, \d+, \d+),/)[1], rgb.join(', '), `${finish}/${appearance}: ${preset.name}`);
+        assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--glass-light-color').trim()), vars['--glass-light-color']);
+        await page.evaluate(() => window.dispatchEvent(new Event('theme-change')));
+        assert.equal(await inline('swatch'), base, 'leaving preview restores its original surface');
+      }
+      await move(225, 108);
+      assert.ok((await inline('left')).includes(`rgba(${vars['--glass-light-color'].split(',').join(', ')},`), 'ordinary controls retain the selected theme reflection');
     }
     // Normal motion travels around the outside; reduced motion above snaps immediately.
     await page.emulateMedia({ reducedMotion: 'no-preference' });

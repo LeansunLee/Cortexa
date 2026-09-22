@@ -65,8 +65,6 @@ export function installGlassLighting() {
     frame = 0
     restore()
     if (!pointer || document.documentElement.dataset.colorTheme !== 'glass') return
-    const color = getComputedStyle(document.documentElement).getPropertyValue('--glass-light-color').trim()
-    if (!color) return
     const frosted = document.documentElement.dataset.glassFinish === 'frosted'
     const maxDistance = frosted ? 125 : 180
     const colorStrength = frosted ? .14 : .34
@@ -94,7 +92,11 @@ export function installGlassLighting() {
       const whiteRx = (64 + 48 * Math.abs(light.ny)).toFixed(2)
       const whiteRy = (64 + 48 * Math.abs(light.nx)).toFixed(2)
       const strength = (1 - distance / maxDistance) ** (frosted ? 2.4 : 1.7)
-      const base = getComputedStyle(element).backgroundImage
+      const style = getComputedStyle(element)
+      // Swatches define their own reflection color; other surfaces inherit the theme.
+      const color = style.getPropertyValue('--glass-light-color').trim()
+      if (!color) continue
+      const base = style.backgroundImage
       lit.set(element, {
         value: element.style.backgroundImage,
         priority: element.style.getPropertyPriority('background-image'),
