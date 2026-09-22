@@ -79,17 +79,18 @@
     </section>
 
     <!-- Add/Edit Modal -->
-    <div v-if="showModal" class="modal" @click.self="showModal = false">
-      <div class="modal-box modal-lg">
+    <Teleport to="body">
+    <div v-if="showModal" class="provider-modal-overlay" @click.self="showModal = false">
+      <div class="modal-box modal-lg provider-modal" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
         <div class="modal-header">
-          <h3>{{ editMode ? '编辑供应商' : '添加供应商' }}</h3>
-          <button class="modal-close" @click="showModal = false">&times;</button>
+          <h3 id="provider-modal-title">{{ editMode ? '编辑供应商' : '添加供应商' }}</h3>
+          <button class="modal-close" aria-label="关闭" @click="showModal = false">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
-              <label>名称</label>
-              <input v-model="form.name" :disabled="editMode" placeholder="my-provider" />
+              <label for="provider-name">名称</label>
+              <input id="provider-name" v-model="form.name" placeholder="my-provider" />
             </div>
             <div class="form-group">
               <label>类型</label>
@@ -102,25 +103,25 @@
             </div>
           </div>
           <div class="form-group">
-            <label>模型</label>
-            <input v-model="form.model" placeholder="deepseek-chat" />
+            <label for="provider-model">模型</label>
+            <input id="provider-model" v-model="form.model" placeholder="deepseek-chat" />
           </div>
           <div class="form-group">
-            <label>Base URL（OpenAI 兼容必填）</label>
-            <input v-model="form.base_url" placeholder="https://api.deepseek.com/v1" />
+            <label for="provider-base-url">Base URL（OpenAI 兼容必填）</label>
+            <input id="provider-base-url" v-model="form.base_url" placeholder="https://api.deepseek.com/v1" />
           </div>
           <div class="form-group">
-            <label>API Key</label>
-            <input v-model="form.api_key" type="password" placeholder="sk-..." />
+            <label for="provider-api-key">API Key</label>
+            <input id="provider-api-key" v-model="form.api_key" type="password" placeholder="sk-..." />
           </div>
           <div class="form-row-3">
             <div class="form-group">
-              <label>Temperature</label>
-              <input v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" />
+              <label for="provider-temperature">Temperature</label>
+              <input id="provider-temperature" v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" />
             </div>
             <div class="form-group">
-              <label>最大输出词元</label>
-              <input v-model.number="form.max_tokens" type="number" min="256" max="128000" />
+              <label for="provider-max-tokens">最大输出词元</label>
+              <input id="provider-max-tokens" v-model.number="form.max_tokens" type="number" min="256" max="128000" />
             </div>
           </div>
         </div>
@@ -130,6 +131,7 @@
         </div>
       </div>
     </div>
+    </Teleport>
 
     <!-- Toast -->
   </div>
@@ -340,9 +342,10 @@ onMounted(() => {
 }
 .form-row { display: flex; gap: 16px; }
 .form-row .form-group { flex: 1; }
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.provider-modal-overlay { position: fixed; inset: 0; background: var(--overlay, rgba(0,0,0,0.4)); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 24px; box-sizing: border-box; }
 .modal-box { background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 0; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-md); }
 .modal-lg { width: 640px; }
+.provider-modal { max-height: min(760px, calc(100vh - 48px)); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
 .modal-header h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text3); padding: 4px 8px; }

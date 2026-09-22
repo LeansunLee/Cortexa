@@ -356,6 +356,24 @@
   outline: none;
   box-shadow: none;
 }
+
+/* Provider forms are rendered in a fixed modal. Keep their fields opaque enough
+   to preserve text and placeholder contrast over the glass surface. */
+:root[data-color-theme=glass] body .provider-modal-overlay .provider-modal .form-group :is(input, textarea, select) {
+  background-color: var(--glass-surface-background-strong, var(--surface2)) !important;
+  color: var(--text) !important;
+  border-color: var(--glass-edge-border) !important;
+  caret-color: var(--primary) !important;
+}
+:root[data-color-theme=glass] body .provider-modal-overlay .provider-modal .form-group :is(input, textarea, select)::placeholder {
+  color: var(--text2) !important;
+  opacity: 1;
+}
+:root[data-color-theme=glass] body .provider-modal-overlay .provider-modal .form-group :is(input, textarea, select):focus,
+:root[data-color-theme=glass] body .provider-modal-overlay .provider-modal .form-group :is(input, textarea, select):focus-visible {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent) !important;
+}
 :root body :is(a.work-card, .agent-card, .knowledge-card, .role-preset-card, .preset-card-item):hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
 :root body :is(.user-dropdown .dropdown-item, .agent-dropdown-item, .mention-popover-item):hover { background-color: var(--primary-light); }
 :root body :is(table, [role=table]) { color: var(--text); border-color: var(--border); }
