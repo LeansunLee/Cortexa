@@ -122,7 +122,7 @@
           <div class="chart-legend">
             <span><i class="input-dot"></i>输入</span
             ><span><i class="output-dot"></i>输出</span
-            ><span class="muted">峰值 {{ fmt(trendMax) }} Token</span>
+            ><span class="muted">峰值 {{ fmtTokens(trendMax) }} Token</span>
           </div>
           <div v-if="hasCalls" class="trend-scroll">
             <div
@@ -133,19 +133,28 @@
                 v-for="(point, i) in trend"
                 :key="point.bucket"
                 class="trend-column"
-                :aria-label="`${time(point.bucket)} 输入 ${fmt(point.input_tokens)}，输出 ${fmt(point.output_tokens)}`"
-                :title="`${time(point.bucket)}\n输入 ${fmt(point.input_tokens)} / 输出 ${fmt(point.output_tokens)}\n${point.calls || 0} 次调用`"
+                :aria-label="`${time(point.bucket)} 输入 ${fmtTokens(point.input_tokens)}，输出 ${fmtTokens(point.output_tokens)}`"
+                :title="`${time(point.bucket)}\n输入 ${fmtTokens(point.input_tokens)} / 输出 ${fmtTokens(point.output_tokens)}\n${point.calls || 0} 次调用`"
                 @click="drillTime(point)"
               >
                 <span class="bars"
-                  ><span
-                    class="input-bar"
-                    :style="{ height: height(point.input_tokens) }"
-                  ></span
-                  ><span
-                    class="output-bar"
-                    :style="{ height: height(point.output_tokens) }"
-                  ></span></span
+                  ><span class="bar-stack"
+                    ><span class="bar-value">{{
+                      tokensLabel(point.input_tokens)
+                    }}</span
+                    ><span
+                      class="input-bar"
+                      :style="{ height: height(point.input_tokens) }"
+                    ></span></span
+                  ><span class="bar-stack"
+                    ><span class="bar-value">{{
+                      tokensLabel(point.output_tokens)
+                    }}</span
+                    ><span
+                      class="output-bar"
+                      :style="{ height: height(point.output_tokens) }"
+                    ></span></span
+                ></span
                 ><span class="axis-label">{{
                   i % Math.max(1, Math.ceil(trend.length / 12)) === 0
                     ? bucketLabel(point.bucket)
@@ -183,7 +192,7 @@
             >
               <span class="rank-line"
                 ><span>{{ item.label }}</span
-                ><strong>{{ fmt(item.total_tokens) }}</strong></span
+                ><strong>{{ fmtTokens(item.total_tokens) }}</strong></span
               ><span class="rank-track"
                 ><span
                   :style="{
@@ -246,15 +255,15 @@
                   </button>
                 </td>
                 <td>{{ fmt(row.calls) }}</td>
-                <td>{{ fmt(row.input_tokens) }}</td>
-                <td>{{ fmt(row.output_tokens) }}</td>
+                <td>{{ fmtTokens(row.input_tokens) }}</td>
+                <td>{{ fmtTokens(row.output_tokens) }}</td>
                 <td>
-                  <strong>{{ fmt(row.total_tokens) }}</strong>
+                  <strong>{{ fmtTokens(row.total_tokens) }}</strong>
                 </td>
                 <td>
                   {{ percent(row.total_tokens, summary.totals.total_tokens) }}%
                 </td>
-                <td>{{ fmt(row.avg_tokens) }}</td>
+                <td>{{ fmtTokens(row.avg_tokens) }}</td>
                 <td>{{ rate(row.completeness) }}</td>
                 <td>{{ row.failed_calls }}</td>
               </tr>
@@ -326,8 +335,8 @@
                 <td>
                   {{ row.provider }}<small>{{ row.requested_model }}</small>
                 </td>
-                <td>{{ fmt(row.input_tokens) }}</td>
-                <td>{{ fmt(row.output_tokens) }}</td>
+                <td>{{ fmtTokens(row.input_tokens) }}</td>
+                <td>{{ fmtTokens(row.output_tokens) }}</td>
                 <td>
                   <strong>{{ fmt(row.total_tokens) }}</strong
                   ><small v-if="row.usage_status !== 'complete'">{{
@@ -412,7 +421,7 @@
         </p>
         <p>
           操作共 <strong>{{ detail.total }}</strong> 次模型调用，已知总用量
-          <strong>{{ fmt(detail.total_tokens) }}</strong> Token。
+          <strong>{{ fmtTokens(detail.total_tokens) }}</strong> Token。
         </p>
         <dl class="operation-meta">
           <dt>操作 ID</dt>
@@ -433,7 +442,7 @@
               >{{ (detailPage - 1) * 100 + index + 1 }}.
               {{ label("actions", row.action) }}</strong
             ><span class="state-pill">{{ label("statuses", row.status) }}</span
-            ><span>{{ fmt(row.total_tokens) }} Token</span>
+            ><span>{{ fmtTokens(row.total_tokens) }} Token</span>
           </div>
           <p>
             {{ row.agent_name || "系统" }} · {{ row.provider }} /
@@ -441,11 +450,11 @@
             <span v-if="row.actual_model">→ {{ row.actual_model }}</span>
           </p>
           <div class="detail-metrics">
-            <span>输入 {{ fmt(row.input_tokens) }}</span
-            ><span>输出 {{ fmt(row.output_tokens) }}</span
-            ><span>缓存读 {{ fmt(row.cache_read_tokens) }}</span
-            ><span>缓存写 {{ fmt(row.cache_creation_tokens) }}</span
-            ><span>推理 {{ fmt(row.reasoning_tokens) }}</span
+            <span>输入 {{ fmtTokens(row.input_tokens) }}</span
+            ><span>输出 {{ fmtTokens(row.output_tokens) }}</span
+            ><span>缓存读 {{ fmtTokens(row.cache_read_tokens) }}</span
+            ><span>缓存写 {{ fmtTokens(row.cache_creation_tokens) }}</span
+            ><span>推理 {{ fmtTokens(row.reasoning_tokens) }}</span>
             ><span>{{ duration(row.duration_ms) }}</span>
           </div>
           <small
@@ -536,6 +545,7 @@ const detailDialog = ref(null),
   detail = ref(null),
   detailLoading = ref(false),
   detailPage = ref(1);
+const drillSnapshot = ref(null);
 let operationId = "",
   mainSeq = 0,
   callSeq = 0,
@@ -545,10 +555,22 @@ const fmt = (n) =>
   n === null || n === undefined
     ? "未知"
     : Number(n).toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+// Token 用量分级显示：≥1000 K、≥100 万 M、≥10 亿 B
+const fmtTokens = (n) => {
+  if (n === null || n === undefined) return "未知";
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "未知";
+  if (v >= 1e9) return `${(v / 1e9).toFixed(v >= 1e10 ? 0 : 1)} B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)} M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(v >= 1e5 ? 0 : 1)} K`;
+  return String(Math.round(v));
+};
 const rate = (n) =>
   n === null || n === undefined ? "—" : `${(n * 100).toFixed(1)}%`;
 const percent = (n, total) =>
   total ? Number((((n || 0) / total) * 100).toFixed(1)) : 0;
+const tokensLabel = (n) =>
+  n > 0 ? fmtTokens(n) : "";
 const time = (s) =>
   s
     ? new Date(s).toLocaleString("zh-CN", {
@@ -576,12 +598,12 @@ const cards = computed(() => {
   return [
     {
       label: "已知总 Token",
-      value: fmt(t.total_tokens),
+      value: fmtTokens(t.total_tokens),
       hint: "仅供应商已返回的总量",
     },
     {
       label: "输入 / 输出",
-      value: `${fmt(t.input_tokens)} / ${fmt(t.output_tokens)}`,
+      value: `${fmtTokens(t.input_tokens)} / ${fmtTokens(t.output_tokens)}`,
       hint: "缓存与推理细分不重复累加",
     },
     {
@@ -662,6 +684,7 @@ function range(days) {
   filters.value.end = dateCN(end);
 }
 function reset() {
+  drillSnapshot.value = null;
   filters.value = Object.fromEntries(
     [
       "workspace_id",
@@ -694,6 +717,7 @@ function message(e) {
     : "查询失败，请稍后重试。";
 }
 async function applyFilters() {
+  drillSnapshot.value = null;
   try {
     applied.value = params();
     callPage.value = groupPage.value = 1;
@@ -791,6 +815,11 @@ async function drill(dim, row) {
   await applyFilters();
 }
 async function drillTime(point) {
+  if (!drillSnapshot.value)
+    drillSnapshot.value = {
+      applied: { ...applied.value },
+      filters: { ...filters.value },
+    };
   const start = new Date(point.bucket),
     end = new Date(
       start.getTime() + (grain.value === "hour" ? 3600000 : 86400000),
@@ -865,6 +894,14 @@ function closeOnBackdrop(e) {
 watch(tab, (v) => {
   if (v === "calls") loadCalls();
   if (v === "groups") loadGroups();
+});
+watch(tab, async (value) => {
+  if (value === "overview" && drillSnapshot.value) {
+    applied.value = drillSnapshot.value.applied;
+    filters.value = drillSnapshot.value.filters;
+    drillSnapshot.value = null;
+    await refresh();
+  }
 });
 onMounted(() => {
   reset();
@@ -1066,10 +1103,10 @@ button:focus-visible {
 }
 .trend-chart {
   display: flex;
-  height: 214px;
+  height: 236px;
   gap: 4px;
   border-bottom: 1px solid var(--border);
-  padding-top: 8px;
+  padding-top: 30px;
 }
 .trend-column {
   flex: 1;
@@ -1094,10 +1131,39 @@ button:focus-visible {
   gap: 3px;
   width: 75%;
 }
-.bars > span {
-  width: 45%;
+.bar-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  width: 50%;
   max-width: 28px;
+  height: 100%;
+}
+.bar-stack > span {
+  width: 100%;
   border-radius: 3px 3px 0 0;
+}
+.bar-value {
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--text2);
+  white-space: nowrap;
+  padding-bottom: 2px;
+  border-radius: 0;
+  align-self: flex-end;
+  transform: translateX(7px) rotate(-40deg);
+  transform-origin: left bottom;
+}
+.bar-value:empty {
+  display: none;
+}
+.trend-scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.trend-scroll::-webkit-scrollbar {
+  display: none;
 }
 .axis-label {
   font-size: 10px;
