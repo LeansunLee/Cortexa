@@ -84,6 +84,7 @@ export const knowledgeApi = {
   list: (params = {}) => api.get('/knowledge', { params }),
   create: (data) => api.post('/knowledge', data),
   rename: (id, name) => api.patch('/knowledge/' + id + '/name', { name }),
+  updateDescription: (id, description) => api.patch('/knowledge/' + id + '/description', { description }),
   updateStatus: (id, status) => api.patch('/knowledge/' + id + '/status', { status }),
   detail: (id) => api.get(`/knowledge/${id}`),
   delete: (id) => api.delete(`/knowledge/${id}`),

@@ -31,6 +31,7 @@ from agentdevstu.api.schemas import (
     DocumentSummaryUpdate,
     DocumentValidityUpdate,
     KnowledgeBaseCreate,
+    KnowledgeBaseDescriptionUpdate,
     KnowledgeBaseDetailOut,
     KnowledgeBaseOut,
     KnowledgeFolderOut,
@@ -446,6 +447,18 @@ async def rename_knowledge_base(kb_id: uuid.UUID, payload: NameUpdate, db: Async
     if not name or any(c in name for c in '/\\') or any(ord(c) < 32 for c in name):
         raise HTTPException(400, "名称不能为空或包含路径分隔符、控制字符")
     kb.name = name
+    await db.commit()
+    await db.refresh(kb)
+    return kb
+
+
+@router.patch("/{kb_id}/description", response_model=KnowledgeBaseOut)
+async def update_knowledge_base_description(kb_id: uuid.UUID, payload: KnowledgeBaseDescriptionUpdate, db: AsyncSession = Depends(get_db)) -> KnowledgeBase:
+    if not _can_manage(): raise HTTPException(403, "只有知识库管理员可以管理知识库")
+    kb = await db.get(KnowledgeBase, kb_id)
+    if not kb:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb.description = (payload.description or "").strip() or None
     await db.commit()
     await db.refresh(kb)
     return kb

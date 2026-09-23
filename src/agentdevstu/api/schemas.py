@@ -194,6 +194,10 @@ class NameUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
 
+class KnowledgeBaseDescriptionUpdate(BaseModel):
+    description: str | None = Field(default=None, max_length=500)
+
+
 class KnowledgeBaseOut(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID
