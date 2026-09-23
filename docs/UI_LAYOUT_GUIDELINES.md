@@ -120,6 +120,14 @@
 - 验收覆盖浅色、深色、跟随系统窄屏；检查弹窗不越界、选择器优先处理 Escape、提示可通过键盘阅读、取消不保存、错误保留输入、切换弹窗后滚动恢复、后台页面没有残留浮层。模拟 API 的 UI 验证与真实数据端到端验证须分别记录。
 - 完整业务交互、参数默认值/范围及本次发布记录参见 [产品设计第 10 节](PRODUCT_DESIGN_20260919.md#10-ui-设计与操作)。
 
+### 玻璃材质与预设头像（2026-09-23）
+
+- 玻璃浮层（下拉、菜单、弹窗、@提及）两种质地：**液态**为 72%/88% 半透明底 + `blur(28px)` 高饱和背景模糊，**磨砂**为 94%/96% 半透明底 + `blur(38px)` 大模糊；变量由 `utils/theme.js` 输出（`--glass-menu-background`、`--glass-menu-backdrop`）。
+- 浮层穿透（下层文字透过菜单可辨）必须用「增强背景模糊 + 适度底色透明度」解决，禁止以提高不透明度或改纯实底的方式处理——那会消灭玻璃质感。历史教训：`backdrop-filter: url(#svg-filter)` 折射方案在 Chromium 真实页面会静默失败（能力检测通过、渲染输出为空），已回退，重启前须验证浏览器渲染成熟度。
+- 智能体预设头像 17 个全部为多元化人物 SVG，经 `components/AgentAvatar.vue` 内联渲染跟随应用深浅主题（`html[data-theme]` 驱动 `.av-bg`，颜色由每个 SVG 根元素的 `--_av-bg-light/dark` 变量提供）；SVG 文件内嵌 `prefers-color-scheme` 供独立引用兜底；非预设路径自动回退 `<img>`。新增预设角色时同步更新 `Agents.vue` 的 `presetAvatars` 列表。
+- 卡片、面板、弹窗、徽章等历史页面已全面改用主题语义变量（`--surface/--surface2/--text/--border/--success/--danger`），禁止新增固定白色背景或仅浅色可读的灰色文字；回归入口 `frontend/tests/card-theme-audit.browser.cjs`（浅/深双主题断言）。
+- 玻璃鼠标边缘泛光：响应范围 130px（磨砂 95px），缓动时间常数 150ms，实现位于 `utils/glassLighting.js`；调整强度/范围时同步运行 `glass-lighting.browser.cjs`。
+
 ### 知识库控件补充（2026-09-16）
 
 - 知识库本期暂定版详见 [知识库设计与编码规范](KNOWLEDGE_BASELINE_20260916.md)。目录区显示“总文件夹数”，总数包含所有子目录、不含虚拟根目录；各目录右侧数字表示直属文件数。数字列统一 24px、水平垂直居中并整列对齐，窄屏不得挤偏。
