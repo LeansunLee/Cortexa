@@ -744,12 +744,12 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .page-header { margin-bottom: 20px; }
 .page-header h1 { margin: 0; font-size: 24px; }
 .subtitle { color: var(--text2); margin: 4px 0 0; font-size: 14px; }
-.data-tabs { display: flex; gap: 4px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px; }
+.data-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
 .data-tab-button { padding: 10px 18px; border: none; background: transparent; cursor: pointer; font-size: 14px; color: var(--text2); border-bottom: 2px solid transparent; }
 .data-tab-button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .section-header h3 { margin: 0; }
-.card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
 .card-sm { padding: 10px 14px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .card-name { font-weight: 600; font-size: 15px; }
@@ -757,22 +757,25 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .card-actions { display: flex; gap: 6px; align-items: center; }
 .type-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
 .type-postgres { background: #dbeafe; color: #1d4ed8; }
+:root[data-theme="dark"] .type-postgres { background: rgba(59, 130, 246, .16); color: #93c5fd; }
 .type-mysql { background: #fef3c7; color: #92400e; }
+:root[data-theme="dark"] .type-mysql { background: rgba(245, 158, 11, .16); color: #fcd34d; }
 .type-api { background: #e0e7ff; color: #4338ca; }
+:root[data-theme="dark"] .type-api { background: rgba(99, 102, 241, .18); color: #a5b4fc; }
 .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
-.status-active { background: #d1fae5; color: #065f46; }
-.status-inactive { background: var(--surface2); color: #6b7280; }
-.status-error { background: #fee2e2; color: #991b1b; }
+.status-active { background: var(--success-bg); color: var(--success); }
+.status-inactive { background: var(--surface2); color: var(--text3); }
+.status-error { background: var(--danger-bg); color: var(--danger); }
 .test-result { margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
-.test-result.success { background: #d1fae5; color: #065f46; }
-.test-result.error { background: #fee2e2; color: #991b1b; }
-.test-result-block { margin-top: 10px; padding: 10px; background: #f9fafb; border-radius: 8px; }
+.test-result.success { background: var(--success-bg); color: var(--success); }
+.test-result.error { background: var(--danger-bg); color: var(--danger); }
+.test-result-block { margin-top: 10px; padding: 10px; background: var(--surface2); border-radius: 8px; }
 .result-status { font-weight: 500; font-size: 13px; }
-.result-status.success { color: #059669; }
-.result-status.error { color: #dc2626; }
+.result-status.success { color: var(--success); }
+.result-status.error { color: var(--danger); }
 .result-meta { font-size: 12px; color: var(--text3); margin-top: 4px; }
-.error-msg { color: #dc2626; font-size: 13px; margin-top: 4px; }
-.empty-hint { color: #999; font-size: 13px; padding: 12px 0; }
+.error-msg { color: var(--danger); font-size: 13px; margin-top: 4px; }
+.empty-hint { color: var(--text3); font-size: 13px; padding: 12px 0; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal { background: var(--surface); color: var(--text); border-radius: 8px; padding: 24px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.2); }
 .modal-wide { width: 680px; }
@@ -784,7 +787,7 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 13px; }
-.form-group input, .form-group textarea { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.form-group input, .form-group textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
 .form-group :deep(.search-select-trigger) { min-height: 35px; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
 .form-group .mono { font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; }
 .form-row { display: flex; gap: 12px; }
@@ -792,12 +795,12 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .btn { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost { background: transparent; color: #374151; border: 1px solid #d1d5db; }
-.btn-danger { background: transparent; color: #ef4444; border: 1px solid #fecaca; }
+.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .schema-table { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
-.schema-row { display: flex; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
-.schema-row.schema-header { font-weight: 600; background: #f9fafb; position: sticky; top: 0; }
+.schema-row { display: flex; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.schema-row.schema-header { font-weight: 600; background: var(--surface2); position: sticky; top: 0; }
 .sch-col-table { flex: 2; }
 .sch-col-col { flex: 2; }
 .sch-col-type { flex: 1; color: var(--text3); }

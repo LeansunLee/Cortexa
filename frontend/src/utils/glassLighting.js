@@ -66,11 +66,11 @@ export function installGlassLighting() {
     restore()
     if (!pointer || document.documentElement.dataset.colorTheme !== 'glass') return
     const frosted = document.documentElement.dataset.glassFinish === 'frosted'
-    const maxDistance = frosted ? 125 : 180
-    const colorStrength = frosted ? .14 : .34
-    const whiteStrength = frosted ? .16 : .30
+    const maxDistance = frosted ? 95 : 130
+    const colorStrength = frosted ? .10 : .22
+    const whiteStrength = frosted ? .12 : .20
     const setback = frosted ? 36 : 28
-    const progress = reducedMotion.matches ? 1 : 1 - Math.exp(-Math.min(lastTime ? time - lastTime : 16, 50) / 85)
+    const progress = reducedMotion.matches ? 1 : 1 - Math.exp(-Math.min(lastTime ? time - lastTime : 16, 50) / 150)
     lastTime = time
     let moving = false
     for (const element of document.querySelectorAll(selector)) {
@@ -87,10 +87,10 @@ export function installGlassLighting() {
       const x = light.x.toFixed(2)
       const y = light.y.toFixed(2)
       // Spread along the edge, with a shallower wash into the surface.
-      const rx = (112 + 108 * Math.abs(light.ny)).toFixed(2)
-      const ry = (112 + 108 * Math.abs(light.nx)).toFixed(2)
-      const whiteRx = (64 + 48 * Math.abs(light.ny)).toFixed(2)
-      const whiteRy = (64 + 48 * Math.abs(light.nx)).toFixed(2)
+      const rx = (92 + 84 * Math.abs(light.ny)).toFixed(2)
+      const ry = (92 + 84 * Math.abs(light.nx)).toFixed(2)
+      const whiteRx = (52 + 38 * Math.abs(light.ny)).toFixed(2)
+      const whiteRy = (52 + 38 * Math.abs(light.nx)).toFixed(2)
       const strength = (1 - distance / maxDistance) ** (frosted ? 2.4 : 1.7)
       const style = getComputedStyle(element)
       // Swatches define their own reflection color; other surfaces inherit the theme.
@@ -102,7 +102,7 @@ export function installGlassLighting() {
         priority: element.style.getPropertyPriority('background-image'),
       })
       // Keep refraction local to the edge; an unbounded conic layer lights the whole card.
-      const lens = frosted ? '' : ', radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * .10) + '), transparent 82%)'
+      const lens = frosted ? '' : ', radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * .07) + '), transparent 82%)'
       // Dark panel adapters use !important; the temporary light must layer above them too.
       element.style.setProperty('background-image', 'radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(' + color + ',' + (strength * colorStrength) + '), transparent 100%), radial-gradient(' + whiteRx + 'px ' + whiteRy + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * whiteStrength) + '), transparent 100%)' + lens + (base === 'none' ? '' : ', ' + base), 'important')
     }

@@ -166,7 +166,7 @@ export function themeVariables(color) {
   const glassGlow = hex(glassRgb.map(value => value + (255 - value) * 0.62))
   const glassControlBackdrop = glass ? frosted ? 'blur(28px) saturate(108%) contrast(101%) brightness(1.02)' : 'blur(14px) saturate(176%) contrast(114%) brightness(1.06)' : 'none'
   const glassSurfaceBackdrop = glass ? frosted ? 'blur(34px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(18px) saturate(184%) contrast(116%) brightness(1.07)' : 'none'
-  const glassMenuBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(24px) saturate(192%) contrast(118%) brightness(1.08)' : 'none'
+  const glassMenuBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(28px) saturate(192%) contrast(118%) brightness(1.08)' : 'none'
   const glassSurfaceBackground = glass ? frosted ? 'light-dark(color-mix(in srgb, var(--surface) 90%, transparent), color-mix(in srgb, var(--surface) 92%, transparent))' : 'light-dark(color-mix(in srgb, var(--surface) 66%, transparent), color-mix(in srgb, var(--surface) 78%, transparent))' : 'var(--surface)'
   const glassSurfaceBackgroundStrong = glass ? frosted ? 'light-dark(color-mix(in srgb, var(--surface) 95%, transparent), color-mix(in srgb, var(--surface) 96%, transparent))' : 'light-dark(color-mix(in srgb, var(--surface) 78%, transparent), color-mix(in srgb, var(--surface) 86%, transparent))' : 'var(--surface)'
   const glassPanelBackground = glass ? frosted ? 'light-dark(color-mix(in srgb, var(--surface) 91%, transparent), color-mix(in srgb, var(--surface) 94%, transparent))' : 'light-dark(color-mix(in srgb, var(--surface) 70%, transparent), color-mix(in srgb, var(--surface) 84%, transparent))' : 'var(--surface)'

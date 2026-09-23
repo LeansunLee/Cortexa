@@ -95,15 +95,15 @@ async function regenerateSummary() {
 }
 </script>
 <style scoped>
-.job-status,.job-error{font-size:12px;line-height:1.6;margin:0 0 10px;overflow-wrap:anywhere}.job-error{color:#b45309}
-.summary-overlay{position:fixed;inset:0;z-index:2600;background:#10182880;display:grid;place-items:center;padding:20px}
+.job-status,.job-error{font-size:12px;line-height:1.6;margin:0 0 10px;overflow-wrap:anywhere}.job-error{color:#b45309}:root[data-theme="dark"] .job-error{color:#fbbf24}
+.summary-overlay{position:fixed;inset:0;z-index:2600;background:var(--overlay);display:grid;place-items:center;padding:20px}
 .summary-dialog{width:560px;max-width:100%;box-sizing:border-box;background:var(--surface,#fff);color:var(--text,#334155);padding:26px;border-radius:16px;box-shadow:0 20px 70px #0003;max-height:90vh;display:flex;flex-direction:column}
 .summary-dialog h3{font-size:18px;margin:0 0 8px}
 .document-title{font-size:13px;color:var(--text3,#64748b);margin:0 0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .source-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;margin:0 0 14px;color:var(--text2,#475569)}
 .source-dot{width:8px;height:8px;border-radius:50%;background:var(--primary,#6366f1)}
-.source-badge.manual .source-dot{background:#16a34a}
-.source-badge.truncated .source-dot,.source-badge.none .source-dot{background:#d97706}
+.source-badge.manual .source-dot{background:var(--success)}
+.source-badge.truncated .source-dot,.source-badge.none .source-dot{background:#d97706}:root[data-theme="dark"] .source-badge.truncated .source-dot,:root[data-theme="dark"] .source-badge.none .source-dot{background:#fbbf24}
 .summary-text{flex:1;min-height:120px;max-height:46vh;overflow-y:auto;overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px;line-height:1.7;background:var(--surface2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:14px}
 .summary-text.empty{color:var(--text3,#94a3b8)}
 .summary-editor{flex:1;min-height:160px;font:inherit;font-size:13px;line-height:1.7;border:1px solid var(--border,#ddd);border-radius:10px;padding:14px;background:var(--surface2,#f8fafc);color:inherit;resize:vertical}
