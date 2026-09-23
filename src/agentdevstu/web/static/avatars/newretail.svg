@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="新零售头像">
-  <title>新零售</title>
-  <rect width="100" height="100" rx="24" fill="#FCE7F3"/>
-  <circle cx="50" cy="40" r="22" fill="#F3C9A8"/><g id="hair"><path d="M25 43V29Q24 11 49 11Q75 9 75 32V57Q69 65 63 58L67 30L56 30L51 21L47 31L33 31L36 58Q27 65 24 56Z" fill="#7b3c52"/></g>
-  <circle cx="42" cy="38" r="3" fill="#25334B"/>
-  <circle cx="58" cy="38" r="3" fill="#25334B"/>
-  <path d="M42 52q8 6 16 0" fill="none" stroke="#9D493F" stroke-width="3" stroke-linecap="round"/>
-  <path d="M18 100V84q3-18 26-18h12q23 0 26 18v16Z" fill="#BE185D"/>
-  <text x="50" y="88" text-anchor="middle" fill="white" font-size="12" font-weight="700">新零售</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" style="--_av-bg-light:#f3e8ff;--_av-bg-dark:#581c87"><style>.av-bg{fill:var(--_av-bg-light)}@media (prefers-color-scheme:dark){.av-bg{fill:var(--_av-bg-dark)}}</style><rect class="av-bg" width="100" height="100" rx="24"/><g fill="#171114"><circle cx="30" cy="34" r="10"/><circle cx="70" cy="34" r="10"/><circle cx="36" cy="22" r="10"/><circle cx="64" cy="22" r="10"/><circle cx="50" cy="17" r="11"/></g><rect x="18" y="66" width="64" height="25" rx="12" fill="#c9784f"/><g stroke="#fff" stroke-width="3"><path d="M18 73h64"/><path d="M18 82h64"/></g><ellipse cx="50" cy="45" rx="19" ry="22" fill="#7a4a21"/><path d="M31 40q-1-23 19-23t19 23q-8-9-19-9t-19 9" fill="#171114"/><ellipse cx="41.5" cy="46" rx="3.4" ry="3.8" fill="#fff"/><ellipse cx="58.5" cy="46" rx="3.4" ry="3.8" fill="#fff"/><circle cx="42" cy="46.5" r="2.1" fill="#120c08"/><circle cx="59" cy="46.5" r="2.1" fill="#120c08"/><path d="M45 56q5 4 10 0" fill="none" stroke="#3f2313" stroke-width="2.4" stroke-linecap="round"/></svg>

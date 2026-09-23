@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="品牌头像">
-  <title>品牌</title>
-  <rect width="100" height="100" rx="24" fill="#FEF3C7"/>
-  <circle cx="50" cy="40" r="22" fill="#F3C9A8"/><g id="hair"><path d="M25 42V29Q24 9 50 10Q75 10 75 34V59L66 62L66 29Q56 27 49 18Q44 29 33 31L34 60L25 58Z" fill="#77402d"/></g>
-  <circle cx="42" cy="38" r="3" fill="#25334B"/>
-  <circle cx="58" cy="38" r="3" fill="#25334B"/>
-  <path d="M42 52q8 6 16 0" fill="none" stroke="#9D493F" stroke-width="3" stroke-linecap="round"/>
-  <path d="M18 100V84q3-18 26-18h12q23 0 26 18v16Z" fill="#B45309"/>
-  <text x="50" y="88" text-anchor="middle" fill="white" font-size="12" font-weight="700">品牌</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" style="--_av-bg-light:#fbcfe8;--_av-bg-dark:#9d174d"><style>.av-bg{fill:var(--_av-bg-light)}@media (prefers-color-scheme:dark){.av-bg{fill:var(--_av-bg-dark)}}</style><rect class="av-bg" width="100" height="100" rx="24"/><path d="M27 47q-2-32 23-32t23 32q0 10-4 15h-6q4-10 3-24-7 5-16 5t-16-5q-1 14 3 24h-6q-4-5-4-15" fill="#d9a441"/><rect x="18" y="66" width="64" height="25" rx="12" fill="#8b5fbf"/><ellipse cx="50" cy="45" rx="19" ry="22" fill="#ffd6b5"/><path d="M31 44q-1-24 19-24t19 24q-7-10-14-10-3 5-10 5t-10-5q-7 0-14 10" fill="#d9a441"/><circle cx="30" cy="53" r="2.2" fill="#e85d75"/><circle cx="70" cy="53" r="2.2" fill="#e85d75"/><circle cx="42" cy="46" r="2.4" fill="#241d1f"/><circle cx="58" cy="46" r="2.4" fill="#241d1f"/><path d="M45 56q5 4 10 0" fill="none" stroke="#c98a7a" stroke-width="2.2" stroke-linecap="round"/></svg>

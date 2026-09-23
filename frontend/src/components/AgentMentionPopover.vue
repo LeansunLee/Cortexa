@@ -20,7 +20,7 @@
           @mousedown.prevent="selectAgent(agent)"
         >
           <div class="mention-agent-avatar">
-            <img v-if="agent.avatar && agent.avatar.startsWith('/')" :src="avatarUrl(agent.avatar)" />
+            <AgentAvatar v-if="agent.avatar && agent.avatar.startsWith('/')" :avatar="agent.avatar" />
             <span v-else><AppIcon name="Bot" :size="20" /></span>
           </div>
           <div class="mention-agent-info">
@@ -40,7 +40,7 @@
 import { inject as injectPageTab } from 'vue'
 const pageTabActive = injectPageTab('pageTabActive', true)
 
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from './AgentAvatar.vue'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { collaborationApi } from '../api/index.js'
 

@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="渠道头像">
-  <title>渠道</title>
-  <rect width="100" height="100" rx="24" fill="#DCFCE7"/>
-  <circle cx="50" cy="40" r="22" fill="#F3C9A8"/><g id="hair"><path d="M27 36V27Q26 12 48 12Q72 10 73 29L71 38L65 29L63 22Q48 31 34 29L32 38Z" fill="#33463b"/></g>
-  <circle cx="42" cy="38" r="3" fill="#25334B"/>
-  <circle cx="58" cy="38" r="3" fill="#25334B"/>
-  <path d="M42 52q8 6 16 0" fill="none" stroke="#9D493F" stroke-width="3" stroke-linecap="round"/>
-  <path d="M18 100V84q3-18 26-18h12q23 0 26 18v16Z" fill="#15803D"/>
-  <text x="50" y="88" text-anchor="middle" fill="white" font-size="12" font-weight="700">渠道</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" style="--_av-bg-light:#ccfbf1;--_av-bg-dark:#134e4a"><style>.av-bg{fill:var(--_av-bg-light)}@media (prefers-color-scheme:dark){.av-bg{fill:var(--_av-bg-dark)}}</style><rect class="av-bg" width="100" height="100" rx="24"/><path d="M50 12q-26 0-26 30v14q0 8 6 10l4-2V40q0-18 16-18t16 18v24l4 2q6-2 6-10V42q0-30-26-30" fill="#2f9e83"/><rect x="18" y="68" width="64" height="25" rx="12" fill="#2f9e83"/><path d="M38 68h24v6q-12 6-24 0z" fill="#257e68"/><ellipse cx="50" cy="46" rx="17" ry="20" fill="#e3b083"/><path d="M33 44q-1-19 17-19t17 19q-6-7-12-7-2 4-10 4t-10-4q-6 0-12 7" fill="#2f9e83"/><circle cx="43" cy="47" r="2.3" fill="#241d1f"/><circle cx="57" cy="47" r="2.3" fill="#241d1f"/><path d="M45 56q5 4 10 0" fill="none" stroke="#a05f3f" stroke-width="2.2" stroke-linecap="round"/></svg>

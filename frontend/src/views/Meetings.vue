@@ -57,7 +57,7 @@
             <label v-for="a in agents" :key="a.id" class="agent-checkbox">
               <input type="checkbox" :value="a.id" v-model="createForm.participant_agent_ids" />
               <span class="agent-check-avatar">
-                <img v-if="a.avatar && (a.avatar.startsWith('/') || a.avatar.endsWith('.svg'))" :src="avatarUrl(a.avatar.startsWith('/') ? a.avatar : '/static/avatars/' + a.avatar)" />
+                <AgentAvatar v-if="a.avatar && (a.avatar.startsWith('/') || a.avatar.endsWith('.svg'))" :avatar="a.avatar.startsWith('/') ? a.avatar : '/static/avatars/' + a.avatar" />
                 <span v-else><AppIcon :name="resolveAvatar(a.avatar, a.name)" :size="20" /></span>
               </span>
               <div class="agent-check-info">
@@ -128,7 +128,7 @@
       <div class="detail-participants" v-if="meetingDetail?.participants">
         <div v-for="p in meetingDetail.participants" :key="p.id" :class="['participant-chip', { host: p.is_host }]">
           <span v-if="p.is_host"><AppIcon name="Crown" /></span>
-          <span v-else-if="resolveAvatar(p.avatar, p.name).startsWith('/')" class="participant-avatar-img"><img :src="avatarUrl(resolveAvatar(p.avatar, p.name))" alt="" /></span>
+          <span v-else-if="resolveAvatar(p.avatar, p.name).startsWith('/')" class="participant-avatar-img"><AgentAvatar :avatar="resolveAvatar(p.avatar, p.name)" /></span>
           <span v-else><AppIcon :name="resolveAvatar(p.avatar, p.name)" :size="20" /></span>
           {{ p.name }}
           <span v-if="p.is_host" class="host-badge">主持人</span>
@@ -144,7 +144,7 @@
           <div class="msg-header">
             <span class="msg-avatar" v-if="msg.sender_type === 'host'"><AppIcon name="Crown" /></span>
             <span class="msg-avatar msg-avatar-img" v-else-if="getAgentAvatar(msg.sender_agent_id).startsWith('/')">
-              <img :src="avatarUrl(getAgentAvatar(msg.sender_agent_id))" alt="" />
+              <AgentAvatar :avatar="getAgentAvatar(msg.sender_agent_id)" />
             </span>
             <span class="msg-avatar" v-else style="font-size:20px"><AppIcon :name="getAgentAvatar(msg.sender_agent_id)" :size="20" /></span>
             <span class="msg-sender">{{ msg.sender_name }}</span>
@@ -186,7 +186,7 @@
 </template>
 
 <script setup>
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from '../components/AgentAvatar.vue'
 import { FileText, Bot, Paperclip, Target, AlertTriangle, BarChart, Wrench, Lightbulb, MessageSquare } from 'lucide-vue-next'
 
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
@@ -512,7 +512,9 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
 .status-preparing { background: #FEF3C7; color: #92400E; }
+:root[data-theme="dark"] .status-preparing { background: rgba(245, 158, 11, .16); color: #fcd34d; }
 .status-running { background: #DBEAFE; color: #1E40AF; }
+:root[data-theme="dark"] .status-running { background: rgba(59, 130, 246, .16); color: #93c5fd; }
 .status-completed { background: var(--success-bg); color: var(--success); }
 .status-failed { background: var(--danger-bg); color: var(--danger); }
 .status-cancelled { background: var(--surface2); color: var(--text3); }
@@ -543,7 +545,7 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 }
 .agent-checkbox:hover { border-color: var(--primary); }
 .agent-checkbox input { accent-color: var(--primary); }
-.agent-check-avatar { font-size: 18px; }
+.agent-check-avatar { font-size: 18px; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .agent-check-avatar img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .agent-check-name { font-size: 13px; font-weight: 500; }
 .agent-check-role { font-size: 11px; color: var(--text3); }
@@ -558,6 +560,7 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
   font-size: 13px;
 }
 .participant-chip.host { border-color: #F59E0B; background: #FFFBEB; }
+:root[data-theme="dark"] .participant-chip.host { border-color: rgba(245, 158, 11, .55); background: rgba(245, 158, 11, .1); }
 .host-badge { font-size: 10px; background: #F59E0B; color: #fff; padding: 1px 6px; border-radius: 8px; }
 
 .detail-messages {
@@ -568,7 +571,9 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 
 .msg-item { padding: 12px 16px; border-radius: var(--radius-sm); }
 .msg-agent { background: #F0F9FF; border-left: 3px solid #3B82F6; }
+:root[data-theme="dark"] .msg-agent { background: rgba(59, 130, 246, .1); }
 .msg-host { background: #FFFBEB; border-left: 3px solid #F59E0B; }
+:root[data-theme="dark"] .msg-host { background: rgba(245, 158, 11, .1); }
 .msg-system { background: var(--surface2); text-align: center; font-size: 13px; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .msg-avatar { font-size: 16px; display: inline-flex; align-items: center; }

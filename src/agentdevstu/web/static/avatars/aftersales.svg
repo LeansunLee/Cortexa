@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="售后头像">
-  <title>售后</title>
-  <rect width="100" height="100" rx="24" fill="#E0F2FE"/>
-  <circle cx="50" cy="40" r="22" fill="#F3C9A8"/><g id="hair"><path d="M27 36V25Q26 12 42 13L51 9L59 14L69 14L74 27L71 38L65 28L62 22L53 27L44 23L34 29L32 39Z" fill="#344f68"/></g>
-  <circle cx="42" cy="38" r="3" fill="#25334B"/>
-  <circle cx="58" cy="38" r="3" fill="#25334B"/>
-  <path d="M42 52q8 6 16 0" fill="none" stroke="#9D493F" stroke-width="3" stroke-linecap="round"/>
-  <path d="M18 100V84q3-18 26-18h12q23 0 26 18v16Z" fill="#0369A1"/>
-  <text x="50" y="88" text-anchor="middle" fill="white" font-size="12" font-weight="700">售后</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" style="--_av-bg-light:#e0f2fe;--_av-bg-dark:#0c4a6e"><style>.av-bg{fill:var(--_av-bg-light)}@media (prefers-color-scheme:dark){.av-bg{fill:var(--_av-bg-dark)}}</style><rect class="av-bg" width="100" height="100" rx="24"/><path d="M26 44q0-28 24-28t24 28v28h-9V44q0-19-15-19t-15 19v28h-9z" fill="#171114"/><rect x="18" y="66" width="64" height="25" rx="12" fill="#5b8bd9"/><ellipse cx="50" cy="45" rx="19" ry="22" fill="#e3b083"/><path d="M31 42q-1-23 19-23t19 23q-8-9-14-9-2 4-10 4t-10-4q-6 0-14 9" fill="#171114"/><g fill="none" stroke="#2b2b33" stroke-width="2.4" stroke-linecap="round"><path d="M69 50q7 8-1 13"/><circle cx="66.5" cy="49" r="3.4" fill="#2b2b33"/></g><circle cx="42" cy="46" r="2.4" fill="#241d1f"/><circle cx="58" cy="46" r="2.4" fill="#241d1f"/><path d="M45 56q5 4 10 0" fill="none" stroke="#a05f3f" stroke-width="2.2" stroke-linecap="round"/></svg>

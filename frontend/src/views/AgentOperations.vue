@@ -7,7 +7,7 @@
     <p v-if="error" class="error notice" role="alert">{{ error }}</p>
     <p v-if="loading && !resources" class="empty">正在加载 Agent 资源…</p>
     <template v-if="resources">
-      <div class="agent-heading"><img v-if="resources.agent.avatar" :src="avatarUrl(resources.agent.avatar)" alt="" /><Bot v-else :size="32" /><div><strong>{{ resources.agent.name }}</strong><p>{{ resources.agent.description || '管理此 Agent 的使用资源' }}</p></div></div>
+      <div class="agent-heading"><AgentAvatar v-if="resources.agent.avatar" :avatar="resources.agent.avatar" /><Bot v-else :size="32" /><div><strong>{{ resources.agent.name }}</strong><p>{{ resources.agent.description || '管理此 Agent 的使用资源' }}</p></div></div>
       <p v-if="resources.agent.agent_type === 'proxy'" class="notice">Proxy Agent 的知识和工具由外部系统执行；此处维护的平台资源不会自动同步到外部服务。</p>
       <div class="resource-layout">
         <nav class="resource-nav" aria-label="资源类型">
@@ -29,7 +29,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bot, RefreshCw, BookOpen, Wrench, Database, Brain } from 'lucide-vue-next'
 import { agentOpsApi } from '../api'
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from '../components/AgentAvatar.vue'
 import AgentResources from '../components/AgentResources.vue'
 const route = useRoute(), router = useRouter(), agentId = route.params.agentId
 const resources = ref(null), loading = ref(false), error = ref(''), tab = ref('knowledge'), revision = ref(0)
@@ -46,7 +46,7 @@ onMounted(load)
 .agent-operations { width:100%; min-width:0; }
 .agent-heading {display:flex;gap:14px;align-items:center;margin-bottom:20px}
 .agent-heading > div {min-width:0;overflow-wrap:anywhere}.agent-heading > svg {flex-shrink:0}
-.agent-heading img {flex-shrink:0;width:48px;height:48px;border-radius:12px;object-fit:cover}
+.agent-heading :is(img, .agent-avatar-inline) {flex-shrink:0;width:48px;height:48px;border-radius:12px;object-fit:cover}
 .agent-heading strong {font-size:18px;line-height:26px}.agent-heading p {font-size:13px;color:var(--text2);margin:4px 0 0;line-height:22px}
 .resource-layout { display:flex; align-items:flex-start; gap:24px; min-width:0; }
 .resource-nav { width:200px; padding:16px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); flex:0 0 auto; }

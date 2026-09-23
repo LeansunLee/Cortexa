@@ -39,7 +39,7 @@
           :class="['conv-item', { active: currentConvId === conv.id }]"
           @click="selectConversation(conv.id)">
           <div class="conv-avatar">
-            <img v-if="conv.agent_avatar && conv.agent_avatar.startsWith('/')" :src="avatarUrl(conv.agent_avatar)" class="conv-avatar-img" />
+            <AgentAvatar v-if="conv.agent_avatar && conv.agent_avatar.startsWith('/')" :avatar="conv.agent_avatar" class="conv-avatar-img" />
             <span v-else><Bot :size="16" /></span>
           </div>
           <div class="conv-info">
@@ -77,7 +77,7 @@
         <div class="chat-header">
           <div class="chat-header-info">
             <div class="chat-agent-badge" v-if="currentConvAgent">
-              <img v-if="currentConvAgent.avatar && currentConvAgent.avatar.startsWith('/')" :src="avatarUrl(currentConvAgent.avatar)" class="chat-agent-avatar" />
+              <AgentAvatar v-if="currentConvAgent.avatar && currentConvAgent.avatar.startsWith('/')" :avatar="currentConvAgent.avatar" class="chat-agent-avatar" />
               <span v-else class="chat-agent-emoji"><AppIcon name="Bot" :size="20" /></span>
             </div>
             <div class="chat-header-text">
@@ -96,7 +96,7 @@
           <!-- Welcome -->
           <div v-if="messages.length === 0" class="chat-welcome">
             <div class="welcome-avatar" v-if="currentConvAgent">
-              <img v-if="currentConvAgent.avatar && currentConvAgent.avatar.startsWith('/')" :src="avatarUrl(currentConvAgent.avatar)" />
+              <AgentAvatar v-if="currentConvAgent.avatar && currentConvAgent.avatar.startsWith('/')" :avatar="currentConvAgent.avatar" />
               <span v-else><AppIcon name="Bot" :size="20" /></span>
             </div>
             <h3>{{ currentConvAgent ? currentConvAgent.name : '通用对话' }}</h3>
@@ -365,7 +365,7 @@
 </template>
 
 <script setup>
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
 import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, Wrench, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
@@ -1535,7 +1535,7 @@ onBeforeUnmount(() => {
   transition: opacity 0.15s; line-height: 1;
 }
 .conv-item:hover .conv-delete { opacity: 1; }
-.conv-delete:hover { color: #EF4444; }
+.conv-delete:hover { color: var(--danger); }
 
 /* New Chat Form */
 .new-chat-form { padding: 16px; min-height: 0; overflow-y: auto; }
@@ -1698,7 +1698,7 @@ onBeforeUnmount(() => {
   color: var(--text3); cursor: pointer; transition: all 0.12s;
 }
 .action-btn:hover { background: var(--surface2); color: var(--text2); }
-.copy-ok { color: #22C55E; }
+.copy-ok { color: var(--success); }
 
 /* ===== Thinking Indicator ===== */
 .thinking-indicator {
@@ -1991,7 +1991,7 @@ onBeforeUnmount(() => {
 }
 .attachment-size { font-size: 11px; color: var(--text3); }
 .attachment-status { font-size: 11px; color: var(--primary); }
-.attachment-status.error { color: #EF4444; }
+.attachment-status.error { color: var(--danger); }
 .attachment-remove {
   display: flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border: none; background: none; color: var(--text3);
@@ -2068,8 +2068,8 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-.outcome-error .status-icon svg { color: #DC2626; }
-.outcome-done .status-icon svg { color: #059669; }
+.outcome-error .status-icon svg { color: var(--danger); }
+.outcome-done .status-icon svg { color: var(--success); }
 </style>
 
 <style scoped>

@@ -1,10 +1,10 @@
-<template><div class="my-agents"><PageHeader><button class="btn btn-ghost" :disabled="loading" @click="load"><RefreshCw :size="16" /> 刷新</button></PageHeader><p v-if="error" role="alert">{{ error }}</p><div v-if="loading" class="empty">正在加载…</div><div v-else-if="!agents.length" class="empty"><Bot :size="40" /><h3>还没有可用的 Agent</h3><p>请联系空间管理员分配 Agent，并确认它已发布。</p></div><div v-else class="agent-grid"><article v-for="a in agents" :key="a.id"><div class="agent-avatar"><img v-if="a.avatar?.startsWith('/')" :src="avatarUrl(a.avatar)" /><Bot v-else :size="28" /></div><h2>{{ a.name }}</h2><p>{{ a.description || '准备好与你一起工作。' }}</p><div class="agent-actions"><button class="btn btn-primary" :disabled="busy === a.id" @click="start(a)">对话 <ArrowUpRight :size="16" /></button><button v-if="can('agent.operate')" class="btn btn-ghost ops-button" @click="router.push('/agent-operations/' + a.id)"><Wrench :size="16" />运维</button></div></article></div></div></template>
+<template><div class="my-agents"><PageHeader><button class="btn btn-ghost" :disabled="loading" @click="load"><RefreshCw :size="16" /> 刷新</button></PageHeader><p v-if="error" role="alert">{{ error }}</p><div v-if="loading" class="empty">正在加载…</div><div v-else-if="!agents.length" class="empty"><Bot :size="40" /><h3>还没有可用的 Agent</h3><p>请联系空间管理员分配 Agent，并确认它已发布。</p></div><div v-else class="agent-grid"><article v-for="a in agents" :key="a.id"><div class="agent-avatar"><AgentAvatar :avatar="a.avatar || ''" /></div><h2>{{ a.name }}</h2><p>{{ a.description || '准备好与你一起工作。' }}</p><div class="agent-actions"><button class="btn btn-primary" :disabled="busy === a.id" @click="start(a)">对话 <ArrowUpRight :size="16" /></button><button v-if="can('agent.operate')" class="btn btn-ghost ops-button" @click="router.push('/agent-operations/' + a.id)"><Wrench :size="16" />运维</button></div></article></div></div></template>
 <script setup>
 import { can } from '../auth'
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from '../components/AgentAvatar.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ArrowUpRight, RefreshCw, Wrench } from 'lucide-vue-next'
+import { ArrowUpRight, RefreshCw, Wrench } from 'lucide-vue-next'
 import api, { conversationApi } from '../api'
 const router = useRouter(), agents = ref([]), loading = ref(false), error = ref(''), busy = ref('')
 async function load(){loading.value=true;error.value='';try{agents.value=(await api.get('/auth/agents')).data}catch(e){error.value=e.response?.data?.detail||'加载失败'}finally{loading.value=false}}

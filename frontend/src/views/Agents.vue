@@ -9,7 +9,7 @@
         <div v-for="agent in agents" :key="agent.id" class="agent-card" :class="{ 'agent-card-menu-open': openAgentMenu === agent.id }" @click="editAgent(agent)">
           <div class="agent-header">
             <div class="agent-avatar">
-              <img v-if="agent.avatar" :src="avatarUrl(agent.avatar)" alt="avatar" class="agent-avatar-img" />
+              <AgentAvatar v-if="agent.avatar" :avatar="agent.avatar" class="agent-avatar-img" />
               <span v-else><Bot :size="16" /></span>
             </div>
             <div class="agent-info">
@@ -97,7 +97,7 @@
               <label>头像</label>
               <div class="avatar-upload-area">
                 <div class="avatar-preview" @click="$refs.avatarInput.click()">
-                  <img v-if="editingAgent.avatar" :src="avatarUrl(editingAgent.avatar)" alt="avatar" class="avatar-preview-img" />
+                  <AgentAvatar v-if="editingAgent.avatar" :avatar="editingAgent.avatar" class="avatar-preview-img" />
                   <span v-else class="avatar-placeholder">点击上传</span>
                 </div>
                 <input ref="avatarInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" @change="handleAvatarUpload" />
@@ -108,7 +108,7 @@
                 <div class="preset-avatar-grid">
                   <button type="button" v-for="a in presetAvatars" :key="a.path" :class="['preset-avatar-item', { active: editingAgent.avatar === a.path }]"
                     @click="editingAgent.avatar = a.path" :title="a.label" :aria-pressed="editingAgent.avatar === a.path">
-                    <img :src="avatarUrl(a.path)" :alt="a.label" />
+                    <AgentAvatar :avatar="a.path" />
                     <span>{{ a.label }}</span>
                   </button>
                 </div>
@@ -513,6 +513,7 @@
 
 <script setup>
 import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from '../components/AgentAvatar.vue'
 import { can } from '../auth'
 import AgentResources from '../components/AgentResources.vue'
 import {

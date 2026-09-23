@@ -30,7 +30,7 @@
     <div v-if="pendingCollabs.length > 0 && !isExpanded" class="collab-pending-strip">
       <div v-for="p in pendingCollabs" :key="p.target_name || p.agent_name" class="collab-pending-item">
         <div class="collab-pending-avatar">
-          <img v-if="isImagePath(p.target_agent_avatar)" :src="avatarUrl(p.target_agent_avatar)" class="collab-avatar-img" />
+          <AgentAvatar v-if="isImagePath(p.target_agent_avatar)" :avatar="p.target_agent_avatar" class="collab-avatar-img" />
           <span v-else><AppIcon name="Bot" :size="20" /></span>
           <div class="collab-pending-spinner"></div>
         </div>
@@ -45,7 +45,7 @@
           <!-- Source agent -->
           <div class="flow-node source">
             <div class="flow-node-avatar">
-              <img v-if="isImagePath(sourceAvatar)" :src="avatarUrl(sourceAvatar)" class="collab-avatar-img" />
+              <AgentAvatar v-if="isImagePath(sourceAvatar)" :avatar="sourceAvatar" class="collab-avatar-img" />
               <span v-else><AppIcon name="Bot" :size="20" /></span>
             </div>
             <div class="flow-node-info">
@@ -63,7 +63,7 @@
           <template v-for="c in allCollabs" :key="c.agent_name">
             <div class="flow-node target" :class="c.status || 'pending'">
               <div class="flow-node-avatar" :class="c.status">
-                <img v-if="isImagePath(c.agent_avatar)" :src="avatarUrl(c.agent_avatar)" class="collab-avatar-img" />
+                <AgentAvatar v-if="isImagePath(c.agent_avatar)" :avatar="c.agent_avatar" class="collab-avatar-img" />
                 <span v-else><AppIcon name="Bot" :size="20" /></span>
                 <div v-if="!c.status || c.status === 'pending'" class="flow-spinner"></div>
               </div>
@@ -97,7 +97,7 @@
           <!-- Source agent again (synthesized) -->
           <div class="flow-node source synthesized" v-if="!running && pendingCollabs.length === 0 && completedCollabs.length > 0">
             <div class="flow-node-avatar">
-              <img v-if="isImagePath(sourceAvatar)" :src="avatarUrl(sourceAvatar)" class="collab-avatar-img" />
+              <AgentAvatar v-if="isImagePath(sourceAvatar)" :avatar="sourceAvatar" class="collab-avatar-img" />
               <span v-else><AppIcon name="Bot" :size="20" /></span>
             </div>
             <div class="flow-node-info">
@@ -112,7 +112,7 @@
           <div v-for="c in completedCollabs" :key="c.agent_name" class="collab-result-item" :class="{ 'has-error': c.status === 'failed' || c.status === 'timeout', 'needs-input': c.status === 'input_required' }" v-show="c.result || c.summary">
             <div class="result-header">
               <div class="result-avatar">
-                <img v-if="isImagePath(c.agent_avatar)" :src="avatarUrl(c.agent_avatar)" class="collab-avatar-img" />
+                <AgentAvatar v-if="isImagePath(c.agent_avatar)" :avatar="c.agent_avatar" class="collab-avatar-img" />
                 <span v-else><AppIcon name="Bot" :size="20" /></span>
               </div>
               <span class="result-name">{{ c.agent_name }}</span>
@@ -145,7 +145,7 @@
 </template>
 
 <script setup>
-import { avatarUrl } from '../utils/avatar'
+import AgentAvatar from './AgentAvatar.vue'
 import { ref, computed } from 'vue'
 import { collaborationApi } from '../api/index.js'
 
