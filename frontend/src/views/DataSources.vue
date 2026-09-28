@@ -756,12 +756,9 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .card-meta { font-size: 12px; color: var(--text3); margin-top: 2px; }
 .card-actions { display: flex; gap: 6px; align-items: center; }
 .type-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
-.type-postgres { background: #dbeafe; color: #1d4ed8; }
-:root[data-theme="dark"] .type-postgres { background: rgba(59, 130, 246, .16); color: #93c5fd; }
-.type-mysql { background: #fef3c7; color: #92400e; }
-:root[data-theme="dark"] .type-mysql { background: rgba(245, 158, 11, .16); color: #fcd34d; }
-.type-api { background: #e0e7ff; color: #4338ca; }
-:root[data-theme="dark"] .type-api { background: rgba(99, 102, 241, .18); color: #a5b4fc; }
+.type-postgres { background: var(--info-bg); color: var(--info); }
+.type-mysql { background: var(--warning-bg); color: var(--warning); }
+.type-api { background: var(--accent-light); color: var(--accent); }
 .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
 .status-active { background: var(--success-bg); color: var(--success); }
 .status-inactive { background: var(--surface2); color: var(--text3); }
@@ -776,8 +773,8 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .result-meta { font-size: 12px; color: var(--text3); margin-top: 4px; }
 .error-msg { color: var(--danger); font-size: 13px; margin-top: 4px; }
 .empty-hint { color: var(--text3); font-size: 13px; padding: 12px 0; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: var(--surface); color: var(--text); border-radius: 8px; padding: 24px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,.2); }
+.modal-overlay { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--surface-dialog); color: var(--text); border-radius: var(--radius); padding: 24px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-dialog); }
 .modal-wide { width: 680px; }
 .modal h3 { margin: 0 0 16px; }
 .modal-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }

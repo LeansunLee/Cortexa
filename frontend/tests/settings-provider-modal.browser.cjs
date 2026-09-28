@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const dist = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const dist = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 const origin = 'http://settings.local';
 
 (async () => {

@@ -4,7 +4,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const origin = process.env.LIVE_ORIGIN || 'http://agent-checkbox.local';
-const dist = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const dist = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 
 (async () => {
   const { themeVariables } = await import('../src/utils/theme.js');
@@ -48,8 +48,8 @@ const dist = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
     await page.locator('.agent-card').first().click();
     await page.locator('.nav-item').filter({ hasText: '模型配置' }).click();
     await page.getByRole('button', { name: '目标协作权限' }).click();
-    await page.getByRole('option', { name: /Ask Before Collaboration/ }).click();
-    assert.match(await page.getByRole('button', { name: '目标协作权限' }).innerText(), /Ask Before Collaboration/);
+    await page.getByRole('option', { name: /询问/ }).click();
+    assert.match(await page.getByRole('button', { name: '目标协作权限' }).innerText(), /询问/);
     await page.getByRole('heading', { name: /Runtime Budget/ }).waitFor();
     const context = page.locator('.agent-budget-field').filter({ hasText: 'Max Context Tokens' });
     assert.equal(await context.locator('input[type="number"]').inputValue(), '64000');

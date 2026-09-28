@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import httpx
 import pytest
-from agentdevstu.usage import collector
-from agentdevstu.usage.context import current_usage, root_context, usage_scope, usage_action
-from agentdevstu.usage.collector import UsageCallback, normalize_usage
+from cortexa.usage import collector
+from cortexa.usage.context import current_usage, root_context, usage_scope, usage_action
+from cortexa.usage.collector import UsageCallback, normalize_usage
 
 
 @pytest.fixture
@@ -197,8 +197,8 @@ def test_outbox_ack_does_not_delete_concurrent_completion(spool):
 
 def test_api_superadmin_only_and_filters():
     from fastapi import FastAPI
-    from agentdevstu.usage.api import router
-    from agentdevstu.security.access import Actor, current_actor
+    from cortexa.usage.api import router
+    from cortexa.security.access import Actor, current_actor
 
     app = FastAPI()
     app.include_router(router)
@@ -229,13 +229,13 @@ async def pg_integration(monkeypatch):
     from sqlalchemy import text, select
     from sqlalchemy.engine import make_url
     from fastapi import FastAPI
-    from agentdevstu.usage.api import router
-    from agentdevstu.usage.models import UsageOperation, UsageCall
-    from agentdevstu.api.deps import get_db
+    from cortexa.usage.api import router
+    from cortexa.usage.models import UsageOperation, UsageCall
+    from cortexa.api.deps import get_db
     import importlib
 
-    engine_module = importlib.import_module("agentdevstu.db.engine")
-    from agentdevstu.security.access import Actor, current_actor
+    engine_module = importlib.import_module("cortexa.db.engine")
+    from cortexa.security.access import Actor, current_actor
 
     url = make_url(os.environ["USAGE_TEST_DATABASE_URL"]).set(drivername="postgresql+asyncpg")
     base = create_async_engine(url)
@@ -345,7 +345,7 @@ async def pg_integration(monkeypatch):
 
 
 def test_embedding_batches_account_input_only(spool):
-    from agentdevstu.usage.collector import AuditedEmbeddingClient
+    from cortexa.usage.collector import AuditedEmbeddingClient
     class Client:
         def create(self, **kwargs):
             return {"model": "embed-model", "usage": {"prompt_tokens": 12, "total_tokens": 12}, "data": []}
@@ -360,7 +360,7 @@ def test_embedding_batches_account_input_only(spool):
 
 
 def test_unknown_fields_do_not_become_zero_and_csv_formula_is_escaped():
-    from agentdevstu.usage.api import csv_cell
+    from cortexa.usage.api import csv_cell
     assert csv_cell(None) == ""
     assert csv_cell("=SUM(A1)") == "'=SUM(A1)"
     assert csv_cell("  +1+2").startswith("'")

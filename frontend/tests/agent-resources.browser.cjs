@@ -1,6 +1,6 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fs = require('fs'), path = require('path'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '../..'), dist = path.join(root, 'src/agentdevstu/web/static/dist');
+const root = path.resolve(__dirname, '../..'), dist = path.join(root, 'src/cortexa/web/static/dist');
 const origin = process.env.LIVE_ORIGIN || 'http://agent.local';
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
@@ -39,7 +39,7 @@ const origin = process.env.LIVE_ORIGIN || 'http://agent.local';
           return route.fulfill({ json: data });
         }
         if (process.env.LIVE_ORIGIN) return route.continue();
-        const file = p.startsWith('/static/dist/') ? path.join(dist, p.slice('/static/dist/'.length)) : p.startsWith('/static/avatars/') ? path.join(root, 'src/agentdevstu/web', p) : path.join(dist, 'index.html');
+        const file = p.startsWith('/static/dist/') ? path.join(dist, p.slice('/static/dist/'.length)) : p.startsWith('/static/avatars/') ? path.join(root, 'src/cortexa/web', p) : path.join(dist, 'index.html');
         return route.fulfill({ body: fs.readFileSync(file), contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html' });
       });
       summary.capabilities[0].description = '查询合作中门店；支持通用关键词及大区、省、市、区县、门店名称、经销商名称等条件组合筛选。仅返回 SQL 中的真实字段；完整列表优先保留全部门店名称。LongDescriptionWithoutSpaces'.repeat(3);

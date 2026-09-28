@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from agentdevstu.api.memories import MemoryCreate, MemoryUpdate, update_memory
-from agentdevstu.memory.service import format_memories_for_prompt
+from cortexa.api.memories import MemoryCreate, MemoryUpdate, update_memory
+from cortexa.memory.service import format_memories_for_prompt
 
 
 @pytest.mark.parametrize("schema", [MemoryCreate, MemoryUpdate])
@@ -25,7 +25,7 @@ def test_focus_accepts_importance_boundaries(importance):
 
 
 def test_edit_requires_correction_and_preserves_zero_importance(monkeypatch):
-    from agentdevstu.api import memories as api
+    from cortexa.api import memories as api
     from fastapi import HTTPException
     memory = SimpleNamespace(id=uuid.uuid4(),type="semantic",content="旧内容",importance=.7,revision=1,metadata_json={},source_type='manual')
     monkeypatch.setattr(api,'memory_access',AsyncMock(return_value=memory))

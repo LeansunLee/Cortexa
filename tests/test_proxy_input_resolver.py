@@ -3,9 +3,9 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from agentdevstu.agents import proxy_executor
-from agentdevstu.agents.proxy_input_resolver import resolve_proxy_input
-from agentdevstu.db.models import Agent
+from cortexa.agents import proxy_executor
+from cortexa.agents.proxy_input_resolver import resolve_proxy_input
+from cortexa.db.models import Agent
 
 
 def make_agent(fields, *, required=(), threshold=0.8):

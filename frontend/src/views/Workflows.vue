@@ -28,7 +28,7 @@
       <p>暂无工作流，点击上方按钮创建</p>
     </div>
 
-    <div v-if="showCreateModal" class="modal" @click.self="showCreateModal = false">
+    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal-box">
         <div class="modal-header">
           <h3>创建工作流</h3>
@@ -142,14 +142,14 @@ onMounted(() => {
 .empty-state { text-align: center; padding: 80px 20px; color: var(--text3); }
 .empty-icon { font-size: 48px; margin-bottom: 16px; }
 
-.modal {
+.modal-overlay {
   display: flex; align-items: center; justify-content: center;
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 9999;
+  background: var(--overlay); z-index: 9999;
 }
 .modal-box {
-  background: var(--surface); border-radius: var(--radius);
-  width: 480px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  background: var(--surface-dialog); border-radius: var(--radius);
+  width: 480px; max-width: 90vw; box-shadow: var(--shadow-dialog);
 }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;

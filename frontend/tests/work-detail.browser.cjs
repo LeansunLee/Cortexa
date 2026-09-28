@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const browser = await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL || 'chrome'});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];page.on('pageerror', e=>errors.push(e.message));
-const root=path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const root=path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 let memoryCalls=0, logs=[], activities=[], failedOnce=false; let workRows = [{id:'1',title:'9月目标分解表制作',goal:'将430台月目标拆解到周、城市、门店颗粒度',priority:'P2',status:'completed',assignee_name:'阿木',due_at:'2026-09-12T17:39:00',source_type:'agent_collaboration',source_label:'Agent 对话'}, {id:'2',title:'跨城市门店销售目标执行跟踪与复盘报告制作',goal:'覆盖各区域门店销售目标执行情况，整理偏差与改进建议。'.repeat(4),priority:'P1',status:'in_progress',assignee_name:'负责人名字很长的情况',source_type:'manual',source_label:'人工创建'}], listReads = 0, releaseList = null;
 workRows[0]={...workRows[0],priority:'P0',deliverable_requirement:'提交按周、城市和门店分解的目标表。',creator_name:'李生',reviewer_name:'李生',permissions:{log:true,memory:true,knowledge:true},created_at:'2026-09-09T10:00:00'};
 const permissions=['agent.use','agent.read','knowledge.manage','data.manage','config.manage','meeting.use'];
@@ -52,8 +52,10 @@ await page.locator('.log-entry').getByText('已完成全部门店目标核对',{
 await page.getByRole('button',{name:'＋ 添加一条',exact:true}).click();
 for(let i=0;i<2;i++) {
 const entry=page.locator('.memory-entry').nth(i);
-await entry.getByLabel('目标 Agent').selectOption('a1');
-await entry.getByLabel('记忆类型').selectOption(i?'focus':'semantic');
+await entry.getByRole('button',{name:'目标 Agent'}).click();
+await page.getByRole('option',{name:'业务分析 Agent',exact:true}).click();
+await entry.getByRole('button',{name:'记忆类型'}).click();
+await page.getByRole('option',{name:i?'关注':'事实'}).click();
 await entry.getByLabel('记忆内容').fill(i?'持续关注门店周达成率':'9月目标为430台');
 }
 await page.getByRole('button',{name:'保存 2 条记忆',exact:true}).click();

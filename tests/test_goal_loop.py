@@ -8,12 +8,12 @@ import pytest
 from langchain_core.messages import AIMessageChunk, messages_from_dict
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agentdevstu.runtime.adapters import CapabilityAdapter
-from agentdevstu.runtime.artifacts import ArtifactStore
-from agentdevstu.runtime.capabilities import CapabilityDescriptor, CapabilityType
-from agentdevstu.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages
-from agentdevstu.runtime.projection import model_result_text
-from agentdevstu.runtime.state import GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
+from cortexa.runtime.adapters import CapabilityAdapter
+from cortexa.runtime.artifacts import ArtifactStore
+from cortexa.runtime.capabilities import CapabilityDescriptor, CapabilityType
+from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages
+from cortexa.runtime.projection import model_result_text
+from cortexa.runtime.state import GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
 
 
 class Args(BaseModel):
@@ -419,7 +419,7 @@ def test_completed_or_waiting_state_does_not_execute_again():
 def test_usage_correlates_goal_and_action_without_prompt(monkeypatch, tmp_path):
     from test_model_usage import mock_model
 
-    from agentdevstu.usage.collector import UsageCallback, pending_batch
+    from cortexa.usage.collector import UsageCallback, pending_batch
 
     monkeypatch.setenv("USAGE_SPOOL_PATH", str(tmp_path / "usage.sqlite"))
     callback = UsageCallback("test", "openai", "model")

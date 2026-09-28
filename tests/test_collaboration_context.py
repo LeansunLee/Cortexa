@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 
 from langchain_core.messages import AIMessageChunk
-from agentdevstu.collaboration import manager
-from agentdevstu.collaboration.schemas import AgentHandoff
-from agentdevstu.db.models import Agent
+from cortexa.collaboration import manager
+from cortexa.collaboration.schemas import AgentHandoff
+from cortexa.db.models import Agent
 
 
 @pytest.mark.parametrize("include_history", [True, False])
@@ -37,11 +37,11 @@ def test_target_context_preserves_history_and_uses_target_resources(monkeypatch,
             yield AIMessageChunk(content="测试回答")
 
     organization = AsyncMock(return_value=[{"role": "user", "content": "当前空间组织职责目录"}])
-    monkeypatch.setattr("agentdevstu.agents.context.organization_reference", organization)
+    monkeypatch.setattr("cortexa.agents.context.organization_reference", organization)
     knowledge = AsyncMock(return_value="独立知识库正文")
     memories = AsyncMock(return_value=["目标记忆"])
-    monkeypatch.setattr(importlib.import_module("agentdevstu.db.engine"), "async_session_factory", Session)
-    monkeypatch.setattr("agentdevstu.config.llm_providers.create_llm", lambda name: Model())
+    monkeypatch.setattr(importlib.import_module("cortexa.db.engine"), "async_session_factory", Session)
+    monkeypatch.setattr("cortexa.config.llm_providers.create_llm", lambda name: Model())
     monkeypatch.setattr(manager, "retrieve_knowledge", knowledge)
     monkeypatch.setattr(manager, "retrieve_memories", memories)
     monkeypatch.setattr(manager, "format_memories_for_prompt", lambda values: "目标记忆")

@@ -212,7 +212,7 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+  background: var(--navigation-background);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -260,8 +260,8 @@ onUnmounted(() => {
 }
 
 .status-dot.online {
-  background: #22C55E;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+  background: var(--success);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 20%, transparent);
 }
 
 .mention-popover-loading,
@@ -279,7 +279,7 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #8B5CF6;
+  background: var(--primary);
   animation: mentionPulse 1s ease-in-out infinite;
 }
 

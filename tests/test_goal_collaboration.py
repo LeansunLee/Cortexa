@@ -16,18 +16,18 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from test_goal_loop import FakeModel, binding, tool_call
 
-from agentdevstu.api import goals as api
-from agentdevstu.db.engine import Base
-from agentdevstu.db.models import Agent, AgentCollaboration, Conversation, ConversationMessage, Workspace
-from agentdevstu.runtime import agent_executor as executor
-from agentdevstu.runtime.artifacts import ArtifactStore
-from agentdevstu.runtime.collaboration import Autonomy, discover, effective_policy, permitted_by_goal, resolve_explicit
-from agentdevstu.runtime.goals import parse_goal
-from agentdevstu.runtime.state import GoalState, RuntimeHalt
-from agentdevstu.runtime.store import GoalStore
-from agentdevstu.security import isolation  # noqa: F401
-from agentdevstu.security.access import Actor, current_actor
-from agentdevstu.security.models import User
+from cortexa.api import goals as api
+from cortexa.db.engine import Base
+from cortexa.db.models import Agent, AgentCollaboration, Conversation, ConversationMessage, Workspace
+from cortexa.runtime import agent_executor as executor
+from cortexa.runtime.artifacts import ArtifactStore
+from cortexa.runtime.collaboration import Autonomy, discover, effective_policy, permitted_by_goal, resolve_explicit
+from cortexa.runtime.goals import parse_goal
+from cortexa.runtime.state import GoalState, RuntimeHalt
+from cortexa.runtime.store import GoalStore
+from cortexa.security import isolation  # noqa: F401
+from cortexa.security.access import Actor, current_actor
+from cortexa.security.models import User
 
 URL = os.getenv("GOAL_TEST_DATABASE_URL")
 CONFIG = {"features": {"goal_execution_enabled": True, "goal_collaboration_enabled": True}}
@@ -46,7 +46,7 @@ def test_policy_layers_only_tighten():
 
 @pytest.mark.skipif(not URL, reason="Isolated PostgreSQL URL required")
 def test_workspace_mode_is_inherited_without_copying_agent_config(tmp_path, monkeypatch):
-    from agentdevstu.runtime.collaboration import policy_for
+    from cortexa.runtime.collaboration import policy_for
 
     async def scenario():
         async with setup(tmp_path, monkeypatch) as ctx:
@@ -152,7 +152,7 @@ async def setup(tmp_path, monkeypatch):
         async with sessions() as db:
             db.add_all(
                 [
-                    Workspace(id=ws, name="test"),
+                    Workspace(id=ws, name="test", runtime_policy={"collaboration": {"max_autonomy": "AUTONOMOUS"}}),
                     Workspace(id=other_ws, name="other"),
                     User(id=owner, username="goal-owner", password_hash="test", display_name="test"),
                 ]
@@ -172,7 +172,8 @@ async def setup(tmp_path, monkeypatch):
                 ]
             )
             await db.flush()
-            db.add(Conversation(id=conv, workspace_id=ws, agent_id=source.id, owner_user_id=owner))
+            db.add(Conversation(id=conv, workspace_id=ws, agent_id=source.id, owner_user_id=owner,
+                                metadata_json={"collaboration_mode": "ASK_BEFORE_COLLABORATION"}))
             await db.commit()
         actor = Actor(
             user_id=owner,
@@ -196,7 +197,7 @@ async def setup(tmp_path, monkeypatch):
         monkeypatch.setattr(api, "execution_config", lambda: CONFIG)
         monkeypatch.setattr(api, "prepare_bindings", AsyncMock(return_value=([], [])))
         monkeypatch.setattr(executor, "prepare_bindings", AsyncMock(return_value=([], [])))
-        monkeypatch.setattr("agentdevstu.memory.integration.register_extraction", AsyncMock())
+        monkeypatch.setattr("cortexa.memory.integration.register_extraction", AsyncMock())
         yield SimpleNamespace(store=store, source=source, targets=targets, conv=conv, actor=actor)
     finally:
         if token:
@@ -223,6 +224,8 @@ async def set_mode(ctx, mode):
     async with ctx.store.sessions() as db:
         agent = await db.get(Agent, ctx.source.id)
         agent.collaboration = {"autonomy": mode}
+        conv = await db.get(Conversation, ctx.conv)
+        conv.metadata_json = {"collaboration_mode": mode}
         await db.commit()
     ctx.source.collaboration = {"autonomy": mode}
 
@@ -236,7 +239,7 @@ async def discovery_scenario(tmp_path, monkeypatch):
     async with setup(tmp_path, monkeypatch) as ctx:
         payload = {"goal": parse_goal("分析销售数据").model_dump(mode="json")}
         async with ctx.store.sessions() as db:
-            state = GoalState()
+            state = GoalState(collaboration_mode="ASK_BEFORE_COLLABORATION")
             agents, _ = await discover(db, ctx.source, state, payload, CONFIG)
             assert {a.id for a in agents} == {a.id for a in ctx.targets[:2]}
             forward = await resolve_explicit(db, ctx.source, parse_goal("@销售Agent @分析Agent 分析销售数据"))
@@ -461,16 +464,16 @@ def test_settings_merge_publication_and_policy_revocation(tmp_path, monkeypatch)
 
 
 async def settings_scenario(tmp_path, monkeypatch):
-    from agentdevstu.api.agents import (
+    from cortexa.api.agents import (
         AgentRuntimeBudgetUpdate,
         _create_version_impl,
         get_agent_runtime_budget,
         put_agent_runtime_budget,
         update_agent,
     )
-    from agentdevstu.api.runtime_policy import BudgetPolicyUpdate, put_policy
-    from agentdevstu.api.schemas import AgentUpdate
-    from agentdevstu.runtime.collaboration import authorize_agent
+    from cortexa.api.runtime_policy import BudgetPolicyUpdate, put_policy
+    from cortexa.api.schemas import AgentUpdate
+    from cortexa.runtime.collaboration import authorize_agent
 
     async with setup(tmp_path, monkeypatch) as ctx:
         ctx.actor.runtime = False

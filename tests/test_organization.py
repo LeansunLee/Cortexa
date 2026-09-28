@@ -11,8 +11,8 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from agentdevstu.organization.schemas import ProfileInput, UnitInput
-from agentdevstu.organization.service import score_member
+from cortexa.organization.schemas import ProfileInput, UnitInput
+from cortexa.organization.service import score_member
 
 
 def test_validation_and_scoring():
@@ -39,7 +39,7 @@ def test_validation_and_scoring():
 
 
 def test_proxy_context_never_reads_directory():
-    from agentdevstu.agents.context import organization_reference
+    from cortexa.agents.context import organization_reference
 
     db = SimpleNamespace(execute=AsyncMock())
     assert asyncio.run(organization_reference(SimpleNamespace(agent_type="proxy"), db)) == []
@@ -47,8 +47,8 @@ def test_proxy_context_never_reads_directory():
 
 
 def test_context_requires_current_workspace():
-    from agentdevstu.organization.service import organization_context
-    from agentdevstu.security.access import Actor, current_actor
+    from cortexa.organization.service import organization_context
+    from cortexa.security.access import Actor, current_actor
 
     ws = uuid.uuid4()
     token = current_actor.set(Actor(uuid.uuid4(), "a", False, False, 1, memberships={ws: {}}, workspace_id=ws))
@@ -75,14 +75,14 @@ async def integration(monkeypatch):
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from agentdevstu.api.deps import get_db
-    from agentdevstu.db.engine import Base
-    from agentdevstu.db.models import Workspace
-    from agentdevstu.organization.models import MemberProfile, OrgUnit
-    from agentdevstu.security.http import COOKIE
-    from agentdevstu.security.models import LoginSession, MemberRole, Membership, Role, User
-    from agentdevstu.security.passwords import token_digest
-    from agentdevstu.web.app import app
+    from cortexa.api.deps import get_db
+    from cortexa.db.engine import Base
+    from cortexa.db.models import Workspace
+    from cortexa.organization.models import MemberProfile, OrgUnit
+    from cortexa.security.http import COOKIE
+    from cortexa.security.models import LoginSession, MemberRole, Membership, Role, User
+    from cortexa.security.passwords import token_digest
+    from cortexa.web.app import app
 
     schema = "org_test_" + uuid.uuid4().hex
     base = create_async_engine(os.environ["WORK_TEST_DATABASE_URL"])
@@ -93,7 +93,7 @@ async def integration(monkeypatch):
     )
     factory = async_sessionmaker(engine, expire_on_commit=False)
     for mod in list(sys.modules.values()):
-        if getattr(mod, "__name__", "").startswith("agentdevstu.") and hasattr(mod, "async_session_factory"):
+        if getattr(mod, "__name__", "").startswith("cortexa.") and hasattr(mod, "async_session_factory"):
             monkeypatch.setattr(mod, "async_session_factory", factory)
 
     async def dependency():
@@ -214,8 +214,8 @@ async def integration(monkeypatch):
         )
         assert not await call(reader, "POST", "/works/assignee-recommendations", json={"title": "Vue 前端开发"})
         await call(admin, "PUT", "/organization/units/" + child["id"], json={"name": "前端组", "parent_id": root["id"]})
-        from agentdevstu.organization.service import organization_context
-        from agentdevstu.security.access import current_actor, load_actor
+        from cortexa.organization.service import organization_context
+        from cortexa.security.access import current_actor, load_actor
 
         a = await load_actor(tokens[0])
         a.workspace_id = spaces[0].id

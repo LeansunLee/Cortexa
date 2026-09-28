@@ -74,7 +74,7 @@
     </div>
 
     <!-- Edit Workspace Modal -->
-    <div v-if="showEditModal && editingWorkspace" class="modal" @click.self="showEditModal = false">
+    <div v-if="showEditModal && editingWorkspace" class="modal-overlay" @click.self="showEditModal = false">
       <div class="modal-box">
         <div class="modal-header">
           <h3>编辑工作空间</h3>
@@ -107,7 +107,7 @@
     </div>
 
     <!-- Create Workspace Modal -->
-    <div v-if="showCreateModal" class="modal" @click.self="showCreateModal = false">
+    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal-box">
         <div class="modal-header">
           <h3>创建工作空间</h3>
@@ -309,22 +309,21 @@ onMounted(() => {
 .ws-meta { font-size: 12px; color: var(--text3); }
 .empty-state { text-align: center; padding: 48px 20px; color: var(--text3); font-size: 14px; }
 
-.modal {
+.modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
+  background: var(--overlay);
   z-index: 9999;
 }
 .modal-box {
-  background: var(--surface);
+  background: var(--surface-dialog);
   border-radius: var(--radius);
   width: 520px;
   max-width: 90vw;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-dialog);
 }
 .modal-header {
   display: flex;

@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
-from agentdevstu.collaboration import manager
-from agentdevstu.collaboration.schemas import AgentHandoff
-from agentdevstu.db.models import Agent
+from cortexa.collaboration import manager
+from cortexa.collaboration.schemas import AgentHandoff
+from cortexa.db.models import Agent
 
 
 @pytest.mark.parametrize("kind,config,expected", [
@@ -21,7 +21,7 @@ def test_outer_timeout_respects_proxy_budget(monkeypatch, kind, config, expected
     session = AsyncMock()
     session.__aenter__.return_value = session
     session.get.return_value = None
-    monkeypatch.setattr(importlib.import_module("agentdevstu.db.engine"), "async_session_factory", lambda: session)
+    monkeypatch.setattr(importlib.import_module("cortexa.db.engine"), "async_session_factory", lambda: session)
     monkeypatch.setattr(manager, "_execute_target_agent", AsyncMock(return_value="结果"))
     observed = []
     async def wait_for(awaitable, timeout):

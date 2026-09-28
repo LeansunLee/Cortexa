@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import BackgroundTasks, UploadFile
 from PIL import Image
-from agentdevstu.api import knowledge
-from agentdevstu.data import doc_storage, document_preview as previews, pdf_extraction
-from agentdevstu.rag import summary
+from cortexa.api import knowledge
+from cortexa.data import doc_storage, document_preview as previews, pdf_extraction
+from cortexa.rag import summary
 from test_doc_summary import document
 from test_knowledge_hardening import run_as_knowledge_admin
 
@@ -70,7 +70,7 @@ def test_legacy_image_pipeline_preserves_manual_summary(storage, monkeypatch, ma
     session = AsyncMock()
     session.__aenter__.return_value = session
     session.get.return_value = doc
-    monkeypatch.setattr(importlib.import_module('agentdevstu.db.engine'), 'async_session_factory', lambda: session)
+    monkeypatch.setattr(importlib.import_module('cortexa.db.engine'), 'async_session_factory', lambda: session)
     def extract(path):
         assert path.read_bytes() == b'original image bytes'
         if failed:

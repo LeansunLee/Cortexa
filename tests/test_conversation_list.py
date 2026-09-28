@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from agentdevstu.api.conversations import list_conversations, _load_agent_capabilities
+from cortexa.api.conversations import list_conversations, _load_agent_capabilities
 
 
 def test_list_returns_conversations_without_tool_filtering():

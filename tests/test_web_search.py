@@ -7,7 +7,7 @@ import httpx
 import pytest
 from langchain_core.messages import AIMessage
 
-from agentdevstu.tools import web_search as web
+from cortexa.tools import web_search as web
 
 
 @pytest.fixture(autouse=True)
@@ -198,7 +198,7 @@ def test_runtime_forces_matched_business_tool_before_answering():
 
 def test_runtime_refuses_ungrounded_answer_when_required_tool_is_not_called():
     from langchain_core.tools import StructuredTool
-    from agentdevstu.tools.runtime import DATA_QUERY_GROUNDING_FAILURE
+    from cortexa.tools.runtime import DATA_QUERY_GROUNDING_FAILURE
 
     async def query_records():
         return {'data': []}

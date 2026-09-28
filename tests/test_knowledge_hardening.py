@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from agentdevstu.api import knowledge
-from agentdevstu.api import agents
-from agentdevstu.api.schemas import DocumentContentUpdate, KnowledgeBaseStatusUpdate
-from agentdevstu.data import doc_storage, document_preview as previews
-from agentdevstu.rag import summary
-from agentdevstu.security.access import current_actor
+from cortexa.api import knowledge
+from cortexa.api import agents
+from cortexa.api.schemas import DocumentContentUpdate, KnowledgeBaseStatusUpdate
+from cortexa.data import doc_storage, document_preview as previews
+from cortexa.rag import summary
+from cortexa.security.access import current_actor
 from test_doc_summary import document, run_retrieval
 
 
@@ -198,7 +198,7 @@ def test_agent_keyword_fallback_excludes_disabled_knowledge_bases():
 
 
 def test_process_lock_serializes_jobs(tmp_path, monkeypatch):
-    from agentdevstu.data import document_jobs
+    from cortexa.data import document_jobs
     monkeypatch.setattr(document_jobs, 'DOC_STORAGE_DIR', str(tmp_path))
     events = []
     async def job(number):

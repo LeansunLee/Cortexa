@@ -49,10 +49,10 @@
 
 .btn-danger {
   background: transparent;
-  color: #DC2626;
-  border: 1px solid rgba(220,38,38,0.2);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border));
 }
-.btn-danger:hover:not(:disabled) { background: #FEF2F2; }
+.btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
 
 .btn-sm { padding: 7px 14px; font-size: 13px; }
 
@@ -75,10 +75,11 @@
 
 /* -- Cards -- */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-card);
+  border: 1px solid var(--border-card);
   border-radius: var(--radius, 12px);
   padding: 20px;
+  box-shadow: var(--shadow-card);
 }
 
 .card-header {
@@ -173,9 +174,9 @@
 }
 
 .badge-success { background: var(--success-bg); color: var(--success); }
-.badge-warning { background: color-mix(in srgb, #F59E0B 16%, transparent); color: light-dark(#92400E, #FBBF24); }
+.badge-warning { background: var(--warning-bg); color: var(--warning); }
 .badge-error { background: var(--danger-bg); color: var(--danger); }
-.badge-info { background: color-mix(in srgb, #3B82F6 14%, transparent); color: light-dark(#1E40AF, #60A5FA); }
+.badge-info { background: var(--info-bg); color: var(--info); }
 
 /* -- Tabs -- */
 .tabs {
@@ -230,8 +231,7 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -239,13 +239,13 @@
 }
 
 .modal {
-  background: var(--surface);
+  background: var(--surface-dialog);
   border-radius: var(--radius, 12px);
   width: 520px;
   max-width: 90vw;
   max-height: 85vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-dialog);
 }
 
 .modal-header {

@@ -24,7 +24,7 @@ const assert = require('node:assert/strict');
       additionalProperties: false
     };
     const description = '查询合作中门店；支持通用关键词及大区、省、市、区县、门店名称、经销商名称等条件组合筛选。仅返回 SQL 中的真实字段。';
-    const root = process.env.FRONTEND_DIST_DIR || path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+    const root = process.env.FRONTEND_DIST_DIR || path.resolve(__dirname, '../../src/cortexa/web/static/dist');
     let originalTests = [];
     let draftTests = [];
     let rewrites = [];

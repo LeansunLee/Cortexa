@@ -13,11 +13,11 @@ from sqlalchemy import select, text
 from dotenv import load_dotenv
 
 load_dotenv()
-from agentdevstu.db.engine import engine, async_session_factory, Base
-from agentdevstu.db import models as m
-from agentdevstu.security import models as sm
-from agentdevstu.security.catalog import BUILTINS
-from agentdevstu.security.passwords import hash_password
+from cortexa.db.engine import engine, async_session_factory, Base
+from cortexa.db import models as m
+from cortexa.security import models as sm
+from cortexa.security.catalog import BUILTINS
+from cortexa.security.passwords import hash_password
 
 OWNED = ["t_conversations", "t_memories", "t_meetings", "t_tasks", "t_agent_runs", "t_task_runs", "t_data_queries"]
 
@@ -30,7 +30,7 @@ async def migrate(app_role=None):
         in {
             mapper.local_table.name
             for mapper in Base.registry.mappers
-            if mapper.class_.__module__ == "agentdevstu.security.models"
+            if mapper.class_.__module__ == "cortexa.security.models"
         }
     ]
     async with engine.begin() as conn:

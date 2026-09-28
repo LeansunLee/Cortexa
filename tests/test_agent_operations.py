@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
-from agentdevstu.api import agent_operations as ops
-from agentdevstu.api.agents import get_agent_resources
-from agentdevstu.api.knowledge import _can_edit_document, _can_manage
-from agentdevstu.security.access import Actor, current_actor
+from cortexa.api import agent_operations as ops
+from cortexa.api.agents import get_agent_resources
+from cortexa.api.knowledge import _can_edit_document, _can_manage
+from cortexa.security.access import Actor, current_actor
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ def test_private_or_foreign_knowledge_cannot_be_bound_as_shared(actor):
 def test_memory_archive_cannot_target_another_agent(actor,monkeypatch):
     _, agent = actor
     db=database(agent)
-    from agentdevstu.memory import access
+    from cortexa.memory import access
     monkeypatch.setattr(access,'memory_access',AsyncMock(return_value=SimpleNamespace(agent_id=uuid.uuid4())))
     with pytest.raises(HTTPException) as exc:
         asyncio.run(ops.archive_agent_memory(agent.id,uuid.uuid4(),db))
@@ -105,7 +105,7 @@ def test_memory_archive_cannot_target_another_agent(actor,monkeypatch):
 
 def test_memory_archive_preserves_record_from_another_creator(actor,monkeypatch):
     _, agent=actor
-    from agentdevstu.memory import access,governance
+    from cortexa.memory import access,governance
     mem=SimpleNamespace(id=uuid.uuid4(),agent_id=agent.id,created_by_user_id=uuid.uuid4(),status='active',revision=1)
     db=database(agent)
     monkeypatch.setattr(access,'memory_access',AsyncMock(return_value=mem))

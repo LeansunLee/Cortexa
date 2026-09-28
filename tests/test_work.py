@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
-from agentdevstu.work.schemas import WorkInput
-from agentdevstu.work.service import permissions, transition
-from agentdevstu.work.candidates import similar, Extraction
-from agentdevstu.security.access import Actor, current_actor
+from cortexa.work.schemas import WorkInput
+from cortexa.work.service import permissions, transition
+from cortexa.work.candidates import similar, Extraction
+from cortexa.security.access import Actor, current_actor
 
 
 def test_work_validation_and_conservative_dedup():
@@ -61,7 +61,7 @@ def test_rejection_requires_comment_and_returns_to_execution():
 
 
 def test_log_and_memory_validation():
-    from agentdevstu.work.schemas import MemoryInput, WorkLogInput, WorkLogUpdate
+    from cortexa.work.schemas import MemoryInput, WorkLogInput, WorkLogUpdate
     for kind in ("semantic", "episodic", "focus"):
         assert MemoryInput(agent_id=uuid.uuid4(), content="记忆", type=kind).type == kind
     for content in ("  ", "x" * 2001):
@@ -73,10 +73,10 @@ def test_log_and_memory_validation():
 
 def test_log_edit_authorization_conflict_and_audit(monkeypatch):
     from unittest.mock import Mock
-    from agentdevstu.api import works as api
-    from agentdevstu.work import service
-    from agentdevstu.work.schemas import WorkLogInput, WorkLogUpdate
-    from agentdevstu.work.models import WorkActivity
+    from cortexa.api import works as api
+    from cortexa.work import service
+    from cortexa.work.schemas import WorkLogInput, WorkLogUpdate
+    from cortexa.work.models import WorkActivity
     uid, other, ws, wid = (uuid.uuid4() for _ in range(4))
     a = Actor(uid, "author", False, False, 1, memberships={ws: {"permissions": set()}}, workspace_id=ws)
     w = SimpleNamespace(id=wid, workspace_id=ws, assignee_type="human", assignee_id=uid,
@@ -125,18 +125,18 @@ async def integration(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from sqlalchemy import text, select
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    from agentdevstu.web.app import app
-    from agentdevstu.db.engine import Base
-    from agentdevstu.db import models as m
-    from agentdevstu.security import models as sm
-    from agentdevstu.security.http import COOKIE
-    from agentdevstu.security.passwords import token_digest
-    from agentdevstu.work import service
-    from agentdevstu.data import doc_storage, document_preview
-    from agentdevstu.api import knowledge
-    from agentdevstu.config import llm_providers
-    from agentdevstu.work.models import WorkCandidate
-    from agentdevstu.api.deps import get_db
+    from cortexa.web.app import app
+    from cortexa.db.engine import Base
+    from cortexa.db import models as m
+    from cortexa.security import models as sm
+    from cortexa.security.http import COOKIE
+    from cortexa.security.passwords import token_digest
+    from cortexa.work import service
+    from cortexa.data import doc_storage, document_preview
+    from cortexa.api import knowledge
+    from cortexa.config import llm_providers
+    from cortexa.work.models import WorkCandidate
+    from cortexa.api.deps import get_db
 
     schema = "work_test_" + uuid.uuid4().hex
     base = create_async_engine(os.environ["WORK_TEST_DATABASE_URL"])
@@ -151,7 +151,7 @@ async def integration(tmp_path, monkeypatch):
     monkeypatch.setattr(document_preview, "DOC_STORAGE_DIR", str(tmp_path / "documents"))
     monkeypatch.setattr(knowledge, "_safe_index", AsyncMock())
     for mod in list(sys.modules.values()):
-        if getattr(mod, "__name__", "").startswith("agentdevstu.") and hasattr(mod, "async_session_factory"):
+        if getattr(mod, "__name__", "").startswith("cortexa.") and hasattr(mod, "async_session_factory"):
             monkeypatch.setattr(mod, "async_session_factory", factory)
 
     async def db_dependency():

@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
   try {
     const page = await browser.newPage();
-    const assets = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist/assets');
+    const assets = path.resolve(__dirname, '../../src/cortexa/web/static/dist/assets');
     const css = fs.readdirSync(assets).find(name => /^index-.*\.css$/.test(name));
     await page.setContent('<button class="action-primary btn btn-primary">编辑并创建</button>');
     await page.addStyleTag({ path: path.join(assets, css) });
@@ -37,8 +37,8 @@ const assert = require('node:assert/strict');
       });
       image === 'none' ? assert.equal(style.image, 'none', name) : assert.match(style.image, new RegExp(image), name);
       assert.notEqual(style.color, 'rgba(0, 0, 0, 0)', name);
-      if (name === 'glass-clear') assert.match(style.backdrop, /blur\(0px\)/);
-      if (name === 'glass-frosted') assert.match(style.backdrop, /blur\(24px\)/);
+      if (name === 'glass-clear') assert.match(style.backdrop, /blur\(14px\)/);
+      if (name === 'glass-frosted') assert.match(style.backdrop, /blur\(28px\)/);
     }
     console.log('PASS: work candidate primary action follows solid, contrast, gradient, texture, and both glass themes');
   } finally {

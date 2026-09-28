@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 
-from agentdevstu.api.conversation_titles import assign_first_message_title, title_from_first_message
+from cortexa.api.conversation_titles import assign_first_message_title, title_from_first_message
 
 
 def test_title_uses_first_turn_text_without_collaboration_mentions():

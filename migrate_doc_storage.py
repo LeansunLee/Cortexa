@@ -6,9 +6,9 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from sqlalchemy import select
-from agentdevstu.db.engine import async_session_factory
-from agentdevstu.db.models import Document
-from agentdevstu.data.doc_storage import save_document_content, make_summary
+from cortexa.db.engine import async_session_factory
+from cortexa.db.models import Document
+from cortexa.data.doc_storage import save_document_content, make_summary
 
 
 async def migrate():

@@ -15,9 +15,9 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.schema import AddConstraint, CreateIndex
 from sqlalchemy.dialects.postgresql import insert
-from agentdevstu.db.models import Memory
-from agentdevstu.memory.models import MemoryEvidence, MemoryRelation, MemoryEvent, MemoryIssue
-from agentdevstu.memory.policy import terms, digest, normalize
+from cortexa.db.models import Memory
+from cortexa.memory.models import MemoryEvidence, MemoryRelation, MemoryEvent, MemoryIssue
+from cortexa.memory.policy import terms, digest, normalize
 
 TABLES = [MemoryEvidence.__table__, MemoryRelation.__table__, MemoryEvent.__table__, MemoryIssue.__table__]
 NEW_DEFAULTS = {"risk_level": "'unknown'", "has_conflict": "false", "revision": "1", "search_terms": "'[]'::jsonb"}

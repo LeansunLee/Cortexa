@@ -13,7 +13,7 @@ class TestMentionParser:
     """Tests for @mention parsing."""
 
     def test_parse_single_mention(self):
-        from agentdevstu.collaboration.mention_parser import parse_mentions
+        from cortexa.collaboration.mention_parser import parse_mentions
         result = parse_mentions("@市场部 分析一下年轻用户市场")
         assert result.has_mentions is True
         assert len(result.mentions) == 1
@@ -21,7 +21,7 @@ class TestMentionParser:
         assert result.mentions[0].message_after == "分析一下年轻用户市场"
 
     def test_parse_multiple_mentions(self):
-        from agentdevstu.collaboration.mention_parser import parse_mentions
+        from cortexa.collaboration.mention_parser import parse_mentions
         result = parse_mentions("@市场部 做用户调研 @财务部 算预算")
         assert result.has_mentions is True
         assert len(result.mentions) == 2
@@ -29,20 +29,20 @@ class TestMentionParser:
         assert result.mentions[1].name == "财务部"
 
     def test_parse_no_mentions(self):
-        from agentdevstu.collaboration.mention_parser import parse_mentions
+        from cortexa.collaboration.mention_parser import parse_mentions
         result = parse_mentions("帮我分析一下市场数据")
         assert result.has_mentions is False
         assert len(result.mentions) == 0
 
     def test_parse_mention_only(self):
-        from agentdevstu.collaboration.mention_parser import parse_mentions
+        from cortexa.collaboration.mention_parser import parse_mentions
         result = parse_mentions("@市场部")
         assert result.has_mentions is True
         assert result.mentions[0].name == "市场部"
         assert result.mentions[0].message_after == ""
 
     def test_mention_names(self):
-        from agentdevstu.collaboration.mention_parser import parse_mentions
+        from cortexa.collaboration.mention_parser import parse_mentions
         result = parse_mentions("@市场部 @产品部 @财务部")
         assert result.mention_names == ["市场部", "产品部", "财务部"]
 
@@ -51,22 +51,22 @@ class TestFuzzyMatch:
     """Tests for agent name fuzzy matching."""
 
     def test_exact_match(self):
-        from agentdevstu.collaboration.mention_parser import fuzzy_match_agent
+        from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场部", "产品部", "财务部"]
         assert fuzzy_match_agent("市场部", names) == "市场部"
 
     def test_partial_match(self):
-        from agentdevstu.collaboration.mention_parser import fuzzy_match_agent
+        from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场营销部", "产品部", "财务部"]
         assert fuzzy_match_agent("市场", names) == "市场营销部"
 
     def test_no_match(self):
-        from agentdevstu.collaboration.mention_parser import fuzzy_match_agent
+        from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场部", "产品部", "财务部"]
         assert fuzzy_match_agent("技术部", names) is None
 
     def test_alias_match(self):
-        from agentdevstu.collaboration.mention_parser import fuzzy_match_agent
+        from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场营销部", "产品研发部"]
         result = fuzzy_match_agent("marketing", names)
         assert result == "市场营销部"
@@ -76,7 +76,7 @@ class TestCollaborationSchemas:
     """Tests for collaboration data schemas."""
 
     def test_handoff_schema(self):
-        from agentdevstu.collaboration.schemas import AgentHandoff
+        from cortexa.collaboration.schemas import AgentHandoff
         handoff = AgentHandoff(
             source_agent_id="agent-1",
             target_agent_id="agent-2",
@@ -89,7 +89,7 @@ class TestCollaborationSchemas:
         assert handoff.constraints == []
 
     def test_handoff_result_schema(self):
-        from agentdevstu.collaboration.schemas import AgentHandoffResult
+        from cortexa.collaboration.schemas import AgentHandoffResult
         result = AgentHandoffResult(
             status="success",
             summary="分析完成",
@@ -99,7 +99,7 @@ class TestCollaborationSchemas:
         assert result.confidence is None
 
     def test_collaboration_limits(self):
-        from agentdevstu.collaboration.schemas import CollaborationLimits, DEFAULT_LIMITS
+        from cortexa.collaboration.schemas import CollaborationLimits, DEFAULT_LIMITS
         limits = CollaborationLimits()
         assert limits.max_agents_per_request == 3
         assert limits.max_call_depth == 2
@@ -117,7 +117,7 @@ class TestHandoffPromptBuilding:
 
         # We need to test _build_handoff_system_prompt directly
         # It only uses Agent object attributes, so we can mock those
-        from agentdevstu.collaboration.schemas import AgentHandoff
+        from cortexa.collaboration.schemas import AgentHandoff
         from unittest.mock import MagicMock as MM
 
         source = MagicMock()
@@ -146,12 +146,12 @@ class TestHandoffPromptBuilding:
         )
 
         # Import with mocked DB
-        from agentdevstu.collaboration.manager import _build_handoff_system_prompt
+        from cortexa.collaboration.manager import _build_handoff_system_prompt
         prompt = _build_handoff_system_prompt(source, target, handoff)
 
         assert "你是市场部" in prompt
         assert "市场分析师" in prompt
-        from agentdevstu.agents.prompts import handoff_message
+        from cortexa.agents.prompts import handoff_message
         task = handoff_message(handoff)
         assert "验证品牌年轻化定位" not in prompt
         assert "品牌计划扩大年轻用户市场" not in prompt

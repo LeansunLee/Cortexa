@@ -6,9 +6,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 from sqlalchemy import select, func
-from agentdevstu.db.engine import async_session_factory
-from agentdevstu.db.models import Document, DocumentChunk
-from agentdevstu.data.doc_storage import DOC_STORAGE_DIR
+from cortexa.db.engine import async_session_factory
+from cortexa.db.models import Document, DocumentChunk
+from cortexa.data.doc_storage import DOC_STORAGE_DIR
 
 
 async def main():

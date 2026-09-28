@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    const root = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+    const root = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
     const origin = process.env.LIVE_ORIGIN || 'http://runtime-policy.local';
     const errors = [];
     let manage = true;
@@ -59,8 +59,8 @@ const assert = require('node:assert/strict');
     await page.getByRole('button', { name: /Save Runtime Policy/ }).click();
     assert.equal(saved, null, 'invalid budget must not be submitted');
     await outputInput.fill('16384');
-    await page.getByRole('button', { name: '默认协作模式' }).click();
-    await page.getByRole('option', { name: /Ask Before Collaboration/ }).click();
+    await page.getByRole('button', { name: '允许的最高协作方式' }).click();
+    await page.getByRole('option', { name: /询问/ }).click();
     await page.getByRole('button', { name: /Save Runtime Policy/ }).click();
     await page.waitForFunction(() => document.querySelector('.budget-field input')?.value !== '');
     assert.equal(saved.budget.llm_calls, 10);
@@ -100,13 +100,13 @@ const assert = require('node:assert/strict');
       assert.equal(style.titleSize, '14px');
       assert.equal(style.triggerSize, '14px');
       assert.match(style.triggerBg, /\/ 0\.|rgba\([^)]*, 0\./);
-      assert.match(style.cardBg, /\/ 0\.|rgba\([^)]*, 0\./);
+      assert.notEqual(style.cardBg, style.triggerBg);
       assert.match(style.triggerBlur, /blur\(/, JSON.stringify(style));
-      assert.match(style.cardBlur, /blur\(/);
+      assert.equal(style.cardBlur, 'none');
       assert.notEqual(style.fieldBorder, 'rgba(0, 0, 0, 0)');
       assert.notEqual(style.fieldShadow, 'none');
-      await page.getByRole('button', { name: '默认协作模式' }).click();
-      const menu = await page.getByRole('listbox', { name: '默认协作模式' }).evaluate(node => {
+      await page.getByRole('button', { name: '允许的最高协作方式' }).click();
+      const menu = await page.getByRole('listbox', { name: '允许的最高协作方式' }).evaluate(node => {
         const style = getComputedStyle(node);
         return { background: style.backgroundColor, blur: style.backdropFilter };
       });

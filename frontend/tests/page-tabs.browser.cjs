@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const browser = await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL || 'chrome'});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];page.on('pageerror', e=>errors.push(e.message));
-const root=path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const root=path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 let workRows = [], listReads = 0, releaseList = null;
 const permissions=['agent.use','agent.read','knowledge.manage','data.manage','config.manage','meeting.use'];
 await page.route('http://tabs.local/**', async r=>{
@@ -38,7 +38,8 @@ for (const title of ['工作甲','工作乙']) {
  const dialog=page.getByRole('dialog');
  await dialog.getByLabel('标题',{exact:true}).fill(title);
  await dialog.getByLabel('执行目标',{exact:true}).fill('验证工作标签');
- await dialog.locator('select').nth(0).selectOption('owner');
+ await dialog.getByRole('button',{name:'负责人'}).click();
+ await page.getByRole('option',{name:'负责人',exact:true}).click();
  await dialog.getByRole('button',{name:'创建并派发'}).click();
  await dialog.waitFor({state:'hidden'});
  await page.locator('.work-card').filter({hasText:title}).waitFor();
@@ -47,11 +48,12 @@ for (const title of ['工作甲','工作乙']) {
  assert.ok(listReads>readsBefore);
 }
 // Hold a filter request open and verify controls and cards remain mounted.
-const oldFilter = await page.getByRole('combobox',{name:'状态筛选'}).elementHandle();
+const oldFilter = await page.getByRole('button',{name:'状态筛选'}).elementHandle();
 const oldCard = await page.locator('.work-card').first().elementHandle();
 releaseList = true;
 const filterRequest = page.waitForRequest(r => new URL(r.url()).pathname === '/api/works' && new URL(r.url()).searchParams.get('status') === 'todo');
-await page.getByRole('combobox',{name:'状态筛选'}).selectOption('todo');
+await page.getByRole('button',{name:'状态筛选'}).click();
+await page.getByRole('option',{name:'待开始'}).click();
 await filterRequest;
 await page.waitForFunction(() => document.querySelector('.work-page').getAttribute('aria-busy') === 'true');
 assert.equal(await oldFilter.evaluate(el => el.isConnected && el.getBoundingClientRect().height > 0), true);
@@ -104,7 +106,8 @@ for(const scheme of ['light','dark']){
 await page.setViewportSize({width:390,height:844});
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 await page.screenshot({path:'/tmp/agentdevstu-tabs-mobile.png'});
-await page.getByRole('combobox',{name:'切换工作空间'}).selectOption('w2');
+await page.getByRole('button',{name:'切换工作空间'}).click();
+await page.getByRole('option',{name:'第二空间'}).click();
 await page.waitForTimeout(100);
 assert.equal(await page.getByRole('tab').count(),1);
 assert.equal(await search.inputValue(),'');

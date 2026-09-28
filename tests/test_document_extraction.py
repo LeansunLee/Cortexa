@@ -4,7 +4,7 @@ import json
 import zipfile
 from unittest.mock import AsyncMock
 import pytest
-from agentdevstu.data import document_extraction as extraction, document_preview as previews, pdf_extraction
+from cortexa.data import document_extraction as extraction, document_preview as previews, pdf_extraction
 
 
 @pytest.mark.parametrize('name', ['report.doc', 'report.docx', 'sheet.xls', 'sheet.xlsx', 'slides.ppt', 'slides.pptx', 'notes.odt', 'notes.rtf'])

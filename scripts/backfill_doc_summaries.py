@@ -8,11 +8,11 @@ load_dotenv()
 
 from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
-from agentdevstu.api import knowledge
-from agentdevstu.data import document_preview as previews
-from agentdevstu.data.doc_storage import load_document_content, save_document_content
-from agentdevstu.db.engine import async_session_factory
-from agentdevstu.db.models import Document
+from cortexa.api import knowledge
+from cortexa.data import document_preview as previews
+from cortexa.data.doc_storage import load_document_content, save_document_content
+from cortexa.db.engine import async_session_factory
+from cortexa.db.models import Document
 
 
 def needs_repair(doc, force=False):

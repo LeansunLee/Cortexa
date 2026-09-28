@@ -1,12 +1,12 @@
 """Update permission JSON only; never create or alter database tables."""
 import asyncio
 from sqlalchemy import select
-from agentdevstu.config.settings import load_env
+from cortexa.config.settings import load_env
 
 load_env()
 
-from agentdevstu.db.engine import async_session_factory
-from agentdevstu.security.models import Role
+from cortexa.db.engine import async_session_factory
+from cortexa.security.models import Role
 
 
 async def sync():

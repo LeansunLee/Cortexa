@@ -49,11 +49,11 @@
               <small v-if="runtimeErrors[field.key]" :id="`budget-error-${field.key}`" class="budget-error">{{ runtimeErrors[field.key] }}</small>
             </div>
           </div>
-          <div class="runtime-section-title"><UsersRound :size="17" /> Collaboration Mode <small>协作模式</small></div>
+          <div class="runtime-section-title"><UsersRound :size="17" /> Collaboration Mode <small>协作方式</small></div>
           <div class="form-group runtime-collaboration-field">
-            <label>Default Collaboration Mode <small>默认协作模式</small></label>
-            <SearchSelect v-model="runtimeMode" :options="collaborationOptions" aria-label="默认协作模式" />
-            <p class="form-hint">用户明确 @ 的 Agent 仍受权限、可用性、输入契约和预算约束。</p>
+            <label>Allowed Collaboration Mode <small>允许的最高协作方式</small></label>
+            <SearchSelect v-model="runtimeMode" :options="collaborationOptions" aria-label="允许的最高协作方式" />
+            <p class="form-hint">对话默认「不主动」。选择「询问」时，对话可选不主动或询问；选择「主动」时，三种方式均可选。用户明确 @ 的 Agent 仍受权限与预算约束。</p>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" type="button" :disabled="runtimeSaving" @click="saveRuntimePolicy">
@@ -93,9 +93,9 @@ const runtimeErrors = computed(() => Object.fromEntries(budgetFields.map(field =
   return [field.key, valid ? '' : `请输入 ${field.min}–${max} 的整数`]
 })))
 const collaborationOptions = [
-  { value: 'EXPLICIT_ONLY', label: '◎ Explicit Only · 仅用户明确 @ 的 Agent' },
-  { value: 'ASK_BEFORE_COLLABORATION', label: '☑ Ask Before Collaboration · 协作前询问' },
-  { value: 'AUTONOMOUS', label: '✦ Autonomous · 权限范围内自主协作' },
+  { value: 'EXPLICIT_ONLY', label: '不主动 · 仅用户主动 @ 的 Agent 可以协作' },
+  { value: 'ASK_BEFORE_COLLABORATION', label: '询问 · 需要其他 Agent 协作时询问用户' },
+  { value: 'AUTONOMOUS', label: '主动 · 由 Agent 自行决策' },
 ]
 const budgetFields = [
   { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', icon: Clock3, min: 1 },

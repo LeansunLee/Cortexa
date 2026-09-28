@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessageChunk
 
-from agentdevstu.runtime.goals import (
+from cortexa.runtime.goals import (
     MAX_PARSE_CHARS,
     FieldSource,
     Gap,
@@ -18,7 +18,7 @@ from agentdevstu.runtime.goals import (
     parse_goal,
     route_goal,
 )
-from agentdevstu.runtime.shadow import goal_shadow_entry, shadow_enabled
+from cortexa.runtime.shadow import goal_shadow_entry, shadow_enabled
 
 
 def test_raw_goal_and_explicit_fields_keep_provenance():
@@ -99,7 +99,7 @@ def test_trace_is_content_minimized_and_parser_failure_is_fail_open(monkeypatch)
     def fail(*args, **kwargs):
         raise ValueError("secret-input")
 
-    monkeypatch.setattr("agentdevstu.runtime.shadow.parse_goal", fail)
+    monkeypatch.setattr("cortexa.runtime.shadow.parse_goal", fail)
     failure = goal_shadow_entry("private", "id")
     assert failure["status"] == "error"
     assert "secret-input" not in json.dumps(failure)
@@ -118,9 +118,9 @@ def test_flag_is_explicit_boolean_and_bad_config_disables_shadow(tmp_path):
 
 def stream_fixture(monkeypatch, *, enabled, debug=False, can_operate=False, proxy=False, pause=False, content="你好"):
     """All external boundaries mocked; never connects to any database/model/provider."""
-    from agentdevstu.api import conversations as api
-    from agentdevstu.db.models import Agent, Conversation, Workspace
-    from agentdevstu.security.access import current_actor
+    from cortexa.api import conversations as api
+    from cortexa.db.models import Agent, Conversation, Workspace
+    from cortexa.security.access import current_actor
 
     agent = Agent(
         id=uuid.uuid4(),
@@ -181,21 +181,21 @@ def stream_fixture(monkeypatch, *, enabled, debug=False, can_operate=False, prox
     monkeypatch.setattr(api, "_conversation_debug_enabled", lambda: debug)
     monkeypatch.setattr(api, "organization_reference", AsyncMock(return_value=[]))
     monkeypatch.setattr(api, "_load_agent_capabilities", AsyncMock(return_value=[]))
-    monkeypatch.setattr("agentdevstu.tools.web_search.load_search_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr("agentdevstu.memory.integration.register_extraction", AsyncMock())
-    monkeypatch.setattr("agentdevstu.config.llm_providers.create_llm", lambda name: Model())
+    monkeypatch.setattr("cortexa.tools.web_search.load_search_tools", AsyncMock(return_value=[]))
+    monkeypatch.setattr("cortexa.memory.integration.register_extraction", AsyncMock())
+    monkeypatch.setattr("cortexa.config.llm_providers.create_llm", lambda name: Model())
     monkeypatch.setattr(
-        "agentdevstu.collaboration.background.prepare_proxy_resolution_context", AsyncMock(return_value=[])
+        "cortexa.collaboration.background.prepare_proxy_resolution_context", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(
-        "agentdevstu.agents.proxy_executor.execute_proxy_agent",
+        "cortexa.agents.proxy_executor.execute_proxy_agent",
         AsyncMock(return_value={"success": True, "output_data": {"answer": "原有回答"}, "duration_ms": 1}),
     )
-    monkeypatch.setattr("agentdevstu.security.debug_preferences.debug_enabled", lambda user_id: True)
+    monkeypatch.setattr("cortexa.security.debug_preferences.debug_enabled", lambda user_id: True)
     actor = SimpleNamespace(user_id=uuid.uuid4(), has=lambda code: can_operate)
 
     async def run():
-        from agentdevstu.api.schemas import ConversationMessageCreate
+        from cortexa.api.schemas import ConversationMessageCreate
 
         token = current_actor.set(actor)
         try:
@@ -237,7 +237,7 @@ def test_shadow_failure_does_not_break_stream(monkeypatch):
     def fail(*args, **kwargs):
         raise ValueError("private")
 
-    monkeypatch.setattr("agentdevstu.runtime.shadow.parse_goal", fail)
+    monkeypatch.setattr("cortexa.runtime.shadow.parse_goal", fail)
     events = asyncio.run(run())
     assert events[-1]["type"] == "done"
     assert len(calls) == 1
@@ -262,12 +262,12 @@ def test_cancellation_preserves_partial_reply_and_shadow(monkeypatch):
 
 @pytest.mark.parametrize("can_operate", [False, True])
 def test_history_filters_goal_trace_for_runtime_users(monkeypatch, can_operate):
-    from agentdevstu.api.conversations import list_messages
-    from agentdevstu.db.models import ConversationMessage
+    from cortexa.api.conversations import list_messages
+    from cortexa.db.models import ConversationMessage
 
     msg = ConversationMessage(metadata_json={"debug_trace": [{"stage": "goal"}, {"stage": "response"}]})
     db = AsyncMock()
     db.execute.return_value = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [msg]))
-    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: can_operate)
+    monkeypatch.setattr("cortexa.api.conversations.can_read_goal_trace", lambda: can_operate)
     rows = asyncio.run(list_messages(uuid.uuid4(), db))
     assert ("debug_trace" in rows[0].metadata_json) == can_operate

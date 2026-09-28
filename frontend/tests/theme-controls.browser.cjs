@@ -20,9 +20,9 @@ const assert = require('node:assert/strict');
       <p><input aria-label="名称" placeholder="输入名称"> <select aria-label="分类"><option>分类一</option></select> <textarea placeholder="说明"></textarea></p>
       <p><input type="checkbox" checked aria-label="勾选"> 勾选 <input type="radio" checked aria-label="单选"> 单选 <input type="range" aria-label="滑块" value="75"></p>
       <label class="capability-switch"><input type="checkbox" checked><span class="capability-switch-track">开关</span></label></section>
-      <section class="card"><h2>导航与数据</h2><div class="tabs"><button class="tab active">选中导航</button><button class="tab">其他</button></div><span class="tag">主题标签</span> <span class="badge badge-success">成功</span><p><a href="#" class="work-card">可交互卡片</a></p>
+      <div class="panel" style="padding:12px">重要面板</div><div class="modal" style="padding:12px">弹窗</div><section class="card"><h2>导航与数据</h2><div class="tabs"><button class="tab active">选中导航</button><button class="tab">其他</button></div><span class="tag">主题标签</span> <span class="badge badge-success">成功</span><p><a href="#" class="work-card">可交互卡片</a></p>
       <table style="width:100%"><thead><tr><th>名称</th><th>状态</th></tr></thead><tbody><tr aria-selected="true"><td>选中行</td><td>已选</td></tr><tr><td>普通行</td><td>正常</td></tr></tbody></table><div class="pagination"><button>上一页</button><button aria-current="page">1</button><button>下一页</button></div><div class="upload-progress-fill" style="height:6px;width:70%"></div></section></main>`);
-    const assets=path.resolve(__dirname,'../../src/agentdevstu/web/static/dist/assets');
+    const assets=path.resolve(__dirname,'../../src/cortexa/web/static/dist/assets');
     await page.addStyleTag({path:path.join(assets,fs.readdirSync(assets).find(f=>/^index-.*\.css$/.test(f)))});
     const modes=[['solid',themeGroups[0].colors[0]],['contrast',themeGroups[1].colors[0]],['gradient',themeGroups[2].colors[0]],['texture',themeGroups[4].colors[0]],['glass-clear',{value:'#8B38FF',mode:'glass',finish:'clear',glow:100}],['glass-frosted',{value:'#8B38FF',mode:'glass',finish:'frosted',glow:100}]];
     for (const appearance of ['light','dark']) for (const [name,theme] of modes) {
@@ -30,13 +30,13 @@ const assert = require('node:assert/strict');
       await page.mouse.move(0,0); await page.waitForTimeout(180);
       const styles=await page.evaluate(()=>{
         const style=s=>getComputedStyle(document.querySelector(s));
-        return {primary:style('.btn-primary').backgroundImage,primaryBlur:style('.btn-primary').backdropFilter,send:style('.chat-send').backgroundImage,login:style('.login-submit').backgroundImage,primaryColor:style('.btn-primary').color,sendColor:style('.chat-send').color,loginColor:style('.login-submit').color,range:style('input[type=range]').backgroundColor,check:style('input[type=checkbox]').accentColor,input:style('input').backgroundColor,inputBlur:style('input').backdropFilter,surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),card:style('.card').backgroundColor,cardBlur:style('.card').backdropFilter,tag:style('.tag').backgroundImage,nav:style('.tab.active').backgroundImage};
+        return {primary:style('.btn-primary').backgroundImage,primaryBlur:style('.btn-primary').backdropFilter,send:style('.chat-send').backgroundImage,login:style('.login-submit').backgroundImage,primaryColor:style('.btn-primary').color,sendColor:style('.chat-send').color,loginColor:style('.login-submit').color,range:style('input[type=range]').backgroundColor,check:style('input[type=checkbox]').accentColor,input:style('input').backgroundColor,inputBlur:style('input').backdropFilter,surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),card:style('.card').backgroundColor,cardBlur:style('.card').backdropFilter,panelBlur:style('.panel').backdropFilter,dialogBlur:style('.modal').backdropFilter,tag:style('.tag').backgroundImage,nav:style('.tab.active').backgroundImage};
       });
       assert.equal(styles.primary,styles.send,name); assert.equal(styles.primary,styles.login,name);
       assert.equal(styles.primaryColor,styles.sendColor); assert.equal(styles.primaryColor,styles.loginColor);
       assert.notEqual(styles.check,'auto');
-      if (name.startsWith('glass')) { assert.notEqual(styles.input,styles.card); assert.match(styles.inputBlur,/blur\(/); assert.match(styles.cardBlur,/blur\(/); assert.match(styles.primaryBlur,/blur\(/); assert.match(styles.primary,/radial-gradient/); assert.match(styles.tag,/radial-gradient/); assert.match(styles.nav,/radial-gradient/); }
-      else assert.equal(styles.input,styles.card);
+      if (name.startsWith('glass')) { assert.notEqual(styles.input,styles.card); assert.match(styles.inputBlur,/blur\(/); assert.equal(styles.cardBlur,'none'); assert.match(styles.panelBlur,/blur\(/); assert.match(styles.dialogBlur,/blur\(/); assert.match(styles.primaryBlur,/blur\(/); assert.match(styles.primary,/radial-gradient/); assert.match(styles.tag,/radial-gradient/); assert.match(styles.nav,/radial-gradient/); }
+      else { assert.equal(styles.input,styles.card); assert.equal(styles.cardBlur,'none'); assert.equal(styles.panelBlur,'none'); }
       await page.getByLabel('名称',{exact:true}).focus();
       assert.equal(await page.getByLabel('名称',{exact:true}).evaluate(e=>getComputedStyle(e).outlineStyle),'solid');
       if (name.startsWith('glass')) await page.screenshot({path:`/tmp/ui-${name}-${appearance}.png`});

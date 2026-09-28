@@ -2,10 +2,10 @@
 
 import asyncio
 
-from agentdevstu.db import models  # noqa: F401
-from agentdevstu.db.engine import Base, engine
-from agentdevstu.organization.models import MemberProfile, OrgUnit
-from agentdevstu.security import models as identity  # noqa: F401
+from cortexa.db import models  # noqa: F401
+from cortexa.db.engine import Base, engine
+from cortexa.organization.models import MemberProfile, OrgUnit
+from cortexa.security import models as identity  # noqa: F401
 
 
 async def migrate():

@@ -12,15 +12,15 @@ from fastapi import HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from agentdevstu.db.engine import Base
-from agentdevstu.db.models import Agent, Conversation, ConversationMessage, Workspace
-from agentdevstu.runtime.artifacts import ArtifactStore
-from agentdevstu.runtime.models import RuntimeGoal
-from agentdevstu.runtime.state import GoalState
-from agentdevstu.runtime.store import GoalStore
-from agentdevstu.security import isolation  # noqa: F401
-from agentdevstu.security.access import Actor, current_actor
-from agentdevstu.security.models import User
+from cortexa.db.engine import Base
+from cortexa.db.models import Agent, Conversation, ConversationMessage, Workspace
+from cortexa.runtime.artifacts import ArtifactStore
+from cortexa.runtime.models import RuntimeGoal
+from cortexa.runtime.state import GoalState
+from cortexa.runtime.store import GoalStore
+from cortexa.security import isolation  # noqa: F401
+from cortexa.security.access import Actor, current_actor
+from cortexa.security.models import User
 
 spec = importlib.util.spec_from_file_location(
     "goal_migration", Path(__file__).parents[1] / "scripts/migrate_goal_runtime.py"
@@ -142,11 +142,11 @@ async def api_scenarios(monkeypatch, store, conv_id):
     from langchain_core.messages import AIMessageChunk
     from test_goal_loop import FakeModel, binding, tool_call
 
-    from agentdevstu.api import goals as api
+    from cortexa.api import goals as api
 
     monkeypatch.setattr(api, "store", store)
     monkeypatch.setattr(api, "execution_config", lambda: {"features": {"goal_execution_enabled": True}})
-    monkeypatch.setattr("agentdevstu.memory.integration.register_extraction", AsyncMock())
+    monkeypatch.setattr("cortexa.memory.integration.register_extraction", AsyncMock())
     monkeypatch.setattr(api, "prepare_bindings", AsyncMock(return_value=([], [])))
     model = FakeModel([[AIMessageChunk(content="hello")]])
     monkeypatch.setattr(api, "create_llm", lambda *_: model)
@@ -229,7 +229,7 @@ async def api_scenarios(monkeypatch, store, conv_id):
     # Explicit crash recovery marks unknown external work, then refuses replay.
     from datetime import UTC, datetime, timedelta
 
-    from agentdevstu.runtime.state import Action
+    from cortexa.runtime.state import Action
 
     unknown = GoalState(current_action=Action(kind="CAPABILITY", capability_id="external"))
     crashed, _ = await store.create(
@@ -290,7 +290,7 @@ async def api_scenarios(monkeypatch, store, conv_id):
     assert b.invoke.await_count == before + 1
 
     # Workspace policy writes merge the budget namespace under workspace.manage.
-    from agentdevstu.api.runtime_policy import BudgetPolicyUpdate, put_policy
+    from cortexa.api.runtime_policy import BudgetPolicyUpdate, put_policy
 
     async with store.sessions() as db:
         ws = await db.scalar(select(Workspace))
@@ -306,8 +306,8 @@ async def api_scenarios(monkeypatch, store, conv_id):
 async def readonly_scenario(engine, schema):
     from sqlalchemy.engine import make_url
 
-    from agentdevstu.data.adapter import execute_query
-    from agentdevstu.db.encryption import encrypt_dict
+    from cortexa.data.adapter import execute_query
+    from cortexa.db.encryption import encrypt_dict
 
     url = make_url(URL)
     config = {"host": url.host, "port": url.port, "database": url.database}

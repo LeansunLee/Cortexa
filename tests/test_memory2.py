@@ -10,18 +10,18 @@ from fastapi import HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from agentdevstu.db.engine import Base
-from agentdevstu.db.models import Agent, Workspace, Memory, Conversation, ConversationMessage
-from agentdevstu.security.models import User
-from agentdevstu.security.access import Actor, current_actor
-from agentdevstu.security import isolation  # noqa: F401
-from agentdevstu.memory.governance import ingest, correct
-from agentdevstu.memory.schemas import Candidate, Correction
-from agentdevstu.memory.evidence import Source, visible_evidence
-from agentdevstu.memory.models import MemoryEvidence, MemoryIssue
-from agentdevstu.memory.retrieval import retrieve
-from agentdevstu.memory.lifecycle import source_deleted
-from agentdevstu.api.memories import Resolution, resolve_issue
+from cortexa.db.engine import Base
+from cortexa.db.models import Agent, Workspace, Memory, Conversation, ConversationMessage
+from cortexa.security.models import User
+from cortexa.security.access import Actor, current_actor
+from cortexa.security import isolation  # noqa: F401
+from cortexa.memory.governance import ingest, correct
+from cortexa.memory.schemas import Candidate, Correction
+from cortexa.memory.evidence import Source, visible_evidence
+from cortexa.memory.models import MemoryEvidence, MemoryIssue
+from cortexa.memory.retrieval import retrieve
+from cortexa.memory.lifecycle import source_deleted
+from cortexa.api.memories import Resolution, resolve_issue
 
 
 def date(value):
@@ -100,7 +100,7 @@ async def scenario(monkeypatch):
             e = await db.scalar(select(MemoryEvidence).where(MemoryEvidence.memory_id == cid))
             visible = await visible_evidence(db, e)
             assert not visible["accessible"] and "source_id" not in visible and "summary" not in visible
-            from agentdevstu.memory.access import memory_access
+            from cortexa.memory.access import memory_access
 
             with pytest.raises(HTTPException) as denied:
                 await memory_access(db, cid, manage=True)
@@ -232,8 +232,8 @@ async def scenario(monkeypatch):
             await db.commit()
         # Source changes during model processing must never be attributed to an old revision.
         async with factory() as db:
-            from agentdevstu.memory.evidence import validate_source
-            from agentdevstu.memory.policy import digest
+            from cortexa.memory.evidence import validate_source
+            from cortexa.memory.policy import digest
 
             stale = Source(
                 "conversation", str(conv.id), sub_type="message", sub_id=str(msg.id), revision=digest("旧的文本")
@@ -269,7 +269,7 @@ async def scenario(monkeypatch):
             assert mismatch.value.status_code == 409
         # Importance cannot bypass relevance, even with a large corpus.
         async with factory() as db:
-            from agentdevstu.memory.policy import terms
+            from cortexa.memory.policy import terms
 
             db.add_all(
                 [

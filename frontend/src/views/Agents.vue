@@ -424,7 +424,7 @@
             <div class="form-group">
               <label>目标协作权限</label>
               <SearchSelect v-model="editingAgent.collaboration.autonomy" class="collaboration-autonomy-select" :options="autonomyOptions" aria-label="目标协作权限" :disabled="!can('agent.update')" />
-              <small>用于目标模式；空间策略和用户本次指令可以进一步收紧范围。</small>
+              <small>作为此 Agent 的协作上限；对话默认不主动，用户可在工作空间与此 Agent 允许的范围内选择。</small>
             </div>
             <div class="form-group">
               <label><input type="checkbox" v-model="editingAgent.collaboration.allow_incoming" :disabled="!can('agent.update')" /> 允许其他 Agent 邀请协作</label>
@@ -622,9 +622,9 @@ const runtimeBudgetFields = [
 ]
 const autonomyOptions = [
   { value: 'INHERIT_WORKSPACE', label: '♧ Inherit Workspace · 继承工作空间' },
-  { value: 'EXPLICIT_ONLY', label: 'Explicit Only · 仅使用用户指定的 Agent' },
-  { value: 'ASK_BEFORE_COLLABORATION', label: 'Ask Before Collaboration · 协作前请求授权' },
-  { value: 'AUTONOMOUS', label: 'Autonomous · 在权限与预算内自主协作' },
+  { value: 'EXPLICIT_ONLY', label: '不主动 · 仅用户主动 @ 的 Agent 可以协作' },
+  { value: 'ASK_BEFORE_COLLABORATION', label: '询问 · 需要其他 Agent 协作时询问用户' },
+  { value: 'AUTONOMOUS', label: '主动 · 由 Agent 自行决策' },
 ]
 const versions = ref([])
 const providers = ref({})

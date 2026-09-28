@@ -5,7 +5,7 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from agentdevstu.agents.retrieval import plan_retrieval, select_capabilities, bounded_result, web_reference
+from cortexa.agents.retrieval import plan_retrieval, select_capabilities, bounded_result, web_reference
 
 
 def test_explicit_web_query_never_defaults_to_internal_sources():
@@ -44,7 +44,7 @@ def test_result_budget_preserves_truncation_information():
 
 
 def test_query_parameters_are_derived_from_sql_not_invented_query_field():
-    from agentdevstu.api.conversations import _build_data_tools, _query_parameter_names
+    from cortexa.api.conversations import _build_data_tools, _query_parameter_names
 
     assert _query_parameter_names("SELECT now()::date WHERE region=:region OR city=:city OR backup=:region") == ["region", "city"]
     cap = SimpleNamespace(
@@ -57,7 +57,7 @@ def test_query_parameters_are_derived_from_sql_not_invented_query_field():
 
 
 def test_data_capability_description_is_injected_as_supplemental_prompt():
-    from agentdevstu.api.conversations import _build_data_tools, _build_tool_usage_instructions
+    from cortexa.api.conversations import _build_data_tools, _build_tool_usage_instructions
 
     cap = SimpleNamespace(
         id=uuid.uuid4(),
@@ -76,8 +76,8 @@ def test_data_capability_description_is_injected_as_supplemental_prompt():
 
 
 def test_data_tool_respects_capability_limit_and_keeps_complete_result(monkeypatch):
-    from agentdevstu.api import conversations
-    from agentdevstu.db.models import DataCapability, DataSource
+    from cortexa.api import conversations
+    from cortexa.db.models import DataCapability, DataSource
 
     cap_id = uuid.uuid4()
     ds_id = uuid.uuid4()
@@ -110,7 +110,7 @@ def test_data_tool_respects_capability_limit_and_keeps_complete_result(monkeypat
 
     query_rows = [{"门店名称": f"门店{i}"} for i in range(53)]
     execute = AsyncMock(return_value={"success": True, "data": query_rows, "row_count": 53})
-    engine_module = importlib.import_module("agentdevstu.db.engine")
+    engine_module = importlib.import_module("cortexa.db.engine")
     monkeypatch.setattr(engine_module, "async_session_factory", lambda: FakeSessionContext())
     monkeypatch.setattr(conversations, "execute_query", execute)
 
@@ -165,23 +165,23 @@ def test_data_tool_respects_capability_limit_and_keeps_complete_result(monkeypat
 
 
 def test_web_results_and_failures_are_explicit(monkeypatch):
-    monkeypatch.setattr("agentdevstu.tools.search.search_web", lambda *args, **kwargs: [{"title": "公开信息", "url": "https://example.com", "snippet": "摘要"}])
+    monkeypatch.setattr("cortexa.tools.search.search_web", lambda *args, **kwargs: [{"title": "公开信息", "url": "https://example.com", "snippet": "摘要"}])
     context, sources, status = asyncio.run(web_reference("网上查询黑旗600"))
     assert context["role"] == "user" and sources[0]["url"] == "https://example.com"
     def fail(*args, **kwargs):
         raise TimeoutError()
-    monkeypatch.setattr("agentdevstu.tools.search.search_web", fail)
+    monkeypatch.setattr("cortexa.tools.search.search_web", fail)
     context, sources, status = asyncio.run(web_reference("网上查询黑旗600"))
     assert not sources and "失败" in status and "不能声称" in context["content"]
 
 
 def test_web_request_keeps_knowledge_policy_but_tool_selection_is_model_driven():
-    from agentdevstu.agents.knowledge import retrieve_knowledge
+    from cortexa.agents.knowledge import retrieve_knowledge
     assert asyncio.run(retrieve_knowledge(None, "查一下网上的信息", AsyncMock())) == ""
 
 
 def test_business_tool_requirement_detects_data_questions_without_blocking_followups():
-    from agentdevstu.tools.runtime import should_require_business_tool
+    from cortexa.tools.runtime import should_require_business_tool
 
     tool = SimpleNamespace(name="query_configured_records", description="查询数据能力：经销商。按条件查询经销商记录。")
     assert should_require_business_tool("状态为已终止的经销商", [tool])
@@ -195,8 +195,8 @@ def test_business_tool_requirement_detects_data_questions_without_blocking_follo
 
 
 def test_data_tool_schema_defaults_aliases_and_user_overrides(monkeypatch):
-    from agentdevstu.api import conversations
-    from agentdevstu.db.models import DataCapability, DataSource
+    from cortexa.api import conversations
+    from cortexa.db.models import DataCapability, DataSource
 
     cap_id = uuid.uuid4()
     ds_id = uuid.uuid4()
@@ -235,7 +235,7 @@ def test_data_tool_schema_defaults_aliases_and_user_overrides(monkeypatch):
             return None
 
     execute = AsyncMock(return_value={"success": True, "data": [], "row_count": 0})
-    engine_module = importlib.import_module("agentdevstu.db.engine")
+    engine_module = importlib.import_module("cortexa.db.engine")
     monkeypatch.setattr(engine_module, "async_session_factory", lambda: FakeSessionContext())
     monkeypatch.setattr(conversations, "execute_query", execute)
 
@@ -259,7 +259,7 @@ def test_data_tool_schema_defaults_aliases_and_user_overrides(monkeypatch):
 
 
 def test_input_schema_validation_preserves_generic_parameter_metadata():
-    from agentdevstu.api.schema_generation import validate_result
+    from cortexa.api.schema_generation import validate_result
 
     schema = {
         "type": "object",

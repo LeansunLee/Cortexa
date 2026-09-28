@@ -511,10 +511,8 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 .meeting-time { font-size: 12px; color: var(--text3); }
 
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-.status-preparing { background: #FEF3C7; color: #92400E; }
-:root[data-theme="dark"] .status-preparing { background: rgba(245, 158, 11, .16); color: #fcd34d; }
-.status-running { background: #DBEAFE; color: #1E40AF; }
-:root[data-theme="dark"] .status-running { background: rgba(59, 130, 246, .16); color: #93c5fd; }
+.status-preparing { background: var(--warning-bg); color: var(--warning); }
+.status-running { background: var(--info-bg); color: var(--info); }
 .status-completed { background: var(--success-bg); color: var(--success); }
 .status-failed { background: var(--danger-bg); color: var(--danger); }
 .status-cancelled { background: var(--surface2); color: var(--text3); }
@@ -559,9 +557,8 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
   background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
   font-size: 13px;
 }
-.participant-chip.host { border-color: #F59E0B; background: #FFFBEB; }
-:root[data-theme="dark"] .participant-chip.host { border-color: rgba(245, 158, 11, .55); background: rgba(245, 158, 11, .1); }
-.host-badge { font-size: 10px; background: #F59E0B; color: #fff; padding: 1px 6px; border-radius: 8px; }
+.participant-chip.host { border-color: var(--warning); background: var(--warning-bg); }
+.host-badge { font-size: 10px; background: var(--warning); color: var(--surface); padding: 1px 6px; border-radius: 8px; }
 
 .detail-messages {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -570,10 +567,8 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 }
 
 .msg-item { padding: 12px 16px; border-radius: var(--radius-sm); }
-.msg-agent { background: #F0F9FF; border-left: 3px solid #3B82F6; }
-:root[data-theme="dark"] .msg-agent { background: rgba(59, 130, 246, .1); }
-.msg-host { background: #FFFBEB; border-left: 3px solid #F59E0B; }
-:root[data-theme="dark"] .msg-host { background: rgba(245, 158, 11, .1); }
+.msg-agent { background: var(--info-bg); border-left: 3px solid var(--info); }
+.msg-host { background: var(--warning-bg); border-left: 3px solid var(--warning); }
 .msg-system { background: var(--surface2); text-align: center; font-size: 13px; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .msg-avatar { font-size: 16px; display: inline-flex; align-items: center; }
@@ -584,7 +579,7 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 .msg-sender { font-weight: 600; color: var(--text); }
 .msg-type-tag { padding: 1px 6px; background: var(--surface2); border-radius: 4px; font-size: 10px; color: var(--text3); }
 .msg-round { color: var(--text3); font-size: 11px; }
-.host-tag { font-size: 10px; background: #F59E0B; color: #fff; padding: 1px 6px; border-radius: 8px; }
+.host-tag { font-size: 10px; background: var(--warning); color: var(--surface); padding: 1px 6px; border-radius: 8px; }
 .msg-content { font-size: 14px; line-height: 1.7; }
 
 .typing-indicator { display: flex; gap: 4px; }
@@ -638,7 +633,7 @@ watch(() => createForm.value.participant_agent_ids, (ids) => {
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--surface2); }
-.btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(185,28,28,0.2); }
+.btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border)); }
 .btn-sm { padding: 6px 14px; font-size: 13px; }
 
 /* Theme Variables */

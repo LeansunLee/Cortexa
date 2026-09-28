@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException
 
-from agentdevstu.api import sql_drafts as api
-from agentdevstu.data.sql_drafts import validate_sql
-from agentdevstu.security.access import Actor, current_actor
+from cortexa.api import sql_drafts as api
+from cortexa.data.sql_drafts import validate_sql
+from cortexa.security.access import Actor, current_actor
 
 SCHEMA = {
     "type": "object",
@@ -244,8 +244,8 @@ def test_draft_tests_exact_unsaved_pair_without_saving(monkeypatch):
 def test_real_readonly_preview():
     from sqlalchemy.engine import make_url
 
-    from agentdevstu.data.sql_drafts import execute_draft
-    from agentdevstu.db.encryption import encrypt_dict
+    from cortexa.data.sql_drafts import execute_draft
+    from cortexa.db.encryption import encrypt_dict
 
     url = make_url(os.environ["WORK_TEST_DATABASE_URL"])
     source = SimpleNamespace(

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 os.environ.setdefault('DATABASE_URL', 'postgresql+asyncpg://test:test@localhost/test')
 import pypdfium2 as pdfium
 import pytest
-from agentdevstu.data import pdf_extraction, doc_storage
+from cortexa.data import pdf_extraction, doc_storage
 
 
 def blank_pdf():
@@ -44,8 +44,8 @@ def test_ocr_failure_is_not_silently_swallowed(monkeypatch):
 
 
 def test_index_uses_full_content_and_rejects_binary(monkeypatch):
-    from agentdevstu.rag import retriever, embedder
-    from agentdevstu.rag import chunker
+    from cortexa.rag import retriever, embedder
+    from cortexa.rag import chunker
     doc = SimpleNamespace(id=uuid.uuid4(), content='summary', metadata_json={})
     db = AsyncMock(); db.get.return_value = doc; db.add = Mock()
     full = '完整正文'*1000 + '末页政策'

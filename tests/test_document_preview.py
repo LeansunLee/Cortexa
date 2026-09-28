@@ -19,9 +19,9 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from agentdevstu.api import knowledge
-from agentdevstu.data import doc_storage
-from agentdevstu.data import document_preview as previews
+from cortexa.api import knowledge
+from cortexa.data import doc_storage
+from cortexa.data import document_preview as previews
 
 
 @pytest.fixture(autouse=True)
@@ -262,7 +262,7 @@ def test_delete_storage_removes_original_and_previews(storage):
 def test_document_response_allows_legacy_null_metadata():
     from datetime import datetime, timezone
 
-    from agentdevstu.api.schemas import DocumentOut
+    from cortexa.api.schemas import DocumentOut
 
     response = DocumentOut.model_validate(
         {

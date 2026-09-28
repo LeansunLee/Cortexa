@@ -1,6 +1,6 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const dist=path.resolve(__dirname,'../../src/agentdevstu/web/static/dist');
+const dist=path.resolve(__dirname,'../../src/cortexa/web/static/dist');
 const origin=process.env.LIVE_ORIGIN||'http://textdoc.local';
 (async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
 for (const appearance of ['light', 'dark', 'system']) for (const width of [1440, 390]) {

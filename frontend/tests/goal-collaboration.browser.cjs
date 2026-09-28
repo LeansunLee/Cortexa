@@ -9,10 +9,12 @@ const assert = require('node:assert/strict');
   const page = await browser.newPage({viewport:{width:1360,height:900}});
   const errors=[]; page.on('pageerror',error=>errors.push(error.message));
   const origin=process.env.LIVE_ORIGIN || 'http://goal.local';
-  const root=path.resolve(__dirname,'../../src/agentdevstu/web/static/dist');
+  const root=path.resolve(__dirname,'../../src/cortexa/web/static/dist');
   const agents=[{id:'main',name:'主Agent',agent_type:'llm',status:'active'}, {id:'sales',name:'销售Agent',agent_type:'llm',description:'查询销售'}, {id:'analysis',name:'分析Agent',agent_type:'llm',description:'分析销售'}];
   const permissions=['agent.use','agent.read','agent.update'];
   let messages=[], goal=null, request=null, decision=null, resumed=0, legacy=0, conversationTitle=null, secondTitle=null;
+  const allModes=['EXPLICIT_ONLY','ASK_BEFORE_COLLABORATION','AUTONOMOUS'];
+  let allowedModes=[...allModes]; const savedModes={}; let rejectSave=false;
   await page.route(origin+'/**', async route=>{
    const req=route.request(), u=new URL(req.url()); let data=[];
    if(u.pathname.startsWith('/api/')) {
@@ -22,7 +24,16 @@ const assert = require('node:assert/strict');
     else if(u.pathname==='/api/config') data={conversation_debug_enabled:false};
     else if(u.pathname==='/api/me/conversation-debug') data={allowed:false,enabled:false};
     else if(u.pathname==='/api/conversations') data=[{id:'conv',agent_id:'main',agent_name:'主Agent',title:conversationTitle},{id:'conv2',agent_id:'main',agent_name:'主Agent',title:secondTitle}];
-    else if(u.pathname.endsWith('/goal-options')) data={enabled:true,agent_type:'llm'};
+    else if(u.pathname.endsWith('/goal-options')) {
+      const selected=savedModes[u.pathname.split('/')[3]] || 'EXPLICIT_ONLY';
+      data={enabled:true,agent_type:'llm',collaboration_mode:allowedModes.includes(selected)?selected:allowedModes.at(-1),allowed_collaboration_modes:allowedModes};
+    }
+    else if(u.pathname.endsWith('/collaboration-mode')) {
+      if(rejectSave) return route.fulfill({status:422,json:{detail:'工作空间限制已更新'}});
+      const mode=req.postDataJSON().collaboration_mode;
+      assert.ok(allowedModes.includes(mode)); savedModes[u.pathname.split('/')[3]]=mode;
+      data={collaboration_mode:mode,allowed_collaboration_modes:allowedModes};
+    }
     else if(u.pathname.endsWith('/message-route')) data={use_goal:req.postDataJSON().content!=='你好'};
     else if(u.pathname.endsWith('/messages')) data=u.pathname.includes('/conv2/')?[]:messages;
     else if(u.pathname.endsWith('/goals/stream')) {
@@ -51,7 +62,44 @@ const assert = require('node:assert/strict');
   });
   await page.goto(origin+'/chat');
   await page.locator('.conv-item').first().locator('.conv-title-text').click();
-  assert.equal(await page.locator('.goal-mode-select').count(),0);
+  const modeSelect=page.getByRole('button',{name:'协作方式',exact:true});
+  const labels={EXPLICIT_ONLY:'不主动',ASK_BEFORE_COLLABORATION:'询问',AUTONOMOUS:'主动'};
+  const chooseMode=async mode=>{await modeSelect.click();await page.getByRole('option',{name:labels[mode],exact:true}).click();};
+  await modeSelect.click();
+  assert.equal((await modeSelect.innerText()).trim(),'不主动');
+  assert.deepEqual(await page.getByRole('option').allTextContents(),['不主动','询问','主动']);
+  assert.equal(await page.locator('.search-select-menu input').count(),0);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.evaluate(()=>document.activeElement.textContent.trim()),'询问');
+  const {themeVariables}=await import('../src/utils/theme.js');
+  for(const appearance of ['light','dark']) {
+    await page.evaluate(({appearance,vars})=>{
+      const root=document.documentElement;
+      root.dataset.theme=appearance;root.style.colorScheme=appearance;root.dataset.colorTheme='glass';
+      Object.entries(vars).forEach(([key,value])=>root.style.setProperty(key,value));
+    },{appearance,vars:themeVariables({value:'#00856A',mode:'glass',finish:'clear'})});
+    await page.waitForTimeout(220);
+    assert.match(await page.locator('.search-select-menu').evaluate(e=>getComputedStyle(e).backdropFilter),/blur/);
+    const bounds=await page.locator('.search-select-menu').boundingBox();
+    assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.y+bounds.height<=900,'menu stays inside viewport');
+    const optionBottom=await page.getByRole('option').last().evaluate(e=>e.getBoundingClientRect().bottom);
+    assert.ok(optionBottom<=bounds.y+bounds.height,'all three options are fully visible');
+    await page.screenshot({path:`/tmp/cortexa-collaboration-dropdown-${appearance}.png`});
+  }
+  await page.keyboard.press('Escape');
+  await chooseMode('AUTONOMOUS');
+  await page.getByText('由 Agent 自行决策是否协作',{exact:true}).waitFor();
+  rejectSave=true;
+  await chooseMode('ASK_BEFORE_COLLABORATION');
+  await page.getByText('协作方式保存失败：工作空间限制已更新',{exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('[aria-label="协作方式"]').textContent.trim()==='主动');
+  rejectSave=false;
+  await chooseMode('ASK_BEFORE_COLLABORATION');
+  await page.getByText('需要其他 Agent 协作时，先询问你',{exact:true}).waitFor();
+  await page.reload();
+  await page.locator('.conv-item').first().locator('.conv-title-text').click();
+  await page.getByText('需要其他 Agent 协作时，先询问你',{exact:true}).waitFor();
+  assert.equal((await modeSelect.innerText()).trim(),'询问');
   await page.locator('.chat-input').fill('@分析Agent @销售Agent 分析销售');
   await page.locator('.agent-chip').nth(1).waitFor();
   assert.equal(await page.locator('.chip-order').count(),0);
@@ -69,6 +117,9 @@ const assert = require('node:assert/strict');
     const bounds=await page.locator('.goal-panel').boundingBox();
     assert.ok(bounds.x>=0 && bounds.x+bounds.width<=width+1);
     assert.ok(await page.getByRole('button',{name:'全部拒绝并继续',exact:true}).isVisible());
+    const modeBounds=await page.locator('.chat-collaboration-mode').boundingBox();
+    assert.ok(modeBounds.x>=0 && modeBounds.x+modeBounds.width<=width+1);
+    await page.screenshot({path:`/tmp/cortexa-collaboration-${theme}-${width}.png`});
   }
   await page.locator('.goal-candidate input').first().check();
   await page.getByRole('button',{name:'允许所选并继续',exact:true}).click();
@@ -81,11 +132,22 @@ const assert = require('node:assert/strict');
   await page.getByText('完整输出',{exact:true}).click();
   await page.getByText('归档完整结果：销量 2',{exact:true}).waitFor();
   await page.locator('.conv-item').nth(1).click();
+  await page.waitForFunction(()=>document.querySelector('[aria-label="协作方式"]').textContent.trim()==='不主动');
   await page.locator('.chat-input').fill('你好');
   await page.locator('.chat-send').click();
   await page.getByText('普通回复',{exact:true}).waitFor(); assert.equal(legacy,1);
   assert.equal(await page.locator('.chat-conv-title').innerText(),'你好');
+  for(const count of [2,1]) {
+    allowedModes=allModes.slice(0,count);
+    await page.reload();
+    await page.locator('.conv-title-text').getByText('分析销售',{exact:true}).click();
+    await modeSelect.click();
+    assert.equal(await page.getByRole('option').count(),count);
+    assert.deepEqual(await page.getByRole('option').allTextContents(),allowedModes.map(mode=>labels[mode]));
+    assert.equal((await modeSelect.innerText()).trim(),labels[allowedModes.at(-1)]);
+    await page.keyboard.press('Escape');
+  }
   assert.deepEqual(errors,[]);
-  console.log('PASS: automatic routing, unordered participants, approval, resume, reload, ordinary greeting, responsive layout (mocked APIs)');
+  console.log('PASS: collaboration choices, save failure, persistence, per-conversation default, workspace ceilings, automatic routing, unordered participants, approval, resume, reload, ordinary greeting, responsive layout (mocked APIs)');
  } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1});

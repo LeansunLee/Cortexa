@@ -10,9 +10,9 @@ import re
 
 from sqlalchemy import inspect, text
 
-from agentdevstu.db.engine import engine
-from agentdevstu.runtime.models import RuntimeGoal
-from agentdevstu.security import models as identity  # noqa: F401
+from cortexa.db.engine import engine
+from cortexa.runtime.models import RuntimeGoal
+from cortexa.security import models as identity  # noqa: F401
 
 POLICY_CHECK = "runtime_policy IS NULL OR jsonb_typeof(runtime_policy) = 'object'"
 POLICY_NAME = "ck_workspace_runtime_policy"

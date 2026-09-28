@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const dist = process.env.DIST_ROOT || path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const dist = process.env.DIST_ROOT || path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 const origin = process.env.LIVE_ORIGIN || 'http://operations.local';
 
 (async () => {

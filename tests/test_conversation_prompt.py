@@ -2,9 +2,9 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 
-from agentdevstu.api.conversations import _build_system_prompt
-from agentdevstu.db.models import Agent, Workspace
-from agentdevstu.agents.prompts import reference_message
+from cortexa.api.conversations import _build_system_prompt
+from cortexa.db.models import Agent, Workspace
+from cortexa.agents.prompts import reference_message
 
 
 def test_prompt_accepts_workspace_and_keeps_agent_instructions():
@@ -40,8 +40,8 @@ def test_rule_order_and_reference_content_are_separate():
 
 
 def test_collaboration_uses_same_rules_as_normal_chat():
-    from agentdevstu.collaboration.manager import _build_handoff_system_prompt
-    from agentdevstu.collaboration.schemas import AgentHandoff
+    from cortexa.collaboration.manager import _build_handoff_system_prompt
+    from cortexa.collaboration.schemas import AgentHandoff
     target = Agent(name="渠道部", boundaries="只处理渠道业务")
     workspace = Workspace(name="销售", system_prompt="遵循销售政策")
     handoff = AgentHandoff(source_agent_id="source", target_agent_id="target", task="分析", question="给出建议")

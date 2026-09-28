@@ -14,14 +14,14 @@ import pytest
 from fastapi import BackgroundTasks
 from fastapi import UploadFile
 
-from agentdevstu.agents.knowledge import _build_query_context, _score_text, retrieve_knowledge
-from agentdevstu.api import knowledge
-from agentdevstu.config import llm_providers
-from agentdevstu.data import doc_storage
-from agentdevstu.data import document_preview as previews
-db_engine = importlib.import_module("agentdevstu.db.engine")
-from agentdevstu.rag import summary as doc_summary
-from agentdevstu.rag.summary import generate_document_summary
+from cortexa.agents.knowledge import _build_query_context, _score_text, retrieve_knowledge
+from cortexa.api import knowledge
+from cortexa.config import llm_providers
+from cortexa.data import doc_storage
+from cortexa.data import document_preview as previews
+db_engine = importlib.import_module("cortexa.db.engine")
+from cortexa.rag import summary as doc_summary
+from cortexa.rag.summary import generate_document_summary
 
 
 @pytest.fixture(autouse=True)
@@ -240,7 +240,7 @@ def test_pdf_processing_stores_llm_summary(tmp_path, monkeypatch):
 
     session = FakeSession()
     monkeypatch.setattr(db_engine, 'async_session_factory', lambda: session)
-    from agentdevstu.data import pdf_extraction
+    from cortexa.data import pdf_extraction
 
     def fake_extract(path):
         return 'PDF 全文内容。' * 10, 0

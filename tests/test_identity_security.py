@@ -7,8 +7,8 @@ import pytest
 from fastapi import HTTPException
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
-from agentdevstu.security.passwords import hash_password, verify_password
-from agentdevstu.security.access import Actor
+from cortexa.security.passwords import hash_password, verify_password
+from cortexa.security.access import Actor
 from types import SimpleNamespace
 
 
@@ -63,10 +63,10 @@ async def run_integration():
     import httpx
     from sqlalchemy import text, select
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    from agentdevstu.web.app import app
-    from agentdevstu.db.engine import Base
-    from agentdevstu.db import models as m
-    from agentdevstu.security import models as sm
+    from cortexa.web.app import app
+    from cortexa.db.engine import Base
+    from cortexa.db import models as m
+    from cortexa.security import models as sm
 
     schema = "identity_test_" + uuid.uuid4().hex
     base_engine = create_async_engine(os.environ["AUTH_TEST_DATABASE_URL"])
@@ -82,7 +82,7 @@ async def run_integration():
 
     # All runtime paths, including SSE and collaboration, must use the isolated test DB.
     for module in list(sys.modules.values()):
-        if getattr(module, "__name__", "").startswith("agentdevstu.") and hasattr(module, "async_session_factory"):
+        if getattr(module, "__name__", "").startswith("cortexa.") and hasattr(module, "async_session_factory"):
             original.append((module, module.async_session_factory))
             module.async_session_factory = factory
     try:
@@ -188,8 +188,8 @@ async def run_integration():
                     yield AIMessageChunk(content="Authorized reply")
 
             with (
-                patch("agentdevstu.config.llm_providers.create_llm", return_value=FakeModel()),
-                patch("agentdevstu.api.conversations.extract_memories", new=AsyncMock(return_value=[])),
+                patch("cortexa.config.llm_providers.create_llm", return_value=FakeModel()),
+                patch("cortexa.api.conversations.extract_memories", new=AsyncMock(return_value=[])),
             ):
                 streamed = await client.post(f"/api/conversations/{conv}/messages/stream", json={"content": "hello"})
                 assert streamed.status_code == 200 and "Authorized reply" in streamed.text, streamed.text
@@ -206,8 +206,8 @@ async def run_integration():
                     yield AIMessageChunk(content="MUST NOT ARRIVE")
 
             with (
-                patch("agentdevstu.config.llm_providers.create_llm", return_value=SlowModel()),
-                patch("agentdevstu.api.conversations.extract_memories", new=AsyncMock(return_value=[])),
+                patch("cortexa.config.llm_providers.create_llm", return_value=SlowModel()),
+                patch("cortexa.api.conversations.extract_memories", new=AsyncMock(return_value=[])),
             ):
                 task = asyncio.create_task(
                     client.post(f"/api/conversations/{conv}/messages/stream", json={"content": "slow"})

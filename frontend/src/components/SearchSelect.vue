@@ -28,7 +28,7 @@
         :aria-label="ariaLabel || placeholder"
         @keydown="onMenuKeydown"
       >
-        <label class="search-select-search">
+        <label v-if="searchable" class="search-select-search">
           <Search :size="15" />
           <input ref="input" v-model="query" type="search" :placeholder="searchPlaceholder" />
         </label>
@@ -62,6 +62,7 @@ const props = defineProps({
   options: { type: Array, default: () => [] },
   placeholder: { type: String, default: '请选择' },
   searchPlaceholder: { type: String, default: '搜索选项' },
+  searchable: { type: Boolean, default: true },
   disabled: Boolean,
   ariaLabel: { type: String, default: '' },
 })
@@ -91,12 +92,14 @@ function place() {
   if (!rect) return
   const viewportGap = 12
   const availableBelow = window.innerHeight - rect.bottom - viewportGap
-  const maxHeight = Math.min(320, Math.max(150, availableBelow))
-  const openBelow = availableBelow > 220 || rect.top < availableBelow
-  const width = Math.max(rect.width, 200)
+  const availableAbove = rect.top - viewportGap
+  const openBelow = availableBelow > 220 || availableAbove < availableBelow
+  const maxHeight = Math.max(0, Math.min(320, (openBelow ? availableBelow : availableAbove) - 6))
+  const width = Math.min(window.innerWidth - 16, Math.max(rect.width, props.searchable ? 200 : 140))
   style.value = {
     left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) + 'px',
-    top: (openBelow ? rect.bottom + 6 : Math.max(8, rect.top - maxHeight - 6)) + 'px',
+    top: openBelow ? rect.bottom + 6 + 'px' : 'auto',
+    bottom: openBelow ? 'auto' : window.innerHeight - rect.top + 6 + 'px',
     width: width + 'px',
     maxHeight: maxHeight + 'px',
   }
@@ -107,7 +110,8 @@ async function show() {
   query.value = ''
   await nextTick()
   place()
-  input.value?.focus()
+  if (props.searchable) input.value?.focus()
+  else (menu.value?.querySelector('.search-select-option-selected:not(:disabled)') || menu.value?.querySelector('.search-select-option:not(:disabled)'))?.focus()
 }
 function hide() { open.value = false }
 function toggle() { open.value ? hide() : show() }
@@ -128,7 +132,7 @@ function focusOption(offset = 1) {
 function onTriggerKeydown(event) {
   if (['Enter', ' ', 'ArrowDown'].includes(event.key)) {
     event.preventDefault()
-    show().then(() => focusOption(1))
+    show().then(() => { if (props.searchable) focusOption(1) })
   }
 }
 function onMenuKeydown(event) {
@@ -154,9 +158,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
-@import "../../../src/agentdevstu/web/static/css/glass-select.css";
+@import "../../../src/cortexa/web/static/css/glass-select.css";
 .search-select { position: relative; min-width: 0; }
-.search-select-trigger { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 6%, transparent); transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease, transform .16s ease; }
+.search-select-trigger { width: 100%; min-height: var(--control-height); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease, transform .16s ease; }
 .search-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-select-placeholder { color: var(--text3); }
 .search-select-chevron { color: var(--text3); flex: none; transition: transform .16s ease; }
@@ -164,7 +168,7 @@ onBeforeUnmount(() => {
 .search-select-open .search-select-trigger { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
 .search-select-open .search-select-chevron { transform: rotate(180deg); }
 .search-select-disabled { opacity: .5; }
-.search-select-menu { position: fixed; z-index: 5000; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 16px 38px color-mix(in srgb, var(--text) 18%, transparent); backdrop-filter: var(--theme-backdrop, none); -webkit-backdrop-filter: var(--theme-backdrop, none); }
+.search-select-menu { position: fixed; z-index: 5000; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-overlay); color: var(--text); box-shadow: var(--shadow-dialog); backdrop-filter: var(--theme-backdrop, none); -webkit-backdrop-filter: var(--theme-backdrop, none); }
 .search-select-search { display: flex; align-items: center; gap: 8px; margin: 8px; padding: 0 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text3); }
 .search-select-search input { width: 100%; min-width: 0; padding: 7px 0; border: 0 !important; outline: 0; background: transparent !important; color: var(--text); font: inherit; font-size: 13px; }
 .search-select-menu .search-select-search input:focus,
@@ -201,8 +205,8 @@ onBeforeUnmount(() => {
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
 }
-:root[data-color-theme=texture] .search-select-trigger, :root[data-color-theme=texture] .search-select-menu { background-color: var(--surface); background-image: var(--theme-gradient); background-repeat: repeat; background-size: 180px 180px; border-color: color-mix(in srgb, var(--primary) 22%, var(--border)); }
-:root[data-color-theme=texture] .search-select-search { background: color-mix(in srgb, var(--surface2) 86%, transparent); }
+:root[data-color-theme=texture] .search-select-trigger,
+:root[data-color-theme=texture] .search-select-menu { background-color: var(--surface); background-image: none; border-color: var(--border); }
 :root[data-color-theme=skeuo] .search-select-trigger, :root[data-color-theme=skeuo] .search-select-menu { background-color: light-dark(#F6EDDE, #402F20); border-color: light-dark(#D8C6AC, #241A10); box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)); }
 :root[data-color-theme=skeuo] .search-select-menu { box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.4)), 0 8px 20px var(--skeuo-shadow, rgba(61,42,24,.26)); }
 

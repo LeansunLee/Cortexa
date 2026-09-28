@@ -24,7 +24,7 @@ const assert = require('node:assert/strict');
       additionalProperties: false
     };
     const description = '查询合作中门店；支持通用关键词及大区、省、市、区县、门店名称、经销商名称等条件组合筛选。仅返回 SQL 中的真实字段。';
-    const root = process.env.FRONTEND_DIST_DIR || path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+    const root = process.env.FRONTEND_DIST_DIR || path.resolve(__dirname, '../../src/cortexa/web/static/dist');
     let originalTests = [];
     let draftTests = [];
     let rewrites = [];
@@ -78,11 +78,11 @@ const assert = require('node:assert/strict');
     await page.getByText('原始 SQL 可正常执行，返回 1 行', { exact: false }).waitFor();
     assert.deepEqual(originalTests[0], { data_source_id: 'source', query_template: originalSql });
 
-    await page.getByRole('button', { name: 'AI 改写', exact: true }).click();
-    await page.getByLabel('AI 改写 SQL 草稿').waitFor();
+    await page.getByRole('button', { name: '改写', exact: true }).click();
+    await page.getByLabel('改写 SQL 草稿').waitFor();
     assert.equal(rewrites[0].query_template, originalSql);
     assert.equal(rewrites[0].description, description);
-    assert.equal(await page.getByLabel('AI 改写 SQL 草稿').inputValue(), generatedSql);
+    assert.equal(await page.getByLabel('改写 SQL 草稿').inputValue(), generatedSql);
 
     await page.getByRole('button', { name: '试运行 SQL', exact: true }).click();
     await page.getByRole('alert').getByText('请填写必填参数：minimum', { exact: true }).waitFor();
@@ -97,19 +97,18 @@ const assert = require('node:assert/strict');
     assert.equal(draftTests[0].query_template, generatedSql);
 
     await page.getByLabel('测试参数 keyword', { exact: true }).fill('经销商');
-    assert.equal(await page.getByText('查询成功，暂无符合条件的数据。', { exact: true }).count(), 0);
     await page.getByRole('button', { name: '试运行 SQL', exact: true }).click();
     await page.getByRole('cell', { name: '示例经销商', exact: true }).waitFor();
 
     fs.mkdirSync('/tmp/sql-assistant-qa', { recursive: true });
     await page.screenshot({ path: '/tmp/sql-assistant-qa/tested.png', fullPage: true });
 
-    await page.getByLabel('AI 改写 SQL 草稿').fill('SELECT 1');
+    await page.getByLabel('改写 SQL 草稿').fill('SELECT 1');
     await page.getByText('SQL 占位符与 Schema 字段不一致，请修正后再试运行或应用。', { exact: true }).waitFor();
     assert(await page.getByRole('button', { name: '应用 SQL 和 Schema', exact: true }).isDisabled());
     assert.equal(await page.getByRole('cell', { name: '示例经销商', exact: true }).count(), 0);
 
-    await page.getByLabel('AI 改写 SQL 草稿').fill(generatedSql);
+    await page.getByLabel('改写 SQL 草稿').fill(generatedSql);
     await page.getByRole('button', { name: '应用 SQL 和 Schema', exact: true }).click();
     assert.equal(await page.getByLabel('改写 SQL').inputValue(), generatedSql);
     assert.deepEqual(JSON.parse(await page.getByLabel('输入 Schema (JSON)', { exact: true }).inputValue()), generatedSchema);

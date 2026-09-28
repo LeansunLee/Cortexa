@@ -1,0 +1,17 @@
+[Unit]
+Description=Cortexa Multi-Agent System
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/agentdevstu
+EnvironmentFile=/opt/agentdevstu/.env
+Environment=LD_LIBRARY_PATH=/usr/local/openssl11/lib
+Environment=PYTHONPATH=/opt/agentdevstu/src
+ExecStart=/usr/local/python3.12/bin/python3.12 -m uvicorn cortexa.web.app:app --host 0.0.0.0 --port 8000 --limit-concurrency 50 --timeout-keep-alive 30 --backlog 64
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

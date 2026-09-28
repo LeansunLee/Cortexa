@@ -34,7 +34,7 @@ function trapFocus(event) {
 }
 </script>
 <style scoped>
-.confirm-backdrop{position:fixed;inset:0;background:var(--overlay);z-index:4000;display:grid;place-items:center;padding:20px;backdrop-filter:blur(3px)}
-.confirm-dialog{background:var(--surface,#fff);color:var(--text,#334155);border:1px solid var(--border,#e2e8f0);border-radius:18px;padding:28px;width:420px;max-width:100%;box-shadow:0 24px 70px #0003;box-sizing:border-box}
-.danger-icon{width:48px;height:48px;border-radius:14px;background:#ef444418;color:#ef4444;display:grid;place-items:center}.confirm-dialog h3{font-size:18px;margin:18px 0 10px}.confirm-dialog p{white-space:pre-line;max-height:40vh;overflow:auto;font-size:14px;line-height:1.7;overflow-wrap:anywhere;margin:0}.confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}button{padding:9px 18px;border-radius:8px;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:inherit;cursor:pointer;font:inherit;font-size:14px}button.danger{background:#dc2626;color:#fff;border-color:#dc2626}button:disabled{opacity:.6;cursor:wait}
+.confirm-backdrop{position:fixed;inset:0;background:var(--overlay);z-index:4000;display:grid;place-items:center;padding:20px}
+.confirm-dialog{background:var(--surface-dialog);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:28px;width:420px;max-width:100%;box-shadow:var(--shadow-dialog);box-sizing:border-box}
+.danger-icon{width:48px;height:48px;border-radius:var(--radius);background:var(--danger-bg);color:var(--danger);display:grid;place-items:center}.confirm-dialog h3{font-size:18px;margin:18px 0 10px}.confirm-dialog p{white-space:pre-line;max-height:40vh;overflow:auto;font-size:14px;line-height:1.7;overflow-wrap:anywhere;margin:0}.confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}button{padding:9px 18px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:inherit;cursor:pointer;font:inherit;font-size:14px}button.danger{background:var(--danger);color:var(--surface);border-color:var(--danger)}button:disabled{opacity:.6;cursor:wait}
 </style>

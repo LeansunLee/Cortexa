@@ -2,6 +2,56 @@
 
 生效日期：2026-09-08。后续页面开发、改版和验收均遵循此规范；本规范取代早期版本文档中的页面布局约定。
 
+## UI Design System（2026-09-28）
+
+### 设计原则与主题架构
+
+- 层次为 Design System → Semantic Tokens → Theme Tokens → Components → Pages。业务页面只规定结构、内容和状态；颜色、材质、透明度与阴影由主题令牌决定。
+- `utils/theme.js` 生成主题令牌并由 `applyTheme` 写入根节点；`utils/appearance.js` 将浅色、深色、跟随系统解析为根节点 `data-theme` 与 `color-scheme`。`App.vue` 提供基础语义令牌，`styles/components.css` 提供基础控件，`styles/theme-controls.css` 兼容既有控件与玻璃材质。
+- 主题切换实时更新令牌，不重建业务组件。自定义颜色或组合走已有 `normalizeTheme` 与 `themeVariables`，不得添加页面级主题分支。材质只改变视觉属性，不改变尺寸、布局、交互或状态语义。
+- 玻璃不是默认效果。普通内容卡片保持可读的实体底色；只有重要面板、导航和浮层在玻璃主题采用透明材质。内容密集的表格和表单优先使用实体背景。
+
+### 语义令牌
+
+| 用途 | 令牌 | 消费规则 |
+| --- | --- | --- |
+| 页面与表面 | `--bg`、`--surface`、`--surface2`、`--surface-elevated`、`--surface-overlay`、`--surface-muted`、`--surface-card`、`--surface-panel`、`--surface-dialog`、`--surface-table` | Card 用 card，重要 Panel 用 panel，浮层内容用 dialog/overlay；遮罩单用 `--overlay`。 |
+| 文字 | `--text-primary`、`--text-secondary`、`--text-muted`（兼容 `--text`、`--text2`、`--text3`） | 正文、辅助、弱提示依次使用；弱提示仍须可读。 |
+| 轮廓与状态 | `--border`、`--border-card`、`--divider`、`--primary`、`--accent`、`--success`、`--warning`、`--danger` 及状态 `-bg` | 信息状态保持图标或文字标识，不能只靠颜色。 |
+| 几何与层次 | `--radius`、`--radius-sm`、`--radius-xs`、`--space-1` 至 `--space-6`、`--control-height`、`--shadow-card`、`--shadow-panel`、`--shadow-dialog` | 控件基础高度 40px；局部紧凑控件可以覆盖高度，但不改变主题策略。 |
+| 可选材质 | `--theme-gradient`、`--glass-opacity`、`--glass-blur`、`--glass-border`、`--glass-highlight`、`--glass-shadow` 及既有 `--glass-*-background/backdrop` | 渐变/纹理用于主题背景、主要动作或预览；玻璃令牌只在玻璃主题消费。 |
+
+字体使用系统无衬线族；正文常用 14px，辅助 12–13px，页面内层级标题 16–20px。数字、标签及紧凑表格可使用 12–13px。间距优先按 4px 基数（`--space-1` 至 `--space-6`）组合，避免每个页面重建一套尺度。
+
+### 表面、卡片与主题矩阵
+
+| 组件 | Solid 纯色 | Contrast 撞色 | Gradient 渐变 | Glass 玻璃 | Texture 纹理 |
+| --- | --- | --- | --- | --- | --- |
+| 页面背景 | 中性 `--bg` | 中性背景，主/辅色表达操作 | 中性背景，重点位置可用渐变 | 中性背景承托玻璃层 | 纹样仅在背景或主题重点区域 |
+| Navigation | 实体面与选中淡色 | 主色/辅色区分导航和动作 | 选中态可用柔和渐变 | Elevated，边缘高光与适量模糊 | 实体导航，选中态可带低对比纹样 |
+| Base / Interactive Card | `--surface-card` 实体；悬停边框变化 | 实体；选中用主题淡色 | 实体；不为每张卡片加渐变 | Glass 0：普通卡片保持实体；选中和交互仅强调轮廓 | 实体内容卡，纹样不进入正文 |
+| Elevated Card / Information Panel | `--surface-panel` 与轻阴影 | 实体，强调边框 | 重点面板可有克制渐变 | Glass 1：`--glass-panel-background`、`--glass-surface-backdrop`、柔和边缘 | 实体面板，背景纹理可见于外围 |
+| Dialog / Drawer / Popover | `--surface-dialog`、`--shadow-dialog` | 实体浮层，主题焦点 | 实体浮层，主要按钮可渐变 | Glass 2–3：`--glass-menu-background`、`--glass-menu-backdrop`；遮罩仍为 `--overlay` | 实体浮层，避免纹样干扰阅读 |
+| Table / Dense Form | `--surface-table`、清晰分隔 | 同结构，主题选中态 | 同结构，内容面不渐变 | Glass 0：实体内容面；输入框可用玻璃控件面但保留边界 | 实体内容面、无纹样 |
+| Button / Tag | 主题色及淡色 | 主色动作、辅色导航/标签 | 主要动作可渐变 | 可用控制级玻璃，但危险/成功状态保持语义色 | 主要动作可用低对比纹样 |
+
+Glass 0 为实体内容面；Glass 1 为重要面板的弱玻璃；Glass 2 为导航或悬浮容器；Glass 3 为菜单、弹窗等覆盖层。`--glass-opacity`、`--glass-blur`、边框/高光/阴影令牌共同控制材质。全透与磨砂可以改变这些值，不能让普通卡片统一获得 `backdrop-filter`，也不能在面板内部无意义地叠加多层玻璃。浏览器的 `backdrop-filter: url(#svg)` 不可作为实现依赖。
+
+### 控件与状态
+
+- Button、Input、Textarea、Select/SearchSelect、Checkbox、Radio、Switch、Range、Tabs、Tag/Badge、Table、Pagination、Search/Filter、Card、Dialog/Drawer、Popover/Dropdown、Tooltip、Toast/Alert、Menu、Breadcrumb、Empty、Loading/Skeleton 优先复用公共类或组件。页面样式只处理布局和局部尺寸。
+- 基础按钮与输入控件遵循 `--control-height`、全局圆角和字体。主按钮用 `--theme-button-*`；次要按钮用中性表面；危险操作用 `--danger` 与 `--danger-bg`。原生选择控件保留浏览器键盘和移动端行为，关闭态样式与 SearchSelect 对齐。
+- Hover、Focus、Active、Selected、Disabled、Readonly、Invalid 均须有可辨认的反馈。键盘焦点由公共 `:focus-visible` 规则显示；错误输入使用 `aria-invalid`、危险边框和文字提示。禁用态既要保留信息可读性，也要阻止激活。
+- 表格表头与行边界用 `--surface-table`、`--divider`；选中行用导航淡色，不添加玻璃模糊。分页当前位置与标签选中态用同一导航令牌。空状态、加载、错误提示保留对应文字语义。
+- Overlay 遮罩用 `--overlay`，内容弹窗用 `--surface-dialog` 和 `--shadow-dialog`；popover/dropdown 在玻璃主题才使用玻璃菜单令牌。Toast 使用成功、信息、危险语义背景和文字。
+- 过渡以 `--transition` 为基准；避免主题切换触发大范围布局动画。尊重 `prefers-reduced-motion`。自动化视觉取样须在 CSS 过渡结束后进行。
+
+### 响应式与验收矩阵
+
+- 页面边距和侧栏断点沿用下文规则；窄屏控制项可换行，Dialog 不得超过视口，独立滚动区必须让主要操作保持可达。长标题、长路径和大量行数据应截断、换行或在内容区域滚动，不能造成全页横向溢出。
+- 每个主题均覆盖 Light、Dark、System；System 应在系统切换后即时更新。回归至少覆盖 Solid × Light/Dark 与 Glass 全透/磨砂 × Light/Dark，抽查 Contrast、Gradient、Texture 的两种外观和自定义组合。
+- 逐页验收路由：`/`、`/works`、`/works/:id`、`/chat`、`/meetings`、`/my-agents`、`/workspaces`、`/agents`、`/knowledge`、`/data-sources`、`/settings`、`/personalization`、`/access`、`/model-usage`、`/workflows`、`/agent-operations/:agentId`，以及身份验证页。对列表、详情、新建/编辑、弹窗、菜单和空/错误状态进行检查；模拟数据与真实服务的验证结果分开记录。
+
 ## 应用框架
 
 - 登录后的页面统一使用 `App.vue` 中的侧栏与内容区，内容区顶部设置 44px 页面标签栏，不额外设置全局账号顶栏。
@@ -52,6 +102,10 @@
 
 ## 页面标签页（2026-09-09）
 
+- 对话目录采用紧凑行距：条目最小高度 32px、垂直内边距 2px，不叠加条目外边距；更多操作按钮保留 28px 点击区域。Agent 分组间距独立于条目间距，避免同组对话过于松散。
+
+- 对话目录使用无框文本行：普通、悬停和选中条目均不绘制卡片背景、边框、内阴影或玻璃面。当前对话通过主题文字色、字重和 `aria-current` 表达。每行标题左侧固定预留 16px 状态槽，加载图标出现在槽内，不能推动标题；重命名输入与标题起点一致。输入区的协作方式复用 SearchSelect，选项由工作空间允许范围生成。
+
 - 左侧导航打开页面后，在内容区顶部新增标签；重复打开相同地址时激活已有标签。详情地址单独打开，浏览器前进、后退与标签选中状态保持同步。
 - 标签切换保留页面表单、筛选、滚动和进行中的对话状态；每个页面使用独立路由上下文，后台标签的弹窗隐藏。关闭标签卸载对应页面，关闭当前标签激活右侧相邻标签（无右侧时激活左侧），至少保留一个标签。
 - 标签栏横向滚动，激活标签自动进入可见区域；支持左右方向键、Home/End 切换和 Delete 关闭。
@@ -67,7 +121,7 @@
 
 - 账号菜单提供“个性化设置”，所有登录用户均可访问 `/personalization`；系统配置仅保留供应商和模型管理。
 - 配色顺序为纯色、撞色、渐变、玻璃、纹理。纯色合并原柔和、鲜明，含经典、科技、马卡龙、莫兰迪、糖果宝石、东方美学、欧式宫廷七类，每类 14 套，共 98 套；每类覆盖红、橙、黄、绿、青、蓝、紫、粉及中性色，并保留各自的饱和度和明度风格。原有颜色值保留，旧设置无需迁移。撞色、渐变、玻璃各 14 套；纹理含自然、金属、布艺、人文、历史、书艺、绘艺七类共 25 套，总计 165 套。每类另提供自定义入口，不计入 14 套预设。
-- 玻璃提供全透（0px 模糊、清晰亮边）与磨砂（24px 模糊、乳白遮罩与细颗粒）。常驻边缘泛光提供 0–100% 滑块，默认 20%，按账号保存；右下角为主要光源，扩大渐消覆盖范围，左上角为较小的辅助光源，其峰值透明度严格为右下角的 30%。0% 同时关闭两角的主题色光晕，保留中性玻璃边缘。
+- 玻璃提供全透（较弱控件模糊、清晰亮边）与磨砂（更强模糊与细颗粒）。实际模糊由控件、面板、菜单令牌分别控制。常驻边缘泛光提供 0–100% 滑块，默认 20%，按账号保存；右下角为主要光源，扩大渐消覆盖范围，左上角为较小的辅助光源，其峰值透明度严格为右下角的 30%。0% 同时关闭两角的主题色光晕，保留中性玻璃边缘。
 - 鼠标高光与常驻光晕独立：仅距控件边界 140px 内响应，按距离平方衰减，每个控件单独计算朝向鼠标的位置。两按钮之间的光源应分别照亮左按钮右侧和右按钮左侧。禁止将鼠标位置写到全局主题变量造成所有按钮同步发光。离开窗口、切换主题/外观时清理临时高光；触摸输入不模拟悬浮光源。
 - 纹理支持自定义主色与纹样，低对比纹样用于主要按钮，悬停略增强；色卡展示较清晰的纹理。原三拼色自动保留主色并恢复为默认木纹。
 - 主题和外观在当前浏览器按账号隔离保存；首次迁移时将原浏览器偏好归入首个登录账号，其他账号使用默认值。
@@ -126,7 +180,7 @@
 
 ### 玻璃材质与预设头像（2026-09-23）
 
-- 玻璃浮层（下拉、菜单、弹窗、@提及）两种质地：**液态**为 72%/88% 半透明底 + `blur(28px)` 高饱和背景模糊，**磨砂**为 94%/96% 半透明底 + `blur(38px)` 大模糊；变量由 `utils/theme.js` 输出（`--glass-menu-background`、`--glass-menu-backdrop`）。
+- 玻璃浮层（下拉、菜单、弹窗、@提及）两种质地：**液态**为约 88% 半透明底 + `blur(28px)` 高饱和背景模糊，**磨砂**为约 96% 半透明底 + `blur(38px)` 大模糊；变量由 `utils/theme.js` 输出（`--glass-menu-background`、`--glass-menu-backdrop`）。
 - 浮层穿透（下层文字透过菜单可辨）必须用「增强背景模糊 + 适度底色透明度」解决，禁止以提高不透明度或改纯实底的方式处理——那会消灭玻璃质感。历史教训：`backdrop-filter: url(#svg-filter)` 折射方案在 Chromium 真实页面会静默失败（能力检测通过、渲染输出为空），已回退，重启前须验证浏览器渲染成熟度。
 - 智能体预设头像 17 个全部为多元化人物 SVG，经 `components/AgentAvatar.vue` 内联渲染跟随应用深浅主题（`html[data-theme]` 驱动 `.av-bg`，颜色由每个 SVG 根元素的 `--_av-bg-light/dark` 变量提供）；SVG 文件内嵌 `prefers-color-scheme` 供独立引用兜底；非预设路径自动回退 `<img>`。新增预设角色时同步更新 `Agents.vue` 的 `presetAvatars` 列表。
 - 卡片、面板、弹窗、徽章等历史页面已全面改用主题语义变量（`--surface/--surface2/--text/--border/--success/--danger`），禁止新增固定白色背景或仅浅色可读的灰色文字；回归入口 `frontend/tests/card-theme-audit.browser.cjs`（浅/深双主题断言）。

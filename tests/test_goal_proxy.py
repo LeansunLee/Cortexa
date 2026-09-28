@@ -15,10 +15,10 @@ from sqlalchemy import select
 from test_goal_collaboration import CONFIG, URL, collect, setup, start
 from test_goal_loop import FakeModel, binding, tool_call
 
-from agentdevstu.agents import proxy_executor
-from agentdevstu.api import goals as api
-from agentdevstu.db.models import Agent, AgentCollaboration
-from agentdevstu.runtime.proxy import ProxyInvocation, build_invocation, enabled, validate_configuration
+from cortexa.agents import proxy_executor
+from cortexa.api import goals as api
+from cortexa.db.models import Agent, AgentCollaboration
+from cortexa.runtime.proxy import ProxyInvocation, build_invocation, enabled, validate_configuration
 
 
 def proxy_agent(schema=None, fields=None):

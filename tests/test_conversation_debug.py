@@ -2,8 +2,8 @@ import asyncio
 
 import yaml
 
-from agentdevstu.api.conversations import _conversation_debug_enabled, _debug_safe
-from agentdevstu.web.app import ConversationDebugPayload, save_conversation_debug_config
+from cortexa.api.conversations import _conversation_debug_enabled, _debug_safe
+from cortexa.web.app import ConversationDebugPayload, save_conversation_debug_config
 
 
 def test_debug_payload_redacts_credentials_and_bounds_large_content():
@@ -23,10 +23,10 @@ def test_debug_payload_redacts_credentials_and_bounds_large_content():
 def test_debug_feature_flag_defaults_to_false_and_reads_yaml(monkeypatch, tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump({"features": {"conversation_debug_enabled": True}}), encoding="utf-8")
-    monkeypatch.setattr("agentdevstu.api.conversations._CONFIG_PATH", config_path)
-    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: False)
+    monkeypatch.setattr("cortexa.api.conversations._CONFIG_PATH", config_path)
+    monkeypatch.setattr("cortexa.api.conversations.can_read_goal_trace", lambda: False)
     assert _conversation_debug_enabled() is False
-    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: True)
+    monkeypatch.setattr("cortexa.api.conversations.can_read_goal_trace", lambda: True)
     assert _conversation_debug_enabled() is True
 
     config_path.write_text("llm: {}\n", encoding="utf-8")
@@ -36,8 +36,8 @@ def test_debug_feature_flag_defaults_to_false_and_reads_yaml(monkeypatch, tmp_pa
 def test_debug_config_update_preserves_existing_configuration(monkeypatch):
     config = {"llm": {"default": "provider-a", "providers": {"provider-a": {"model": "test"}}}}
     saved = {}
-    monkeypatch.setattr("agentdevstu.web.app._load_config", lambda: config)
-    monkeypatch.setattr("agentdevstu.web.app._save_config", lambda value: saved.update(value))
+    monkeypatch.setattr("cortexa.web.app._load_config", lambda: config)
+    monkeypatch.setattr("cortexa.web.app._save_config", lambda value: saved.update(value))
 
     result = asyncio.run(save_conversation_debug_config(ConversationDebugPayload(enabled=True)))
 

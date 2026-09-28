@@ -4,7 +4,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const origin = process.env.LIVE_ORIGIN || 'http://glass-finishes.local';
-const dist = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const dist = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });

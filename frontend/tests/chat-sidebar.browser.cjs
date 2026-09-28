@@ -10,8 +10,8 @@ const assert = require('node:assert/strict');
     const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const origin = 'http://chat-sidebar.local';
-    const root = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+    const origin = process.env.LIVE_ORIGIN || 'http://chat-sidebar.local';
+    const root = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
     const conversations = [
       { id: 'p1', agent_id: 'peter', agent_name: 'Peter', agent_avatar: '/static/avatars/ceo.svg', title: '第一轮', created_at: '2026-09-27T10:37:00' },
       { id: 'p2', agent_id: 'peter', agent_name: 'Peter', agent_avatar: '/static/avatars/ceo.svg', title: '第二轮', created_at: '2026-09-27T10:30:00' },
@@ -20,6 +20,7 @@ const assert = require('node:assert/strict');
     let renamed = null;
     let deleted = null;
     let messageLoads = 0;
+    let finishReply;
     await page.route(origin + '/**', async route => {
       const req = route.request();
       const url = new URL(req.url());
@@ -31,6 +32,10 @@ const assert = require('node:assert/strict');
         else if (url.pathname === '/api/config') data = { conversation_debug_enabled: false };
         else if (url.pathname === '/api/me/conversation-debug') data = { allowed: false, enabled: false };
         else if (url.pathname === '/api/conversations') data = conversations;
+        else if (url.pathname.endsWith('/messages/stream')) {
+          await new Promise(resolve => { finishReply = resolve; });
+          return route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"done","id":"reply","content":"完成"}\n\n' });
+        }
         else if (url.pathname.endsWith('/messages')) { messageLoads++; data = []; }
         else if (url.pathname === '/api/conversations/p1' && req.method() === 'PATCH') {
           renamed = req.postDataJSON().title;
@@ -43,6 +48,7 @@ const assert = require('node:assert/strict');
         }
         return route.fulfill({ json: data });
       }
+      if (process.env.LIVE_ORIGIN) return route.continue();
       const file = url.pathname.startsWith('/static/dist/') ? path.join(root, url.pathname.slice(13)) : path.join(root, 'index.html');
       return route.fulfill({ body: fs.readFileSync(file), contentType: file.endsWith('.js') ? 'application/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html' });
     });
@@ -54,6 +60,30 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('.conv-item .conv-avatar, .conv-item .conv-meta').count(), 0);
     assert.equal(await page.locator('.conv-item').first().locator('.conv-title-text').innerText(), '第一轮');
     assert.equal(await page.locator('.conv-item').first().locator('.conv-more').evaluate(el => getComputedStyle(el).opacity), '0');
+    await page.locator('.conv-title-text').first().click();
+    await page.locator('.chat-input').fill('检查加载状态');
+    await page.locator('.chat-send').click();
+    await page.locator('.conv-spinner').waitFor();
+    const { themeVariables } = await import('../src/utils/theme.js');
+    for (const appearance of ['light', 'dark']) for (const mode of ['solid', 'glass']) {
+      const vars = themeVariables({ value: '#00856A', ...(mode === 'glass' ? { mode, finish: 'clear' } : {}) });
+      await page.evaluate(({ appearance, mode, vars }) => {
+        const root = document.documentElement;
+        root.dataset.theme = appearance; root.style.colorScheme = appearance; root.dataset.colorTheme = mode;
+        Object.entries(vars).forEach(([key,value]) => root.style.setProperty(key,value));
+      }, { appearance, mode, vars });
+      await page.waitForTimeout(220);
+      const titles = await page.locator('.conv-title-text').evaluateAll(es => es.map(e => e.getBoundingClientRect().left));
+      assert.ok(titles.every(x => Math.abs(x - titles[0]) < 1), 'running and idle conversation titles align');
+      const spinner = await page.locator('.conv-spinner').boundingBox();
+      assert.ok(spinner.x + spinner.width < titles[0], 'spinner stays to the left of title');
+      const row = await page.locator('.conv-item.active').evaluate(e => { const s=getComputedStyle(e); return { background:s.backgroundImage, color:s.backgroundColor, shadow:s.boxShadow, blur:s.backdropFilter }; });
+      assert.deepEqual(row, { background:'none', color:'rgba(0, 0, 0, 0)', shadow:'none', blur:'none' });
+      await page.screenshot({ path: `/tmp/cortexa-chat-rows-${mode}-${appearance}.png` });
+    }
+    finishReply();
+    await page.locator('.conv-spinner').waitFor({state:'hidden'});
+    messageLoads = 0;
     if (process.env.CHAT_SIDEBAR_SCREENSHOT) await page.screenshot({ path: process.env.CHAT_SIDEBAR_SCREENSHOT });
     await page.locator('.conv-group-heading').first().click();
     assert.equal(await page.locator('.conv-item:visible').count(), 1);

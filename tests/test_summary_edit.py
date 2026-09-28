@@ -12,10 +12,10 @@ import pytest
 from fastapi import HTTPException
 from fastapi import BackgroundTasks
 
-from agentdevstu.api import knowledge
-from agentdevstu.data import doc_storage
-from agentdevstu.data import document_preview as previews
-from agentdevstu.api.schemas import DocumentSummaryUpdate
+from cortexa.api import knowledge
+from cortexa.data import doc_storage
+from cortexa.data import document_preview as previews
+from cortexa.api.schemas import DocumentSummaryUpdate
 
 
 @pytest.fixture(autouse=True)
@@ -104,7 +104,7 @@ def _fake_db():
 
 
 def test_create_text_document_applies_summary_rule(tmp_path, monkeypatch):
-    from agentdevstu.api.schemas import DocumentCreate
+    from cortexa.api.schemas import DocumentCreate
 
     _setup_storage(tmp_path, monkeypatch)
     db = _fake_db()
@@ -152,7 +152,7 @@ def test_get_content_rejects_non_text(monkeypatch):
 
 
 def test_put_content_applies_rule_and_schedules_summary(tmp_path, monkeypatch):
-    from agentdevstu.api.schemas import DocumentContentUpdate
+    from cortexa.api.schemas import DocumentContentUpdate
 
     _setup_storage(tmp_path, monkeypatch)
     doc = _text_document_doc()
@@ -178,7 +178,7 @@ def test_put_content_applies_rule_and_schedules_summary(tmp_path, monkeypatch):
 
 
 def test_create_text_storage_failure_rolls_back_without_tasks(tmp_path, monkeypatch):
-    from agentdevstu.api.schemas import DocumentCreate
+    from cortexa.api.schemas import DocumentCreate
 
     _setup_storage(tmp_path, monkeypatch)
     monkeypatch.setattr(knowledge, "save_document_content", Mock(side_effect=OSError("disk full")))
@@ -195,7 +195,7 @@ def test_create_text_storage_failure_rolls_back_without_tasks(tmp_path, monkeypa
 
 
 def test_put_content_rejects_non_text(monkeypatch):
-    from agentdevstu.api.schemas import DocumentContentUpdate
+    from cortexa.api.schemas import DocumentContentUpdate
 
     doc = make_doc()
     monkeypatch.setattr(knowledge, "_preview_document_record", AsyncMock(return_value=doc))

@@ -11,10 +11,10 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 import pytest
 from fastapi import BackgroundTasks, HTTPException, Response
 
-from agentdevstu.api import knowledge
-from agentdevstu.data import doc_storage
-from agentdevstu.data import document_preview as previews
-from agentdevstu.api.schemas import DocumentValidityUpdate
+from cortexa.api import knowledge
+from cortexa.data import doc_storage
+from cortexa.data import document_preview as previews
+from cortexa.api.schemas import DocumentValidityUpdate
 
 
 @pytest.fixture(autouse=True)

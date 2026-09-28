@@ -2,8 +2,8 @@
 
 import asyncio
 
-from agentdevstu.db.engine import Base, engine
-from agentdevstu.usage.models import UsageCall, UsageOperation
+from cortexa.db.engine import Base, engine
+from cortexa.usage.models import UsageCall, UsageOperation
 
 
 async def migrate():

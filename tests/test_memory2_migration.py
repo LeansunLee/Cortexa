@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text, inspect
 from sqlalchemy.ext.asyncio import create_async_engine
-from agentdevstu.db.engine import Base
+from cortexa.db.engine import Base
 
 spec = importlib.util.spec_from_file_location(
     "memory_migration", Path(__file__).parents[1] / "scripts/migrate_memory_2.py"
@@ -50,7 +50,7 @@ async def rehearsal(tmp):
             )
             ws, ag, keep, dirty = [uuid.uuid4() for _ in range(4)]
             # ORM table inserts populate Python defaults without requiring an Actor.
-            from agentdevstu.db.models import Workspace, Agent
+            from cortexa.db.models import Workspace, Agent
 
             await c.execute(Workspace.__table__.insert().values(id=ws, name="migration"))
             await c.execute(Agent.__table__.insert().values(id=ag, workspace_id=ws, name="migration", status="active"))

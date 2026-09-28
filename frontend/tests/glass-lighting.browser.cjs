@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const assets = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist/assets');
+    const assets = path.resolve(__dirname, '../../src/cortexa/web/static/dist/assets');
     const css = fs.readFileSync(path.join(assets, fs.readdirSync(assets).find(n => /^index-.*\.css$/.test(n))), 'utf8');
     await page.setContent(`<style>${css}</style><style>
       #left,#right,#disabled{position:absolute;top:100px;width:100px;height:40px}
@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
     </style><button id="left" class="btn btn-primary">按钮一</button>
     <button id="right" class="btn btn-primary">按钮二</button>
     <button id="disabled" class="btn btn-primary" disabled>禁用</button>
-    <section id="card" class="card"><h2>玻璃卡片</h2><p>光源只从最近的边缘进入。</p></section>
+    <section id="card" class="panel"><h2>玻璃面板</h2><p>光源只从最近的边缘进入。</p></section>
     <div class="theme-color-item" style="position:absolute;left:800px;top:100px">
       <span id="swatch" class="color-preview" style="display:block;width:48px;height:48px"></span>
     </div>`);
@@ -47,7 +47,7 @@ const assert = require('node:assert/strict');
         await move(x, y);
         assert.ok((await inline('left')).includes('at ' + expected));
       }
-      await move(440, 440); // Card centre: top wins an equal top/bottom distance.
+      await move(440, 440); // Panel centre: top wins an equal top/bottom distance.
       const card = await inline('card');
       const positions = [...card.matchAll(/at (-?[\d.]+)px (-?[\d.]+)px/g)];
       assert.ok(positions.length >= 2);
@@ -118,7 +118,7 @@ const assert = require('node:assert/strict');
     await page.evaluate(() => window.disposeLighting());
     assert.equal(await inline('card'), 'linear-gradient(red, blue)');
     assert.equal(await page.locator('#card').evaluate(e => e.style.getPropertyPriority('background-image')), 'important');
-    console.log('PASS: both glass finishes × both appearances; interior edges, card centre, adjacent controls, distance, disabled/touch and cleanup');
+    console.log('PASS: both glass finishes × both appearances; interior edges, panel centre, adjacent controls, distance, disabled/touch and cleanup');
   } finally {
     await browser.close();
   }

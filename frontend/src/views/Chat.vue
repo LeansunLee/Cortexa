@@ -5,7 +5,7 @@
     <div class="chat-sidebar">
       <div class="sidebar-header">
         <h2>历史对话</h2>
-        <button class="btn btn-primary btn-sm sidebar-new-chat" @click="showNewChat = true"><AppIcon name="Plus" :size="14" />新建对话</button>
+        <button class="btn btn-primary btn-sm sidebar-new-chat" @click="openNewChat"><AppIcon name="Plus" :size="14" />新建对话</button>
       </div>
       <div class="sidebar-search">
         <Search :size="14" />
@@ -13,21 +13,22 @@
       </div>
 
       <!-- New Chat Modal -->
-      <button v-if="currentConvAgent && can('agent.operate')" class="agent-ops-entry btn btn-ghost" type="button" @click="router.push('/agent-operations/' + currentConvAgent.id)">
-        <Wrench :size="14" /><span>运维当前 Agent</span>
-      </button>
       <div v-if="showNewChat" class="new-chat-form">
-        <div class="form-group">
-          <label>选择智能体</label>
-          <SearchSelect v-model="newChatAgentId" class="form-select" placeholder="请选择可用 Agent" :options="agents.map(a => ({ value: a.id, label: a.name }))" />
-        </div>
-        <div class="form-group">
-          <label>对话标题（可选）</label>
-          <input v-model="newChatTitle" placeholder="例如：需求讨论" class="form-input" @keydown.enter="createChat" />
+        <h3>选择智能体</h3>
+        <p v-if="agentsLoading" class="new-chat-hint">正在加载可用 Agent…</p>
+        <p v-else-if="agentsError" class="new-chat-hint" role="alert">{{ agentsError }} <button type="button" @click="loadAgents">重试</button></p>
+        <p v-else-if="!agents.length" class="new-chat-hint">暂无可用 Agent</p>
+        <div v-else class="new-chat-agent-list" role="radiogroup" aria-label="选择智能体">
+          <label v-for="agent in agents" :key="agent.id" class="new-chat-agent" :class="{ selected: newChatAgentId === agent.id }">
+            <input v-model="newChatAgentId" type="radio" name="new-chat-agent" :value="agent.id" />
+            <span class="new-chat-agent-avatar" aria-hidden="true"><AgentAvatar :avatar="agent.avatar || ''" /></span>
+            <span class="new-chat-agent-name">{{ agent.name }}</span>
+            <Check v-if="newChatAgentId === agent.id" :size="16" class="new-chat-agent-check" aria-hidden="true" />
+          </label>
         </div>
         <div class="new-chat-actions">
-          <button class="btn btn-ghost btn-sm" @click="showNewChat = false">取消</button>
-          <button class="btn btn-primary btn-sm" @click="createChat">创建</button>
+          <button class="btn btn-ghost btn-sm" @click="closeNewChat">取消</button>
+          <button class="btn btn-primary btn-sm" :disabled="!newChatAgentId || creatingChat" @click="createChat">{{ creatingChat ? '创建中…' : '创建' }}</button>
         </div>
       </div>
 
@@ -51,13 +52,13 @@
               :class="['conv-item', { active: currentConvId === conv.id }]"
               @click="selectConversation(conv.id)">
               <div class="conv-info">
-                <div class="conv-title-row" v-if="editingConvId !== conv.id">
-                  <Loader v-if="sessions[conv.id] && (sessions[conv.id].sending || sessions[conv.id].streaming)" :size="13" class="conv-spinner" />
-                  <button class="conv-title-text" type="button" :class="{ unread: sessions[conv.id]?.unread }" :title="conv.title || conv.agent_name || '新对话'" @click.stop="selectConversation(conv.id)">{{ conv.title || conv.agent_name || '新对话' }}</button>
+                <div class="conv-title-row" v-if="editingConvId !== conv.id || renameTarget !== 'sidebar'">
+                  <span class="conv-status" aria-hidden="true"><Loader v-if="sessions[conv.id] && (sessions[conv.id].sending || sessions[conv.id].streaming)" :size="13" class="conv-spinner" /></span>
+                  <button class="conv-title-text" type="button" :class="{ unread: sessions[conv.id]?.unread }" :aria-current="currentConvId === conv.id ? 'true' : undefined" :title="conv.title || conv.agent_name || '新对话'" @click.stop="selectConversation(conv.id)">{{ conv.title || conv.agent_name || '新对话' }}</button>
                 </div>
                 <input v-else class="conv-rename-input" v-model="renameTitle"
                   @click.stop @blur="saveRename(conv.id)" @keydown.enter="saveRename(conv.id)"
-                  @keydown.escape="editingConvId = null" autofocus />
+                  @keydown.escape="cancelRename" autofocus />
               </div>
               <button class="conv-more" type="button" :aria-label="`${conv.title || '新对话'}的更多操作`" aria-haspopup="menu" :aria-expanded="openConvMenuId === conv.id" @click.stop="toggleConversationMenu($event, conv.id)"><MoreHorizontal :size="17" /></button>
             </div>
@@ -94,8 +95,10 @@
               <span v-else class="chat-agent-emoji"><AppIcon name="Bot" :size="20" /></span>
             </div>
             <div class="chat-header-text">
-              <span class="chat-conv-title">{{ currentConvTitle }}</span>
+              <input v-if="editingConvId === currentConvId && renameTarget === 'header'" ref="headerRenameInput" v-model="renameTitle" class="chat-title-input" aria-label="对话标题" maxlength="200" @blur="saveRename(currentConvId)" @keydown.enter.prevent="saveRename(currentConvId)" @keydown.esc.stop="cancelRename" />
+              <button v-else type="button" class="chat-conv-title" :title="`点击修改对话标题：${currentConvTitle}`" @click="startRename(currentConv, 'header')">{{ currentConvTitle }}</button>
               <span class="chat-agent-name">{{ currentConv?.agent_name || currentConvAgent?.name || '通用对话' }}</span>
+              <span v-if="renameError" class="chat-rename-error" role="alert">{{ renameError }}</span>
             </div>
           </div>
           <button v-if="debugEnabled" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
@@ -307,6 +310,15 @@
 
           <p v-if="curSession?.draftError" class="msg-error-bar">{{ curSession.draftError }}</p>
           <div class="chat-input-wrap">
+            <div v-if="currentConvAgent?.agent_type !== 'proxy'" class="chat-collaboration-mode">
+              <label>协作方式
+                <SearchSelect aria-label="协作方式" :searchable="false" :model-value="curSession?.collaborationMode || 'EXPLICIT_ONLY'"
+                  :options="(curSession?.allowedCollaborationModes || ['EXPLICIT_ONLY']).map(mode => ({ value: mode, label: collaborationModeLabels[mode] }))"
+                  :disabled="!curSession?.goalEnabled || curSession?.modeSaving || sending || streaming || curSession?.approvalBusy || Boolean(curSession?.pendingGoalRequest)"
+                  @change="saveCollaborationMode" />
+              </label>
+              <span>{{ curSession?.modeSaving ? '保存中…' : pendingFiles.length ? '含附件的消息仅使用用户明确 @ 的协作' : collaborationModeHints[curSession?.collaborationMode || 'EXPLICIT_ONLY'] }}</span>
+            </div>
             <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
             <div class="chat-input-row">
             <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
@@ -316,7 +328,7 @@
             <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
               @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
             <button v-if="sending || streaming" class="stop-generation" @click="stopGeneration" :disabled="!controllers.has(currentConvId)"><span class="runtime-bars" aria-hidden="true"><i></i><i></i><i></i></span>停止生成</button>
-            <button v-else class="chat-send" :title="curSession?.collaborationDrafts?.length ? '发送并开始协作' : '发送'" aria-label="发送消息并执行已配置的协作任务" @click="sendMessage" :disabled="sending || streaming || (!input.trim() && pendingFiles.length === 0)">
+            <button v-else class="chat-send" :title="curSession?.collaborationDrafts?.length ? '发送并开始协作' : '发送'" aria-label="发送消息并执行已配置的协作任务" @click="sendMessage" :disabled="sending || streaming || curSession?.modeSaving || (!input.trim() && pendingFiles.length === 0)">
               <span v-if="sending || streaming" class="send-loading"></span>
               <Send v-else :size="16" />
             </button>
@@ -391,7 +403,7 @@
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
-import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, Wrench, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
+import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
@@ -402,9 +414,7 @@ import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaboration
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
-import { useRoute, useRouter } from 'vue-router'
-import { can } from '../auth'
-const router = useRouter()
+import { useRoute } from 'vue-router'
 const route = useRoute()
 import { conversationApi, usableAgentApi, chatUploadApi, collaborationApi, debugPreferenceApi, goalApi } from '../api'
 
@@ -414,6 +424,9 @@ const isCollaborationOnlyMessage = (msg) =>
   !(msg.content || '').replace(/@([^\s@]+)/g, '').trim()
 
 const agents = ref([])
+const agentsLoading = ref(false)
+const agentsError = ref('')
+let agentsLoadVersion = 0
 const conversations = ref([])
 const searchQuery = ref('')
 
@@ -495,7 +508,7 @@ const activeTabId = ref(null)  // currently visible tab
 const sessions = ref({})  // { [convId]: { messages: [], sending: false, streaming: false, streamContent: '', streamError: '', unread: false, input: '', statusSteps: [], lastUserMessage: '' } }
 const showNewChat = ref(false)
 const newChatAgentId = ref('')
-const newChatTitle = ref('')
+const creatingChat = ref(false)
 const messagesContainer = ref(null)
 const debugEnabled = ref(false)
 const showDebugPanel = ref(false)
@@ -589,6 +602,7 @@ const getOrCreateSession = (convId) => {
       streamContent: '', streamError: '', unread: false,
       goalEnabled: false, goalMode: false, goalLoaded: false, goal: null, goalCandidates: [], goalSelection: [], approvalBusy: false, pendingGoalRequest: null,
       collaborationDrafts: [], lastDrafts: null, draftError: '',
+      collaborationMode: 'EXPLICIT_ONLY', allowedCollaborationModes: ['EXPLICIT_ONLY'], modeSaving: false,
       input: '', statusSteps: [], lastUserMessage: '',
       collabPending: [],  // in-progress collaborations
       collabResults: [],  // completed collaborations for current streaming message
@@ -798,10 +812,28 @@ const formatFileSize = (bytes) => {
 const currentWorkspace = () => localStorage.getItem('currentWorkspace')
 
 const loadAgents = async () => {
+  const version = ++agentsLoadVersion
+  agentsLoading.value = true
+  agentsError.value = ''
   try {
     const { data } = await usableAgentApi.list(currentWorkspace())
-    agents.value = data
-  } catch (e) { console.error(e) }
+    if (version === agentsLoadVersion) agents.value = data
+  } catch (e) {
+    if (version === agentsLoadVersion) agentsError.value = '可用 Agent 加载失败。'
+    console.error(e)
+  } finally {
+    if (version === agentsLoadVersion) agentsLoading.value = false
+  }
+}
+
+const openNewChat = () => {
+  newChatAgentId.value = ''
+  showNewChat.value = true
+  loadAgents()
+}
+const closeNewChat = () => {
+  showNewChat.value = false
+  newChatAgentId.value = ''
 }
 
 const loadDebugConfig = async () => {
@@ -844,12 +876,35 @@ const loadGoalSession = async (convId, session) => {
   try {
     const { data } = await goalApi.options(convId)
     session.goalEnabled = data.enabled
+    session.collaborationMode = data.collaboration_mode || 'EXPLICIT_ONLY'
+    session.allowedCollaborationModes = data.allowed_collaboration_modes || ['EXPLICIT_ONLY']
     if (!session.goalLoaded) session.goalMode = false
     session.goalLoaded = true
     const prior = session.messages.at(-1)
     if (!session.goal) session.goal = prior?.metadata_json?.goal_id ? { goal_id: prior.metadata_json.goal_id } : null
     await refreshGoal(convId, session)
   } catch (error) { session.streamError = '任务状态加载失败，请重试：' + (error.response?.data?.detail || error.message) }
+}
+const collaborationModeLabels = { EXPLICIT_ONLY: '不主动', ASK_BEFORE_COLLABORATION: '询问', AUTONOMOUS: '主动' }
+const collaborationModeHints = {
+  EXPLICIT_ONLY: '仅用户主动 @ 的 Agent 可以协作',
+  ASK_BEFORE_COLLABORATION: '需要其他 Agent 协作时，先询问你',
+  AUTONOMOUS: '由 Agent 自行决策是否协作',
+}
+const saveCollaborationMode = async (selected) => {
+  const convId = activeTabId.value
+  const session = curSession.value
+  if (session.modeSaving || session.sending || session.streaming) return
+  session.modeSaving = true
+  session.draftError = ''
+  try {
+    const { data } = await goalApi.saveCollaborationMode(convId, selected)
+    session.collaborationMode = data.collaboration_mode
+    session.allowedCollaborationModes = data.allowed_collaboration_modes
+  } catch (error) {
+    session.draftError = '协作方式保存失败：' + (error.response?.data?.detail || error.message)
+    await loadGoalSession(convId, session)
+  } finally { session.modeSaving = false }
 }
 const approveGoal = async () => {
   const convId = activeTabId.value
@@ -934,20 +989,18 @@ const switchTab = (convId) => {
 }
 
 const createChat = async () => {
-  if (!newChatAgentId.value) { alert('请选择一个已获授权的 Agent'); return }
+  if (creatingChat.value || !agents.value.some(agent => agent.id === newChatAgentId.value)) return
+  creatingChat.value = true
   try {
-    const payload = {}
-    if (newChatAgentId.value) payload.agent_id = newChatAgentId.value
-    if (newChatTitle.value.trim()) payload.title = newChatTitle.value.trim()
-    const { data } = await conversationApi.create(payload)
+    const { data } = await conversationApi.create({ agent_id: newChatAgentId.value })
     await loadConversations()
-    showNewChat.value = false
-    newChatAgentId.value = ''
-    newChatTitle.value = ''
+    closeNewChat()
     // Auto-open new conversation as tab
     await selectConversation(data.id)
   } catch (e) {
     alert('创建失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    creatingChat.value = false
   }
 }
 
@@ -992,7 +1045,7 @@ const sendMessage = async () => {
   const session = getOrCreateSession(convId)
   const text = session.input.trim()
   if (session.unavailable) { session.streamError = sendErrorMessage(404); return }
-  if ((!text && pendingFiles.value.length === 0) || session.sending || session.streaming) return
+  if ((!text && pendingFiles.value.length === 0) || session.sending || session.streaming || session.modeSaving) return
 
   let goalMode = false
   if (session.goalEnabled && text && !pendingFiles.value.length) {
@@ -1344,23 +1397,49 @@ const retryMessage = async () => {
 
 const editingConvId = ref(null)
 const renameTitle = ref('')
+const renameTarget = ref(null)
+const renameError = ref('')
+const renameSaving = ref(false)
+const headerRenameInput = ref(null)
 
-const startRename = (conv) => {
+const startRename = (conv, target = 'sidebar') => {
+  if (!conv) return
   editingConvId.value = conv.id
+  renameTarget.value = target
   renameTitle.value = conv.title || ''
-  nextTick(() => document.querySelector('.conv-rename-input')?.focus())
+  renameError.value = ''
+  nextTick(() => {
+    const input = target === 'header' ? headerRenameInput.value : document.querySelector('.conv-rename-input')
+    input?.focus()
+    input?.select()
+  })
 }
 
-const saveRename = async (convId) => {
-  if (editingConvId.value !== convId) return
-  if (!renameTitle.value.trim()) { editingConvId.value = null; return }
-  try {
-    await conversationApi.update(convId, { title: renameTitle.value.trim() })
-    const idx = conversations.value.findIndex(c => c.id === convId)
-    if (idx >= 0) conversations.value[idx].title = renameTitle.value.trim()
-  } catch (e) { console.error(e) }
+const cancelRename = () => {
   editingConvId.value = null
+  renameTarget.value = null
+  renameError.value = ''
 }
+const saveRename = async (convId) => {
+  if (editingConvId.value !== convId || renameSaving.value) return
+  const title = renameTitle.value.trim()
+  if (!title || title === conversations.value.find(conv => conv.id === convId)?.title) { cancelRename(); return }
+  renameSaving.value = true
+  try {
+    await conversationApi.update(convId, { title })
+    const idx = conversations.value.findIndex(c => c.id === convId)
+    if (idx >= 0) conversations.value[idx].title = title
+    if (editingConvId.value === convId) cancelRename()
+  } catch (e) {
+    if (editingConvId.value === convId) renameError.value = '重命名失败，请重试'
+    console.error(e)
+  } finally {
+    renameSaving.value = false
+  }
+}
+watch(currentConvId, () => {
+  if (renameTarget.value === 'header' && editingConvId.value !== currentConvId.value) cancelRename()
+})
 
 const regenerateMessage = async (msgIdx) => {
   const session = curSession.value
@@ -1733,7 +1812,6 @@ onBeforeUnmount(() => {
   padding: 16px 16px 12px;
 }
 .sidebar-header h2 { font-size: 15px; font-weight: 600; margin: 0; color: var(--text); }
-.agent-ops-entry { margin: 0 12px 12px; justify-content: flex-start; }
 .sidebar-search {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 10px; margin: 0 12px 8px;
@@ -1766,14 +1844,14 @@ onBeforeUnmount(() => {
 
 .conv-item {
   display: flex; align-items: center; gap: 6px;
-  margin-left: 22px; min-height: 40px; padding: 8px; border-radius: 9px;
+  min-height: 32px; padding: 2px 8px; border: 0; border-radius: 0;
   cursor: pointer; transition: all 0.12s; position: relative;
 }
-.conv-item:hover { background: var(--surface2); }
-.conv-item.active { background: var(--primary-light); }
+.conv-item:hover .conv-title-text { color: var(--primary); }
 .conv-item.active .conv-title-text { color: var(--primary); font-weight: 600; }
 .conv-info { flex: 1; min-width: 0; }
-.conv-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.conv-title-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; }
+.conv-status { display: flex; align-items: center; justify-content: center; width: 16px; }
 .conv-title-text { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .conv-title-text.unread { font-weight: 650; }
 .conv-more { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text2); cursor: pointer; }
@@ -1788,15 +1866,22 @@ onBeforeUnmount(() => {
 .conv-action-menu .conv-action-danger { color: var(--danger); }
 
 /* New Chat Form */
-.new-chat-form { padding: 16px; min-height: 0; overflow-y: auto; }
-.new-chat-form .form-group { margin-bottom: 12px; }
-.new-chat-form label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text2); }
-.form-select, .form-input {
-  width: 100%; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 8px; font-size: 13px; color: var(--text);
-}
-.form-select:focus, .form-input:focus { outline: none; border-color: var(--primary); }
-.new-chat-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.new-chat-form { flex:1; min-height:0; padding:12px; overflow-y:auto; }
+.new-chat-form h3 { margin:0 0 10px; font-size:13px; font-weight:600; color:var(--text2); }
+.new-chat-hint { margin:10px 0; color:var(--text3); font-size:12px; line-height:1.5; }
+.new-chat-hint button { padding:0; border:0; background:transparent; color:var(--primary); font:inherit; cursor:pointer; }
+.new-chat-agent-list { display:grid; gap:6px; }
+.new-chat-agent { position:relative; display:flex; align-items:center; gap:9px; min-height:44px; padding:7px 9px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); cursor:pointer; }
+.new-chat-agent:hover { border-color:color-mix(in srgb,var(--primary) 55%,var(--border)); background:var(--surface2); }
+.new-chat-agent.selected { border-color:var(--primary); background:var(--primary-light); }
+.new-chat-agent:focus-within { outline:2px solid var(--primary); outline-offset:2px; }
+.new-chat-agent input { position:absolute; width:1px; height:1px; opacity:0; }
+.new-chat-agent-avatar { display:grid; place-items:center; flex-shrink:0; width:30px; height:30px; border-radius:8px; overflow:hidden; background:var(--surface2); color:var(--text2); }
+.new-chat-agent-avatar :deep(img), .new-chat-agent-avatar :deep(.agent-avatar-inline) { width:100%; height:100%; object-fit:cover; }
+.new-chat-agent-name { min-width:0; flex:1; font-size:13px; font-weight:500; line-height:20px; overflow-wrap:anywhere; }
+.new-chat-agent-check { flex-shrink:0; color:var(--primary); }
+.new-chat-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+.new-chat-actions .btn:disabled { opacity:.5; cursor:not-allowed; }
 .btn-cancel {
   padding: 6px 14px; background: transparent; color: var(--text2); border: 1px solid var(--border);
   border-radius: 8px; font-size: 13px; cursor: pointer;
@@ -1842,8 +1927,12 @@ onBeforeUnmount(() => {
 }
 .chat-agent-badge img { width: 100%; height: 100%; object-fit: cover; }
 .chat-agent-emoji { font-size: 18px; }
-.chat-header-text { display: flex; flex-direction: column; }
-.chat-conv-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.chat-header-text { display:flex; flex-direction:column; }
+.chat-conv-title { min-width:0; max-width:100%; padding:0; border:0; background:transparent; color:var(--text); font:inherit; font-size:14px; font-weight:600; text-align:left; cursor:text; }
+.chat-conv-title:hover { color:var(--primary); }
+.chat-conv-title:focus-visible { outline:2px solid var(--primary); outline-offset:3px; border-radius:3px; }
+.chat-title-input { width:min(460px,100%); min-width:120px; padding:3px 6px; border:1px solid var(--primary); border-radius:6px; background:var(--surface); color:var(--text); font:inherit; font-size:14px; font-weight:600; outline:none; }
+.chat-rename-error { margin-top:3px; color:var(--danger); font-size:11px; }
 .chat-agent-name { font-size: 12px; color: var(--text3); }
 .debug-toggle {
   display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
@@ -2285,9 +2374,9 @@ onBeforeUnmount(() => {
 .chat-sidebar { background: var(--surface); }
 .sidebar-search { background: var(--surface); border-color: var(--border); }
 .search-input { min-width: 0; width: 100%; }
-.conv-item { margin-bottom: 2px; }
-.conv-item:hover { background: var(--surface2); }
-.conv-item.active { background: var(--primary-light); box-shadow: inset 3px 0 var(--primary); }
+.conv-item { margin-bottom: 0; }
+.conv-item, .conv-item:hover, .conv-item.active { background: transparent; box-shadow: none; }
+.conv-rename-input { margin-left: 22px; width: calc(100% - 22px); }
 .chat-header { padding: 16px 28px; }
 .chat-conv-title { font-size: 16px; letter-spacing: -.02em; }
 .chat-agent-name { margin-top: 3px; color: var(--text3); }
@@ -2332,6 +2421,10 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
+.chat-collaboration-mode { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; color:var(--text2); font-size:12px; padding:4px 0 8px }
+.chat-collaboration-mode label { display:flex; align-items:center; gap:8px; white-space:nowrap }
+.chat-collaboration-mode .search-select { width:112px; flex-shrink:0 }
+.chat-collaboration-mode span { overflow-wrap:anywhere }
 .goal-mode-select { display:flex; align-items:center; gap:6px; color:var(--text2); font-size:12px; margin-left:auto }
 .goal-mode-select select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px }
 .goal-panel { padding:10px 16px; border-top:1px solid var(--border); color:var(--text2); background:var(--surface); font-size:13px; max-height:35vh; overflow-y:auto; flex-shrink:0 }

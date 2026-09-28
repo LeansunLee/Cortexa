@@ -5,7 +5,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 
 from langchain_core.messages import AIMessageChunk
 
-from agentdevstu.api.conversations import _stream_model_response
+from cortexa.api.conversations import _stream_model_response
 
 
 def test_first_token_arrives_before_model_finishes():
@@ -60,7 +60,7 @@ def test_text_blocks_exclude_reasoning_and_preserve_streamed_text():
 
 
 def test_collaboration_forwards_tokens_before_completion(monkeypatch):
-    from agentdevstu.collaboration import manager
+    from cortexa.collaboration import manager
 
     async def scenario():
         released = asyncio.Event()
@@ -83,7 +83,7 @@ def test_collaboration_forwards_tokens_before_completion(monkeypatch):
 
 
 def test_closing_collaboration_stream_cancels_target(monkeypatch):
-    from agentdevstu.collaboration import manager
+    from cortexa.collaboration import manager
 
     async def scenario():
         cancelled = asyncio.Event()

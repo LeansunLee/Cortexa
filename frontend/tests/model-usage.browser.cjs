@@ -4,7 +4,7 @@ const fs = require("node:fs"),
   assert = require("node:assert/strict");
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const root = path.resolve(__dirname, "../../src/agentdevstu/web/static/dist");
+  const root = path.resolve(__dirname, "../../src/cortexa/web/static/dist");
   const screenshots = process.env.SCREENSHOT_DIR;
   const errors = [],
     requests = [];
@@ -207,7 +207,7 @@ const fs = require("node:fs"),
     await page.getByRole("button", { name: "调用审计", exact: true }).click();
     await page.getByRole("button", { name: "操作详情", exact: true }).click();
     await page.getByText("业务操作详情", { exact: true }).waitFor();
-    await page.getByText("输入 1,200", { exact: true }).waitFor();
+    await page.getByText("输入 1.2 K", { exact: true }).waitFor();
     await page.keyboard.press("Escape");
     assert(!(await page.getByRole("dialog").isVisible()));
     const downloadPromise = page.waitForEvent("download");

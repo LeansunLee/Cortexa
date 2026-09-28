@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from agentdevstu.api import goals
-from agentdevstu.security import debug_preferences
-from agentdevstu.security.access import current_actor
-from agentdevstu.security.api import DebugPreference, get_my_debug_preference, save_my_debug_preference
+from cortexa.api import goals
+from cortexa.security import debug_preferences
+from cortexa.security.access import current_actor
+from cortexa.security.api import DebugPreference, get_my_debug_preference, save_my_debug_preference
 
 
 def test_debug_preference_is_private_and_permission_gated(tmp_path, monkeypatch):
@@ -44,7 +44,8 @@ def test_message_route_keeps_greetings_ordinary_and_tasks_in_goal(tmp_path, monk
 
     agent = SimpleNamespace(agent_type="llm")
     monkeypatch.setattr(goals.store, "sessions", lambda: Session())
-    monkeypatch.setattr(goals, "own_conversation", AsyncMock(return_value=SimpleNamespace(agent_id=uuid.uuid4())))
+    conversation = SimpleNamespace(agent_id=uuid.uuid4(), metadata_json={})
+    monkeypatch.setattr(goals, "own_conversation", AsyncMock(return_value=conversation))
     monkeypatch.setattr(goals, "require_agent_use", AsyncMock(return_value=agent))
     config = tmp_path / "config.yaml"
     config.write_text("features: {goal_execution_enabled: true, goal_collaboration_enabled: true}")
@@ -59,5 +60,11 @@ def test_message_route_keeps_greetings_ordinary_and_tasks_in_goal(tmp_path, monk
     assert asyncio.run(route("请分析销售数据"))["use_goal"] is True
     assert asyncio.run(route("帮我做一份10月销售策略"))["use_goal"] is True
     assert asyncio.run(route("请分析附件", has_attachments=True))["use_goal"] is False
+    assert asyncio.run(route("杭州呢"))["use_goal"] is False
+    for mode in ("ASK_BEFORE_COLLABORATION", "AUTONOMOUS"):
+        conversation.metadata_json = {"collaboration_mode": mode}
+        assert asyncio.run(route("杭州呢"))["use_goal"] is True
+        assert asyncio.run(route("你好"))["use_goal"] is False
+        assert asyncio.run(route("请分析附件", has_attachments=True))["use_goal"] is False
     agent.agent_type = "proxy"
     assert asyncio.run(route("请分析销售数据"))["use_goal"] is False

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { highlightKeyContent } from '../src/utils/chatHighlights.js'
 
 const source = await readFile(new URL('../src/views/Chat.vue', import.meta.url), 'utf8')
-const functions = source.slice(source.indexOf('const formatMessage ='), source.indexOf('const formatTime ='))
+const functions = source.slice(source.indexOf('const formatMessage ='), source.indexOf('const formatMessageTime ='))
 const render = new Function('highlightKeyContent', functions + '\nreturn formatMessage;')(highlightKeyContent)
 
 test('spaces in lists never split product names into table columns', () => {

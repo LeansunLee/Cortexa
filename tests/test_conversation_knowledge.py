@@ -8,8 +8,8 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 
 from sqlalchemy.dialects import postgresql
 
-from agentdevstu.api.conversations import _retrieve_knowledge
-from agentdevstu.data import doc_storage
+from cortexa.api.conversations import _retrieve_knowledge
+from cortexa.data import doc_storage
 
 
 def retrieve(monkeypatch, documents, query, bound_ids=None):

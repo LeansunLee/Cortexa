@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessageChunk
-from agentdevstu.api import conversations as api
-from agentdevstu.api.schemas import ConversationMessageCreate
-from agentdevstu.collaboration.schemas import AgentHandoffResult
-from agentdevstu.db.models import Agent, Conversation, ConversationMessage
+from cortexa.api import conversations as api
+from cortexa.api.schemas import ConversationMessageCreate
+from cortexa.collaboration.schemas import AgentHandoffResult
+from cortexa.db.models import Agent, Conversation, ConversationMessage
 
 
 @pytest.mark.parametrize('bound_data_tools', [True, False])
@@ -54,18 +54,18 @@ def test_edited_tasks_dependency_results_and_snapshot_persist(monkeypatch, first
             model_inputs.extend(messages)
             yield AIMessageChunk(content='汇总结果')
 
-    monkeypatch.setattr('agentdevstu.collaboration.drafts.save_input_snapshot', AsyncMock(side_effect=lambda conv, snapshot: snapshot))
+    monkeypatch.setattr('cortexa.collaboration.drafts.save_input_snapshot', AsyncMock(side_effect=lambda conv, snapshot: snapshot))
     monkeypatch.setattr(api, 'async_session_factory', Session)
     organization = AsyncMock(return_value=[{'role':'user', 'content':'当前空间组织职责目录'}])
     monkeypatch.setattr(api, 'organization_reference', organization)
-    monkeypatch.setattr('agentdevstu.security.access.require_agent_use', AsyncMock(side_effect=lambda db, ident: objects[ident]))
+    monkeypatch.setattr('cortexa.security.access.require_agent_use', AsyncMock(side_effect=lambda db, ident: objects[ident]))
     monkeypatch.setattr(api, 'list_collaboration_agents', AsyncMock(return_value=[{'id':str(a.id), 'name':a.name} for a in (first, second)]))
     monkeypatch.setattr(api, 'stream_handoff', handoff)
     capability = SimpleNamespace(id=uuid.uuid4(), name="实验档案", description="实验记录查询", query_template="SELECT 1", input_schema={})
     capabilities = [{"capability": capability, "data_source": SimpleNamespace(id=uuid.uuid4())}] if bound_data_tools else []
     monkeypatch.setattr(api, '_load_agent_capabilities', AsyncMock(return_value=capabilities))
     monkeypatch.setattr(api, 'extract_memories', AsyncMock(return_value=[]))
-    monkeypatch.setattr('agentdevstu.config.llm_providers.create_llm', lambda model: Model())
+    monkeypatch.setattr('cortexa.config.llm_providers.create_llm', lambda model: Model())
     payload = ConversationMessageCreate(content='请@数据 原始任务 @市场 原始计划', collaboration_drafts=[
         {'agent_id': first.id, 'task':'编辑后的查询', 'context_mode':'manual', 'supplemental_prompt':'本轮覆盖'},
         {'agent_id': second.id, 'task':'编辑后的计划', 'context_mode':'manual', 'depends_on':[first.id] if explicit_dependency else []},

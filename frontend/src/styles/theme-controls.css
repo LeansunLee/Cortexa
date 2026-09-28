@@ -151,7 +151,7 @@
 :root body input[type=range]::-moz-range-track { height: 6px; border-radius: 8px; background-color: var(--primary-light); background-image: var(--theme-gradient); }
 :root body input[type=range]::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--surface); background: var(--primary); box-shadow: 0 0 0 1px var(--border); cursor: grab; }
 :root body input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface); background: var(--primary); box-shadow: 0 0 0 1px var(--border); cursor: grab; }
-:root body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
+:root body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
   color: var(--navigation-color);
   background: var(--navigation-background);
   border-color: var(--navigation-color);
@@ -168,8 +168,18 @@
   background-image: var(--theme-gradient);
 }
 :root body :is(.btn-ghost, .btn-outline, .btn-secondary, .pagination button):hover:not(:disabled) { background: var(--primary-light); border-color: var(--primary); color: var(--text); }
-:root body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .user-dropdown, .agent-dropdown, .mention-popover, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog) {
-  background-color: var(--surface);
+:root body :is(.card, .agent-card, .knowledge-card, .work-card) {
+  background-color: var(--surface-card);
+  color: var(--text);
+  border-color: var(--border-card);
+}
+:root body :is(.panel, .work-panel, .capability-panel, .debug-panel, .agent-status-panel) {
+  background-color: var(--surface-panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+:root body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor, .user-dropdown, .agent-dropdown, .mention-popover) {
+  background-color: var(--surface-dialog);
   color: var(--text);
   border-color: var(--border);
 }
@@ -178,6 +188,10 @@
    Large panels use restrained edge-only sheen; compact menus keep stronger refraction. */
 :root[data-color-theme=glass] {
   --glass-field-border: color-mix(in srgb, var(--text) 28%, var(--glass-edge-border-soft));
+  --surface-panel: var(--glass-panel-background);
+  --surface-dialog: var(--glass-menu-background);
+  --shadow-panel: var(--glass-edge-shadow);
+  --shadow-dialog: var(--glass-edge-shadow);
 }
 :root[data-theme=dark][data-color-theme=glass] {
   --glass-field-border: color-mix(in srgb, var(--text) 34%, var(--glass-edge-border-soft));
@@ -200,7 +214,8 @@
 :root[data-color-theme=glass] body .agent-budget-field > input:disabled {
   background-color: var(--glass-surface-background-strong);
 }
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+/* Dense cards and tables stay on level 0. Dialogs use level 3; panels use level 1. */
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   position: relative;
   isolation: isolate;
   background-color: var(--glass-panel-background, var(--glass-surface-background));
@@ -211,15 +226,22 @@
   backdrop-filter: var(--glass-surface-backdrop);
   -webkit-backdrop-filter: var(--glass-surface-backdrop);
 }
-:root[data-theme=dark][data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+:root[data-theme=dark][data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   background-color: var(--glass-panel-background, var(--glass-surface-background)) !important;
   background-image: var(--glass-panel-gradient, none) !important;
   border-color: var(--glass-edge-border-soft) !important;
   color: var(--text);
   box-shadow: var(--glass-edge-shadow), 0 20px 54px rgba(0,0,0,.34);
 }
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before,
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+:root[data-color-theme=glass] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+  background-color: var(--surface-dialog) !important;
+  background-image: var(--glass-menu-gradient, none) !important;
+  box-shadow: var(--shadow-dialog);
+  backdrop-filter: var(--glass-menu-backdrop);
+  -webkit-backdrop-filter: var(--glass-menu-backdrop);
+}
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before,
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -227,34 +249,34 @@
   border-radius: inherit;
   z-index: 0;
 }
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) > * {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) > * {
   position: relative;
   z-index: 1;
 }
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
   background:
     linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 11%),
     linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 100%);
   opacity: 1;
   mix-blend-mode: normal;
 }
-:root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)) 0%, transparent 13%);
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .38)),
     inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)),
     inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .16));
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   border-color: var(--glass-edge-border);
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
   background:
     linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .26)) 0%, transparent 10%),
     linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .12)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 100%);
   filter: saturate(1.05) contrast(1.02);
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   background:
     radial-gradient(ellipse at 50% -18%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)) 0%, transparent 15%),
     radial-gradient(ellipse at 101% 12%, rgba(var(--glass-rgb), calc(var(--glass-edge-alpha) * .16)) 0%, transparent 15%),
@@ -265,17 +287,17 @@
     inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .22)),
     inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .18));
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   background-color: var(--glass-panel-background, var(--glass-surface-background-strong));
   border-color: var(--glass-edge-border-soft);
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::before {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
   background:
     linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 0%, transparent 12%),
     linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 0%, transparent 7%, transparent 93%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .05)) 100%);
   filter: saturate(.94) contrast(.98) blur(.25px);
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo)::after {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 14%);
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)),
@@ -373,7 +395,7 @@
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
 }
-:root[data-color-theme=glass] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page], .tag, .admin-badge, .badge-published, .theme-demo-tag) {
+:root[data-color-theme=glass] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page], .tag, .admin-badge, .badge-published, .theme-demo-tag) {
   border-color: var(--glass-edge-border-soft);
 }
 :root[data-color-theme=glass] body :is(input, textarea, select):focus-visible {
@@ -496,7 +518,7 @@
 }
 
 /* --- Tabs / nav active --- */
-:root[data-color-theme=skeuo] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .conv-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
+:root[data-color-theme=skeuo] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page]) {
   border-bottom: 2px solid var(--primary);
   border-color: var(--primary);
   box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)), 0 2px 5px var(--skeuo-shadow, rgba(61,42,24,.24));

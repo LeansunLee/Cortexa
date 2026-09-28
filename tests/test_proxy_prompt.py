@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from agentdevstu.agents import proxy_executor
-from agentdevstu.db.models import Agent
+from cortexa.agents import proxy_executor
+from cortexa.db.models import Agent
 
 
 @pytest.mark.parametrize('mapping', [{}, {'query': '$.input', 'tenant': '$.tenant'}])
@@ -58,7 +58,7 @@ def test_prompt_resolution_sends_only_synthesized_prompt(monkeypatch):
         captured.append(json.loads(request.content))
         return httpx.Response(200, json={'answer': '查询完成'})
 
-    from agentdevstu.config import llm_providers
+    from cortexa.config import llm_providers
     real_client = httpx.AsyncClient
     monkeypatch.setattr(llm_providers, 'create_llm', lambda _: ResolverModel())
     monkeypatch.setattr(proxy_executor.httpx, 'AsyncClient', lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw))
@@ -100,7 +100,7 @@ def test_prompt_resolution_blocks_when_context_is_ambiguous(monkeypatch):
                 'usedSources': ['current_task'],
             }, ensure_ascii=False))
 
-    from agentdevstu.config import llm_providers
+    from cortexa.config import llm_providers
     monkeypatch.setattr(llm_providers, 'create_llm', lambda _: ResolverModel())
     monkeypatch.setattr(
         proxy_executor.httpx,

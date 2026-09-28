@@ -7,9 +7,9 @@ from unittest.mock import Mock
 import pytest
 from fastapi import HTTPException
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
-from agentdevstu.db import models as m
-from agentdevstu.security.access import Actor, current_actor
-from agentdevstu.security.isolation import scope_writes
+from cortexa.db import models as m
+from cortexa.security.access import Actor, current_actor
+from cortexa.security.isolation import scope_writes
 
 
 @pytest.fixture

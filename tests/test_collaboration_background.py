@@ -3,9 +3,9 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
-from agentdevstu.collaboration.background import prepare_background
-from agentdevstu.collaboration.drafts import CollaborationDraft, proxy_request
-from agentdevstu.collaboration.schemas import AgentHandoff
+from cortexa.collaboration.background import prepare_background
+from cortexa.collaboration.drafts import CollaborationDraft, proxy_request
+from cortexa.collaboration.schemas import AgentHandoff
 
 
 def session(rows):
@@ -14,7 +14,7 @@ def session(rows):
 
 @pytest.mark.parametrize('legacy_mode', ['auto', 'none', 'manual'])
 def test_proxy_never_reads_context_or_calls_model(monkeypatch, legacy_mode):
-    monkeypatch.setattr('agentdevstu.config.llm_providers.create_llm', lambda *a: pytest.fail('must not call selector model'))
+    monkeypatch.setattr('cortexa.config.llm_providers.create_llm', lambda *a: pytest.fail('must not call selector model'))
     db = session([])
     draft = CollaborationDraft(agent_id=uuid.uuid4(), task='本轮任务', context_mode=legacy_mode, context_text='旧手动背景')
     result = asyncio.run(prepare_background(db, uuid.uuid4(), draft, '主对话内容', target_type='proxy'))
@@ -30,7 +30,7 @@ def test_proxy_never_reads_context_or_calls_model(monkeypatch, legacy_mode):
 
 @pytest.mark.parametrize('legacy_mode', ['auto', 'none', 'manual'])
 def test_llm_always_gets_chronological_context_without_selector(monkeypatch, legacy_mode):
-    monkeypatch.setattr('agentdevstu.config.llm_providers.create_llm', lambda *a: pytest.fail('must not call selector model'))
+    monkeypatch.setattr('cortexa.config.llm_providers.create_llm', lambda *a: pytest.fail('must not call selector model'))
     db = session([SimpleNamespace(id='new', role='assistant', content='答复'), SimpleNamespace(id='old', role='user', content='历史问题')])
     draft = CollaborationDraft(agent_id=uuid.uuid4(), task='本轮任务', context_mode=legacy_mode, context_text='旧手动背景')
     result = asyncio.run(prepare_background(db, uuid.uuid4(), draft, '主输入', target_type='llm', attachments=['附件正文']))

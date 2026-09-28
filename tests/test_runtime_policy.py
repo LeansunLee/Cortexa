@@ -9,14 +9,14 @@ from fastapi import HTTPException
 from langchain_core.messages import AIMessageChunk
 from test_goal_loop import FakeModel, binding, make_loop, run
 
-from agentdevstu.api import runtime_policy as runtime_policy_api
-from agentdevstu.api.goals import budget_preflight
-from agentdevstu.runtime.adapters import CapabilityAdapter
-from agentdevstu.runtime.agent_executor import allocate_child_limits
-from agentdevstu.runtime.capabilities import CapabilityDescriptor, CapabilityType
-from agentdevstu.runtime.collaboration import Autonomy
-from agentdevstu.runtime.policy import resolve_effective_policy
-from agentdevstu.runtime.state import (
+from cortexa.api import runtime_policy as runtime_policy_api
+from cortexa.api.goals import budget_preflight
+from cortexa.runtime.adapters import CapabilityAdapter
+from cortexa.runtime.agent_executor import allocate_child_limits
+from cortexa.runtime.capabilities import CapabilityDescriptor, CapabilityType
+from cortexa.runtime.collaboration import Autonomy
+from cortexa.runtime.policy import resolve_effective_policy
+from cortexa.runtime.state import (
     UNLIMITED_BUDGET,
     BudgetPhase,
     GoalState,

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 (async () => {
-  const assets = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist/assets');
+  const assets = path.resolve(__dirname, '../../src/cortexa/web/static/dist/assets');
   const cssFiles = fs.readdirSync(assets).filter(f => f.endsWith('.css'));
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {

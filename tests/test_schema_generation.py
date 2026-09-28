@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from agentdevstu.api import schema_generation as api
-from agentdevstu.security.access import Actor, current_actor
+from cortexa.api import schema_generation as api
+from cortexa.security.access import Actor, current_actor
 
 
 def schema():

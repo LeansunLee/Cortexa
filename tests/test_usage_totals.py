@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from agentdevstu.agents.usage import UsageTotals
+from cortexa.agents.usage import UsageTotals
 
 
 def test_sums_provider_usage_across_tool_rounds():

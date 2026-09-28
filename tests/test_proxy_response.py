@@ -2,7 +2,7 @@ import json
 import httpx
 import pytest
 
-from agentdevstu.agents.proxy_executor import _parse_proxy_response, _response_value
+from cortexa.agents.proxy_executor import _parse_proxy_response, _response_value
 
 
 def sse(events):

@@ -1,5 +1,7 @@
 # Cortexa
 
+Python 导入包为 `cortexa`（`src/cortexa`），命令行入口为 `cortexa` 和 `cortexa-web`。开发服务器沿用 `/opt/agentdevstu` 部署目录和 `agentdevstu.service` 服务标识；服务启动模块已改为 `cortexa.web.app:app`，配置见 `deploy/agentdevstu.service`。数据库名称、会话 Cookie 和加密密钥标识保持原值，以保留现有数据与登录状态。
+
 ## 当前开发资料
 
 - [最新产品设计与 Memory 2.0 实施基线（含 2026-09-20 UI 更新）](docs/PRODUCT_DESIGN_20260919.md)
@@ -59,5 +61,5 @@ llm:
 
 ```bash
 uv run ruff check src scripts docs examples
-uv run mypy src/agentdevstu
+uv run mypy src/cortexa
 ```

@@ -10,13 +10,13 @@ from langchain_core.messages import AIMessageChunk
 from pydantic import BaseModel
 from test_goal_shadow import stream_fixture
 
-from agentdevstu.collaboration.schemas import AgentHandoffResult
-from agentdevstu.runtime.adapters import agent_adapter, retrieval_adapter, tool_adapter
-from agentdevstu.runtime.capabilities import CapabilityDescriptor, MatchScope, match_capabilities
-from agentdevstu.runtime.capabilities import CapabilityType as Kind
-from agentdevstu.runtime.capture import CapabilityCapture
-from agentdevstu.runtime.observations import ObservationStatus as Status
-from agentdevstu.runtime.shadow import PROTECTED_TRACE_STAGES, visible_trace
+from cortexa.collaboration.schemas import AgentHandoffResult
+from cortexa.runtime.adapters import agent_adapter, retrieval_adapter, tool_adapter
+from cortexa.runtime.capabilities import CapabilityDescriptor, MatchScope, match_capabilities
+from cortexa.runtime.capabilities import CapabilityType as Kind
+from cortexa.runtime.capture import CapabilityCapture
+from cortexa.runtime.observations import ObservationStatus as Status
+from cortexa.runtime.shadow import PROTECTED_TRACE_STAGES, visible_trace
 
 
 class Input(BaseModel):
@@ -228,16 +228,16 @@ def test_capture_is_bounded_fail_open_and_contains_no_raw_values():
 
 @pytest.mark.parametrize("allowed", [True, False])
 def test_all_phase2_trace_stages_follow_existing_operator_permission(monkeypatch, allowed):
-    from agentdevstu.api.conversations import list_messages
-    from agentdevstu.db.models import ConversationMessage
+    from cortexa.api.conversations import list_messages
+    from cortexa.db.models import ConversationMessage
 
-    monkeypatch.setattr("agentdevstu.runtime.shadow.can_read_goal_trace", lambda: allowed)
+    monkeypatch.setattr("cortexa.runtime.shadow.can_read_goal_trace", lambda: allowed)
     trace = [{"stage": stage} for stage in PROTECTED_TRACE_STAGES] + [{"stage": "response"}]
     assert len(visible_trace(trace)) == (len(PROTECTED_TRACE_STAGES) + 1 if allowed else 0)
     msg = ConversationMessage(metadata_json={"debug_trace": trace})
     db = AsyncMock()
     db.execute.return_value = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [msg]))
-    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: allowed)
+    monkeypatch.setattr("cortexa.api.conversations.can_read_goal_trace", lambda: allowed)
     rows = asyncio.run(list_messages(uuid.uuid4(), db))
     assert len(rows[0].metadata_json.get("debug_trace", [])) == (len(PROTECTED_TRACE_STAGES) + 1 if allowed else 0)
 
@@ -246,7 +246,7 @@ def test_all_phase2_trace_stages_follow_existing_operator_permission(monkeypatch
 @pytest.mark.parametrize("allowed", [False, True])
 @pytest.mark.parametrize("adapter_failure", [False, True])
 def test_real_stream_tool_results_are_unchanged_and_cached_once(monkeypatch, enabled, allowed, adapter_failure):
-    from agentdevstu.api import conversations as api
+    from cortexa.api import conversations as api
 
     run, saved, _, _ = stream_fixture(monkeypatch, enabled=False, debug=True, can_operate=allowed)
     monkeypatch.setattr(api, "capability_shadow_enabled", lambda path: enabled)
@@ -300,7 +300,7 @@ def test_real_stream_tool_results_are_unchanged_and_cached_once(monkeypatch, ena
             else:
                 yield AIMessageChunk(content="原有回答")
 
-    monkeypatch.setattr("agentdevstu.config.llm_providers.create_llm", lambda name: Model())
+    monkeypatch.setattr("cortexa.config.llm_providers.create_llm", lambda name: Model())
     monkeypatch.setattr(
         api, "_load_agent_capabilities", AsyncMock(return_value=[{"capability": cap, "data_source": None}])
     )
@@ -324,7 +324,7 @@ def test_real_stream_tool_results_are_unchanged_and_cached_once(monkeypatch, ena
 
 @pytest.mark.parametrize("unreadable", [False, True])
 def test_stream_retrieval_uses_existing_results_and_does_not_change_model_input(monkeypatch, unreadable):
-    from agentdevstu.api import conversations as api
+    from cortexa.api import conversations as api
 
     run, saved, calls, _ = stream_fixture(monkeypatch, enabled=False, content="分析内部资料")
     monkeypatch.setattr(api, "capability_shadow_enabled", lambda path: True)
@@ -358,12 +358,12 @@ def test_stream_retrieval_uses_existing_results_and_does_not_change_model_input(
 
 
 def test_proxy_stream_maps_readiness_without_adding_any_local_model_call(monkeypatch):
-    from agentdevstu.api import conversations as api
+    from cortexa.api import conversations as api
 
     run, saved, calls, _ = stream_fixture(monkeypatch, enabled=False, proxy=True)
     monkeypatch.setattr(api, "capability_shadow_enabled", lambda path: True)
     monkeypatch.setattr(
-        "agentdevstu.agents.proxy_executor.execute_proxy_agent",
+        "cortexa.agents.proxy_executor.execute_proxy_agent",
         AsyncMock(
             return_value={
                 "success": False,

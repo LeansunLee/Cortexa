@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  try{
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
- const root=process.env.FRONTEND_DIST_DIR || path.resolve(__dirname,'../../src/agentdevstu/web/static/dist'),permissions=['members.manage','agent.use'];
+ const root=process.env.FRONTEND_DIST_DIR || path.resolve(__dirname,'../../src/cortexa/web/static/dist'),permissions=['members.manage','agent.use'];
  let units=[],profile={user_id:'engineer',display_name:'王工',org_unit_id:null,org_unit_name:'',position_title:'',responsibility:'',responsibility_tags:[],coverage_scope:''},createdWork;
  await page.route('http://org.local/**',async r=>{
  const u=new URL(r.request().url()),method=r.request().method();let data=[];

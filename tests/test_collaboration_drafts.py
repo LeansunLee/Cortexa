@@ -1,8 +1,8 @@
 import uuid
 import pytest
-from agentdevstu.collaboration.drafts import CollaborationDraft, validate_drafts, proxy_request, visible_snapshot
-from agentdevstu.collaboration.schemas import AgentHandoff
-from agentdevstu.agents.proxy_executor import build_proxy_body
+from cortexa.collaboration.drafts import CollaborationDraft, validate_drafts, proxy_request, visible_snapshot
+from cortexa.collaboration.schemas import AgentHandoff
+from cortexa.agents.proxy_executor import build_proxy_body
 
 
 def test_dependency_order_and_invalid_references():
@@ -33,7 +33,7 @@ def test_snapshot_redacts_credentials():
 
 def test_runtime_user_cannot_read_agent_configuration():
     from types import SimpleNamespace
-    from agentdevstu.security.access import current_actor
+    from cortexa.security.access import current_actor
     token = current_actor.set(SimpleNamespace(has=lambda permission: False))
     try:
         result = visible_snapshot({'type': 'llm', 'messages': [{'role':'system', 'content':'私有规则'}]})
@@ -45,8 +45,8 @@ def test_runtime_user_cannot_read_agent_configuration():
 
 def test_snapshot_file_roundtrip_and_conversation_isolation(monkeypatch, tmp_path):
     import asyncio
-    from agentdevstu.collaboration import drafts
-    monkeypatch.setattr(drafts, '__file__', str(tmp_path / 'src' / 'agentdevstu' / 'collaboration' / 'drafts.py'))
+    from cortexa.collaboration import drafts
+    monkeypatch.setattr(drafts, '__file__', str(tmp_path / 'src' / 'cortexa' / 'collaboration' / 'drafts.py'))
     async def run():
         conversation_id = uuid.uuid4()
         snapshot = {'type': 'proxy', 'request_body': {'query': '完整输入' * 5000}}

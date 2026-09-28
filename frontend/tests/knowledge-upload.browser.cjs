@@ -1,6 +1,6 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fs = require('fs'), path = require('path'), assert = require('assert/strict');
-const root = path.resolve(__dirname, '../..'), dist = path.join(root, 'src/agentdevstu/web/static/dist');
+const root = path.resolve(__dirname, '../..'), dist = path.join(root, 'src/cortexa/web/static/dist');
 const origin = process.env.LIVE_ORIGIN || 'http://knowledge.local';
 (async () => {
   const { themeGroups } = await import(path.join(root, 'frontend/src/utils/theme.js'));

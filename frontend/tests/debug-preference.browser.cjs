@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
-    const root = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+    const root = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
     const origin = process.env.LIVE_ORIGIN || 'http://debug.local';
     let allowed = true;
     let enabled = false;

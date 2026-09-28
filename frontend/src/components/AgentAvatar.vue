@@ -12,7 +12,7 @@ const props = defineProps({ avatar: { type: String, default: '' } })
 
 // Preset avatars are inlined so their background follows the app theme
 // (html[data-theme]) instead of only the OS color scheme.
-const sources = import.meta.glob('../../../src/agentdevstu/web/static/avatars/*.svg', { query: '?raw', import: 'default', eager: true })
+const sources = import.meta.glob('../../../src/cortexa/web/static/avatars/*.svg', { query: '?raw', import: 'default', eager: true })
 const presetMap = {}
 for (const [file, svg] of Object.entries(sources)) {
   const name = file.split('/').at(-1).replace(/\.svg$/, '')

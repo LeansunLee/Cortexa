@@ -1,7 +1,7 @@
 // Run after npm run build. LIVE_ORIGIN checks deployed assets with isolated API fixtures.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const dist = path.resolve(__dirname, '../../src/agentdevstu/web/static/dist');
+const dist = path.resolve(__dirname, '../../src/cortexa/web/static/dist');
 const origin = process.env.LIVE_ORIGIN || 'http://knowledge.local';
 const folders = [{ id: 'a', name: '产品资料', parent_id: null }, { id: 'b', name: '销售资料', parent_id: null }, { id: 'nested', name: '季度归档', parent_id: 'b' }];
 const doc = (id, name, folder_id = null) => ({ id, name, folder_id, status: 'active', created_by: 'user', metadata_json: { size: 1024 } });

@@ -296,6 +296,7 @@ export const workApi = {
 export const goalApi = {
   route: (conv, data) => api.post(`/conversations/${conv}/message-route`, data),
   options: conv => api.get(`/conversations/${conv}/goal-options`),
+  saveCollaborationMode: (conv, mode) => api.put(`/conversations/${conv}/collaboration-mode`, { collaboration_mode: mode }),
   get: (conv, goal) => api.get(`/conversations/${conv}/goals/${goal}`),
   candidates: (conv, goal) => api.get(`/conversations/${conv}/goals/${goal}/candidates`),
   authorize: (conv, goal, data) => api.post(`/conversations/${conv}/goals/${goal}/authorization`, data),
