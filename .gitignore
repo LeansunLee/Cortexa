@@ -23,3 +23,4 @@ data/documents/.locks/
 
 # Local runtime telemetry outbox (never source data)
 data/usage/
+data/runtime_goals/

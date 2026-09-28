@@ -1,5 +1,5 @@
 [Unit]
-Description=SearXNG internal search for AgentDevStu
+Description=SearXNG internal search for Cortexa
 After=network.target
 
 [Service]

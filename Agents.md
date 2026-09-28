@@ -1,7 +1,7 @@
-# AGENTS.md instructions for /Users/lisheng/Documents/ChatGPT/AgentDevStu
+# AGENTS.md instructions for /Users/lisheng/Documents/ChatGPT/Cortexa
 
 <INSTRUCTIONS>
-# AgentDevStu
+# Cortexa
 
 开发服务器账密信息
 47.97.82.200

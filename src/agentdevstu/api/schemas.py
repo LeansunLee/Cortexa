@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from agentdevstu.collaboration.drafts import CollaborationDraft
+from agentdevstu.runtime.collaboration import CollaborationSettings
 
 
 # -- Workspace -------------------------------------------------------------
@@ -39,6 +40,7 @@ class WorkspaceOut(BaseModel):
 
 # -- Agent -----------------------------------------------------------------
 class AgentCreate(BaseModel):
+    collaboration: CollaborationSettings = Field(default_factory=CollaborationSettings)
     name: str
     description: str | None = None
     avatar: str | None = None
@@ -62,6 +64,7 @@ class AgentCreate(BaseModel):
 
 
 class AgentUpdate(BaseModel):
+    collaboration: CollaborationSettings | None = None
     name: str | None = None
     description: str | None = None
     avatar: str | None = None
@@ -86,6 +89,7 @@ class AgentUpdate(BaseModel):
 
 
 class AgentOut(BaseModel):
+    collaboration: dict[str, Any] | None = None
     id: uuid.UUID
     workspace_id: uuid.UUID
     name: str

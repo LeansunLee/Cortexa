@@ -20,6 +20,10 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(agents_router)
 api_router.include_router(workspaces_router)
 api_router.include_router(conversations_router)
+from agentdevstu.api.goals import router as goals_router
+api_router.include_router(goals_router)
+from agentdevstu.api.runtime_policy import router as runtime_policy_router
+api_router.include_router(runtime_policy_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(tools_router)
 api_router.include_router(workflows_router)

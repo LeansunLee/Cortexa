@@ -6,4 +6,4 @@ if [ ! -d ".venv" ]; then
   exit 1
 fi
 
-uv run agentdevstu-web --port 8000 --reload
+uv run cortexa-web --port 8000 --reload

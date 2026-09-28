@@ -18,6 +18,7 @@ from agentdevstu.db.models import Agent, Conversation, ConversationMessage
 @pytest.mark.parametrize('second_type', ['llm', 'proxy'])
 @pytest.mark.parametrize('first_success', [True, False])
 def test_edited_tasks_dependency_results_and_snapshot_persist(monkeypatch, first_success, second_type, explicit_dependency, bound_data_tools):
+    monkeypatch.setattr(api, 'capability_shadow_enabled', lambda path: True)
     source = Agent(id=uuid.uuid4(), workspace_id=uuid.uuid4(), name='主Agent', agent_type='llm', model='test')
     first = Agent(id=uuid.uuid4(), workspace_id=source.workspace_id, name='数据', agent_type='proxy')
     second = Agent(id=uuid.uuid4(), workspace_id=source.workspace_id, name='市场', agent_type=second_type)
@@ -99,3 +100,7 @@ def test_edited_tasks_dependency_results_and_snapshot_persist(monkeypatch, first
     assert len(assistant.metadata_json['collaborations']) == 2
     assert assistant.metadata_json['collaborations'][0]['input_snapshot']['input'] == '编辑后的查询'
     assert assistant.content == '汇总结果'
+    observations = [entry for entry in assistant.metadata_json['debug_trace']
+                    if entry['stage'] == 'runtime_observation']
+    assert len(observations) == 2
+    assert all(entry['detail']['source_type'] == 'AGENT' for entry in observations)

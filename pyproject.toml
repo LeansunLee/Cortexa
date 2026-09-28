@@ -1,5 +1,5 @@
 [project]
-name = "agentdevstu"
+name = "cortexa"
 version = "0.1.0"
 description = "LangGraph multi-agent exploration project"
 readme = "README.md"
@@ -29,8 +29,8 @@ dependencies = [
 ]
 
 [project.scripts]
-agentdevstu = "agentdevstu.cli:app"
-agentdevstu-web = "agentdevstu.web_cli:app"
+cortexa = "agentdevstu.cli:app"
+cortexa-web = "agentdevstu.web_cli:app"
 
 [build-system]
 requires = ["hatchling"]

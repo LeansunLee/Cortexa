@@ -110,8 +110,12 @@ async def execute_query(
     params: dict,
     row_limit: int = 1000,
     timeout_seconds: int = 30,
+    read_only: bool = False,
 ) -> dict:
     """Execute a parameterized query. Returns {success, data, duration_ms, row_count, error}."""
+    if read_only:
+        from agentdevstu.data.sql_drafts import validate_sql
+        query_template, _ = validate_sql(query_template)
     credential_data = None
     if encrypted_credential:
         credential_data = decrypt_dict(encrypted_credential)
@@ -127,6 +131,13 @@ async def execute_query(
 
     try:
         async with engine.connect() as conn:
+            if read_only:
+                # Reuse SQL draft protection; validation alone cannot stop mutating functions.
+                if ds_type == "postgres":
+                    await conn.execute(text("SET TRANSACTION READ ONLY"))
+                else:
+                    await conn.execute(text("SET SESSION TRANSACTION READ ONLY"))
+                    await conn.commit()
             # Apply row limit if not already in query
             exec_sql = query_template
             if "LIMIT" not in query_template.upper():

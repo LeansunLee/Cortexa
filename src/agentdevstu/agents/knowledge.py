@@ -180,7 +180,7 @@ async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = 
     retrieval_stats = {'matched_count': len(scored), 'selected_count': len(top_docs),
                        'truncated': len(scored) > len(top_docs)}
     if stats is not None:
-        stats.update(retrieval_stats)
+        stats.update(retrieval_stats, pending_count=len(processing), unreadable_count=len(unreadable))
 
     # Stage 2: extract relevant passages from each selected document.
     context_parts = []

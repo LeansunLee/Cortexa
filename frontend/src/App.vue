@@ -4,7 +4,7 @@
     <aside class="sidebar">
       <div class="sidebar-brand">
         <span class="logo"><Bot :size="24" /></span>
-        <span class="brand-text">AgentDevStu</span>
+        <span class="brand-text">Cortexa</span>
       </div>
       <div class="sidebar-workspace">
         <SearchSelect v-model="currentWorkspace" class="workspace-select" aria-label="切换工作空间" placeholder="选择工作空间" :options="[{ value: '', label: '选择工作空间' }, ...workspaces.map(ws => ({ value: ws.id, label: ws.name }))]" @change="onWorkspaceChange" />

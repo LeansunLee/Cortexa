@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentdevstu.db.models import Agent, AgentRun, AgentVersion
 
-
 _ENV_PATTERN = re.compile(r"\$\{(\w+)(?::([^}]*))?\}")
 
 
@@ -23,6 +22,7 @@ def _resolve_env(value: str) -> str:
         var_name = match.group(1)
         default = match.group(2) or ""
         return os.getenv(var_name, default)
+
     return _ENV_PATTERN.sub(_replace, value)
 
 
@@ -49,8 +49,10 @@ async def _save_run(agent_id, version_id, input_data, output_data, status, error
 
 async def _get_version_id(agent_id, db):
     ver_result = await db.execute(
-        select(AgentVersion.id).where(AgentVersion.agent_id == agent_id)
-        .order_by(AgentVersion.version_number.desc()).limit(1)
+        select(AgentVersion.id)
+        .where(AgentVersion.agent_id == agent_id)
+        .order_by(AgentVersion.version_number.desc())
+        .limit(1)
     )
     return ver_result.scalar()
 
@@ -80,7 +82,9 @@ def _parse_proxy_response(response):
                 continue
             kind = event.get("type", "")
             if kind == "error" or event.get("ok") is False or event.get("status") in ("failed", "error"):
-                raise ValueError("外部智能体执行失败：" + str(event.get("error") or event.get("message") or "未提供错误详情"))
+                raise ValueError(
+                    "外部智能体执行失败：" + str(event.get("error") or event.get("message") or "未提供错误详情")
+                )
             if kind == "start":
                 for key in ("session_id", "request_id", "model_provider"):
                     if key in event:
@@ -124,7 +128,9 @@ def _response_value(output, path):
 def build_proxy_body(cfg, input_data, supplemental_prompt=None):
     # Adapt the external agent input before request field mapping.
     request_input = dict(input_data)
-    supplemental_prompt = (cfg.get("supplemental_prompt", "") or "") if supplemental_prompt is None else supplemental_prompt
+    supplemental_prompt = (
+        (cfg.get("supplemental_prompt", "") or "") if supplemental_prompt is None else supplemental_prompt
+    )
     if not isinstance(supplemental_prompt, str):
         raise ValueError("Proxy 补充提示词必须是文本")
     if supplemental_prompt.strip():
@@ -145,6 +151,51 @@ def build_proxy_body(cfg, input_data, supplemental_prompt=None):
         request_body = mapped
 
     return request_body
+
+
+async def send_proxy_request(cfg, request_body, *, timeout_seconds=None, max_response_bytes=None):
+    """One transport attempt. Goal callers supply a bounded, already validated body."""
+    endpoint = _resolve_env(cfg["endpoint"])
+    method = cfg.get("method", "POST").upper()
+    headers = _resolve_headers(cfg.get("headers", {}))
+    if "Content-Type" not in headers:
+        headers["Content-Type"] = "application/json"
+    timeout = timeout_seconds if timeout_seconds is not None else cfg.get("timeout_ms", 30000) / 1000
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if max_response_bytes is None:
+            response = await (
+                client.get(endpoint, headers=headers, params=request_body)
+                if method == "GET"
+                else client.post(endpoint, headers=headers, json=request_body)
+            )
+        else:
+            kwargs = {"params" if method == "GET" else "json": request_body}
+            async with client.stream(method, endpoint, headers=headers, **kwargs) as response:
+                response.raise_for_status()
+                chunks, size = [], 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > max_response_bytes:
+                        raise ValueError("proxy_response_budget_exceeded")
+                    chunks.append(chunk)
+                response = httpx.Response(
+                    response.status_code, headers=response.headers, content=b"".join(chunks), request=response.request
+                )
+    response.raise_for_status()
+    return _parse_proxy_response(response)
+
+
+def map_proxy_output(cfg, raw_output):
+    mapping = cfg.get("response_mapping", {})
+    if not mapping:
+        return raw_output
+    mapped = {
+        key: _response_value(raw_output, value) if value.startswith("$.") else raw_output
+        for key, value in mapping.items()
+    }
+    if "answer" in mapped and mapped["answer"] is None:
+        raise ValueError("外部响应中未找到配置映射的回答字段，请检查 response_mapping")
+    return mapped
 
 
 async def execute_proxy_agent(
@@ -168,6 +219,7 @@ async def execute_proxy_agent(
         resolve_proxy_input,
         resolve_proxy_prompt,
     )
+
     outbound_supplemental_prompt = supplemental_prompt
     if prompt_resolution_enabled(cfg):
         resolution_result = await resolve_proxy_prompt(
@@ -188,17 +240,12 @@ async def execute_proxy_agent(
             validation_errors = resolution_result.get("validationErrors") or []
             return {
                 "success": False,
-                "requires_input": bool(resolution_result["blockingMissingFields"]) or bool(
-                    validation_errors and not validation_errors[0].startswith("Input Schema 配置无效")
-                ),
+                "requires_input": bool(resolution_result["blockingMissingFields"])
+                or bool(validation_errors and not validation_errors[0].startswith("Input Schema 配置无效")),
                 "error": resolution_result["message"],
                 "resolution": resolution_result,
                 "duration_ms": int((time.time() - start_time) * 1000),
             }
-    endpoint = _resolve_env(cfg["endpoint"])
-    method = cfg.get("method", "POST").upper()
-    headers = _resolve_headers(cfg.get("headers", {}))
-    timeout_ms = cfg.get("timeout_ms", 30000)
     retry = cfg.get("retry", 0)
 
     try:
@@ -206,36 +253,13 @@ async def execute_proxy_agent(
     except ValueError as error:
         return {"success": False, "error": str(error), "duration_ms": 0}
 
-    if "Content-Type" not in headers:
-        headers["Content-Type"] = "application/json"
-
     version_id = await _get_version_id(agent.id, db)
     last_error = None
 
     for attempt in range(retry + 1):
         try:
-            async with httpx.AsyncClient(timeout=timeout_ms / 1000) as client:
-                if method == "GET":
-                    resp = await client.get(endpoint, headers=headers, params=request_body)
-                else:
-                    resp = await client.post(endpoint, headers=headers, json=request_body)
-
-            resp.raise_for_status()
-            raw_output = _parse_proxy_response(resp)
-
-            # Apply response mapping
-            output_data = raw_output
-            resp_mapping = cfg.get("response_mapping", {})
-            if resp_mapping:
-                mapped = {}
-                for target_key, source_path in resp_mapping.items():
-                    if source_path.startswith("$."):
-                        mapped[target_key] = _response_value(raw_output, source_path)
-                    else:
-                        mapped[target_key] = raw_output
-                output_data = mapped
-                if "answer" in mapped and mapped["answer"] is None:
-                    raise ValueError("外部响应中未找到配置映射的回答字段，请检查 response_mapping")
+            raw_output = await send_proxy_request(cfg, request_body)
+            output_data = map_proxy_output(cfg, raw_output)
 
             duration_ms = int((time.time() - start_time) * 1000)
             await _save_run(agent.id, version_id, resolved_input, output_data, "completed", None, duration_ms, db)

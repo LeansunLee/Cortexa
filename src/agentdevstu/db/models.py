@@ -1,7 +1,7 @@
 """
 SQLAlchemy 数据库模型定义
 
-本模块定义了 AgentDevStu 平台的所有数据库表结构。
+本模块定义了 Cortexa 平台的所有数据库表结构。
 所有表名以 "t_" 前缀命名，便于识别和管理。
 
 表结构概览：
@@ -65,7 +65,10 @@ class Workspace(Base):
     """
     工作空间表 - 系统的核心组织单元
     """
-    __table_args__ = {'comment': '工作空间表 - 系统的核心组织单元，是 Agent、知识库、工具、工作流等资源的容器'}
+    __table_args__ = (
+        CheckConstraint("runtime_policy IS NULL OR jsonb_typeof(runtime_policy) = 'object'", name="ck_workspace_runtime_policy"),
+        {'comment': '工作空间表 - 系统的核心组织单元，是 Agent、知识库、工具、工作流等资源的容器'},
+    )
     """
     工作空间表 - 系统的核心组织单元
 
@@ -78,6 +81,9 @@ class Workspace(Base):
     - 资源隔离和权限控制
     """
     __tablename__ = "t_workspaces"
+
+    # Explicit migration only. Deferred so legacy/Shadow queries work before migration.
+    runtime_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
 
     # 主键
     id: Mapped[uuid.UUID] = mapped_column(

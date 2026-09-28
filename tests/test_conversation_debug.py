@@ -24,6 +24,9 @@ def test_debug_feature_flag_defaults_to_false_and_reads_yaml(monkeypatch, tmp_pa
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump({"features": {"conversation_debug_enabled": True}}), encoding="utf-8")
     monkeypatch.setattr("agentdevstu.api.conversations._CONFIG_PATH", config_path)
+    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: False)
+    assert _conversation_debug_enabled() is False
+    monkeypatch.setattr("agentdevstu.api.conversations.can_read_goal_trace", lambda: True)
     assert _conversation_debug_enabled() is True
 
     config_path.write_text("llm: {}\n", encoding="utf-8")

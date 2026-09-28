@@ -26,16 +26,17 @@ const assert = require('node:assert/strict');
     await page.addStyleTag({path:path.join(assets,fs.readdirSync(assets).find(f=>/^index-.*\.css$/.test(f)))});
     const modes=[['solid',themeGroups[0].colors[0]],['contrast',themeGroups[1].colors[0]],['gradient',themeGroups[2].colors[0]],['texture',themeGroups[4].colors[0]],['glass-clear',{value:'#8B38FF',mode:'glass',finish:'clear',glow:100}],['glass-frosted',{value:'#8B38FF',mode:'glass',finish:'frosted',glow:100}]];
     for (const appearance of ['light','dark']) for (const [name,theme] of modes) {
-      await page.evaluate(({appearance,theme,vars})=>{const root=document.documentElement;root.dataset.theme=appearance;root.style.colorScheme=appearance;root.dataset.colorTheme=theme.mode||'solid';Object.entries(vars).forEach(([k,v])=>root.style.setProperty(k,v));}, {appearance,theme,vars:themeVariables(theme)});
+      await page.evaluate(({appearance,theme,vars})=>{const root=document.documentElement;root.dataset.theme=appearance;root.style.colorScheme=appearance;root.dataset.colorTheme=theme.mode||'solid';if(theme.mode==='glass')root.dataset.glassFinish=theme.finish;else delete root.dataset.glassFinish;Object.entries(vars).forEach(([k,v])=>root.style.setProperty(k,v));}, {appearance,theme,vars:themeVariables(theme)});
       await page.mouse.move(0,0); await page.waitForTimeout(180);
       const styles=await page.evaluate(()=>{
         const style=s=>getComputedStyle(document.querySelector(s));
-        return {primary:style('.btn-primary').backgroundImage,send:style('.chat-send').backgroundImage,login:style('.login-submit').backgroundImage,primaryColor:style('.btn-primary').color,sendColor:style('.chat-send').color,loginColor:style('.login-submit').color,range:style('input[type=range]').backgroundColor,check:style('input[type=checkbox]').accentColor,input:style('input').backgroundColor,surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),card:style('.card').backgroundColor,tag:style('.tag').backgroundImage,nav:style('.tab.active').backgroundImage};
+        return {primary:style('.btn-primary').backgroundImage,primaryBlur:style('.btn-primary').backdropFilter,send:style('.chat-send').backgroundImage,login:style('.login-submit').backgroundImage,primaryColor:style('.btn-primary').color,sendColor:style('.chat-send').color,loginColor:style('.login-submit').color,range:style('input[type=range]').backgroundColor,check:style('input[type=checkbox]').accentColor,input:style('input').backgroundColor,inputBlur:style('input').backdropFilter,surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),card:style('.card').backgroundColor,cardBlur:style('.card').backdropFilter,tag:style('.tag').backgroundImage,nav:style('.tab.active').backgroundImage};
       });
       assert.equal(styles.primary,styles.send,name); assert.equal(styles.primary,styles.login,name);
       assert.equal(styles.primaryColor,styles.sendColor); assert.equal(styles.primaryColor,styles.loginColor);
-      assert.notEqual(styles.check,'auto'); assert.equal(styles.input,styles.card);
-      if (name.startsWith('glass')) { assert.match(styles.primary,/at 100% 100%/); assert.match(styles.primary,/at 0% 0%/); assert.match(styles.primary,/0\.15/); assert.match(styles.tag,/radial-gradient/); assert.match(styles.nav,/radial-gradient/); }
+      assert.notEqual(styles.check,'auto');
+      if (name.startsWith('glass')) { assert.notEqual(styles.input,styles.card); assert.match(styles.inputBlur,/blur\(/); assert.match(styles.cardBlur,/blur\(/); assert.match(styles.primaryBlur,/blur\(/); assert.match(styles.primary,/radial-gradient/); assert.match(styles.tag,/radial-gradient/); assert.match(styles.nav,/radial-gradient/); }
+      else assert.equal(styles.input,styles.card);
       await page.getByLabel('名称',{exact:true}).focus();
       assert.equal(await page.getByLabel('名称',{exact:true}).evaluate(e=>getComputedStyle(e).outlineStyle),'solid');
       if (name.startsWith('glass')) await page.screenshot({path:`/tmp/ui-${name}-${appearance}.png`});

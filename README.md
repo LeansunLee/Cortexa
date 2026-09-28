@@ -1,4 +1,4 @@
-# AgentDevStu
+# Cortexa
 
 ## 当前开发资料
 
@@ -38,7 +38,7 @@ Any OpenAI-compatible API (Azure, Together, Groq, etc.) can be added by setting 
 cp .env.example .env
 
 # 3. Run
-uv run agentdevstu --goal "Research LangGraph and draft a short project outline"
+uv run cortexa --goal "Research LangGraph and draft a short project outline"
 ```
 
 ## Config structure (config.yaml)

@@ -175,6 +175,32 @@ onBeforeUnmount(() => {
 .search-select-option-selected { font-weight: 600; }
 .search-select-option:disabled { opacity: .45; cursor: not-allowed; }
 .search-select-empty { margin: 0; padding: 18px 10px; color: var(--text3); font-size: 13px; text-align: center; }
+:root[data-color-theme=glass] .search-select-trigger {
+  background-color: var(--glass-search-background);
+  border-color: var(--glass-field-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .56)), 0 1px 3px color-mix(in srgb, var(--text) 10%, transparent);
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] .search-select-trigger:hover:not(:disabled),
+:root[data-color-theme=glass] .search-select-open .search-select-trigger {
+  background-color: var(--glass-surface-background-strong);
+  border-color: var(--glass-edge-border);
+}
+:root[data-color-theme=glass] .search-select-menu {
+  background-color: var(--glass-menu-background);
+  background-image: var(--glass-menu-gradient);
+  border-color: var(--glass-edge-border);
+  box-shadow: var(--glass-edge-shadow);
+  backdrop-filter: var(--glass-menu-backdrop);
+  -webkit-backdrop-filter: var(--glass-menu-backdrop);
+}
+:root[data-color-theme=glass] .search-select-search {
+  background-color: var(--glass-search-background);
+  border-color: var(--glass-field-border);
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
 :root[data-color-theme=texture] .search-select-trigger, :root[data-color-theme=texture] .search-select-menu { background-color: var(--surface); background-image: var(--theme-gradient); background-repeat: repeat; background-size: 180px 180px; border-color: color-mix(in srgb, var(--primary) 22%, var(--border)); }
 :root[data-color-theme=texture] .search-select-search { background: color-mix(in srgb, var(--surface2) 86%, transparent); }
 :root[data-color-theme=skeuo] .search-select-trigger, :root[data-color-theme=skeuo] .search-select-menu { background-color: light-dark(#F6EDDE, #402F20); border-color: light-dark(#D8C6AC, #241A10); box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)); }

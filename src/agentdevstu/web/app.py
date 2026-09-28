@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[3]
 from agentdevstu.security.http import SecurityMiddleware, authorize_request
-app = FastAPI(title="AgentDevStu", version="0.1.0", dependencies=[Depends(authorize_request)])
+app = FastAPI(title="Cortexa", version="0.1.0", dependencies=[Depends(authorize_request)])
 
 from agentdevstu.usage.context import UsageMiddleware
 app.add_middleware(UsageMiddleware)

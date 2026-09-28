@@ -8,8 +8,9 @@ from agentdevstu.db.engine import Base
 from agentdevstu.db import models as m
 from agentdevstu.db import meetings as mm
 from .access import current_actor
+from agentdevstu.runtime.models import RuntimeGoal
 
-PRIVATE = (m.Conversation, mm.Meeting, m.Task, m.AgentRun, m.TaskRun, m.DataQuery)
+PRIVATE = (m.Conversation, mm.Meeting, m.Task, m.AgentRun, m.TaskRun, m.DataQuery, RuntimeGoal)
 
 
 def criteria(actor):

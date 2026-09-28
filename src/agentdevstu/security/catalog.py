@@ -18,6 +18,7 @@ SPACE = {
     "agent.publish": "发布 Agent",
     "agent.use": "使用获授权的已发布 Agent",
     "agent.operate": "运维 Agent（知识库、工具、数据、记忆）",
+    "conversation.debug": "查看个人对话调试信息",
     "knowledge.manage": "管理知识库",
     "knowledge.use": "使用知识库",
     "data.manage": "管理数据源与数据能力",

@@ -35,28 +35,41 @@
       <div class="conv-list" v-else>
         <div v-if="conversationLoadError" class="conv-empty" role="alert">{{ conversationLoadError }} <button class="btn-cancel" @click="loadConversations">重试</button></div>
         <div v-else-if="conversations.length === 0" class="conv-empty">暂无对话</div>
-        <div v-for="conv in filteredConversations" :key="conv.id"
-          :class="['conv-item', { active: currentConvId === conv.id }]"
-          @click="selectConversation(conv.id)">
-          <div class="conv-avatar">
-            <AgentAvatar v-if="conv.agent_avatar && conv.agent_avatar.startsWith('/')" :avatar="conv.agent_avatar" class="conv-avatar-img" />
-            <span v-else><Bot :size="16" /></span>
-          </div>
-          <div class="conv-info">
-            <div class="conv-title-row" v-if="editingConvId !== conv.id">
-              <span class="conv-title-text" @click.stop="selectConversation(conv.id)">{{ conv.title || conv.agent_name || '新对话' }}</span>
-              <Loader v-if="sessions[conv.id] && (sessions[conv.id].sending || sessions[conv.id].streaming)" :size="12" class="conv-spinner" />
-              <span v-if="sessions[conv.id]?.unread" class="conv-unread"></span>
-              <button class="conv-rename-btn" @click.stop="startRename(conv)" title="重命名"><Pencil :size="12" /></button>
+        <div v-else-if="groupedConversations.length === 0" class="conv-empty">没有匹配的对话</div>
+        <section v-for="group in groupedConversations" :key="group.key" class="conv-group">
+          <button class="conv-group-heading" type="button" :aria-expanded="!isGroupCollapsed(group.key)" :aria-controls="`conv-group-${group.key}`" @click="toggleAgentGroup(group.key)">
+            <ChevronDown :size="14" :class="['conv-group-chevron', { collapsed: isGroupCollapsed(group.key) }]" />
+            <span class="conv-group-avatar" aria-hidden="true">
+              <AgentAvatar v-if="group.avatar && group.avatar.startsWith('/')" :avatar="group.avatar" />
+              <Bot v-else :size="15" />
+            </span>
+            <span class="conv-group-name" :title="group.name">{{ group.name }}</span>
+            <span class="conv-group-count">{{ group.conversations.length }}</span>
+          </button>
+          <div :id="`conv-group-${group.key}`" v-show="!isGroupCollapsed(group.key)">
+            <div v-for="conv in group.conversations" :key="conv.id"
+              :class="['conv-item', { active: currentConvId === conv.id }]"
+              @click="selectConversation(conv.id)">
+              <div class="conv-info">
+                <div class="conv-title-row" v-if="editingConvId !== conv.id">
+                  <Loader v-if="sessions[conv.id] && (sessions[conv.id].sending || sessions[conv.id].streaming)" :size="13" class="conv-spinner" />
+                  <button class="conv-title-text" type="button" :class="{ unread: sessions[conv.id]?.unread }" :title="conv.title || conv.agent_name || '新对话'" @click.stop="selectConversation(conv.id)">{{ conv.title || conv.agent_name || '新对话' }}</button>
+                </div>
+                <input v-else class="conv-rename-input" v-model="renameTitle"
+                  @click.stop @blur="saveRename(conv.id)" @keydown.enter="saveRename(conv.id)"
+                  @keydown.escape="editingConvId = null" autofocus />
+              </div>
+              <button class="conv-more" type="button" :aria-label="`${conv.title || '新对话'}的更多操作`" aria-haspopup="menu" :aria-expanded="openConvMenuId === conv.id" @click.stop="toggleConversationMenu($event, conv.id)"><MoreHorizontal :size="17" /></button>
             </div>
-            <input v-else class="conv-rename-input" v-model="renameTitle"
-              @blur="saveRename(conv.id)" @keydown.enter="saveRename(conv.id)"
-              @keydown.escape="editingConvId = null" autofocus />
-            <div class="conv-meta">{{ conv.agent_name ? conv.agent_name + ' · ' : '' }}{{ formatTime(conv.created_at) }}</div>
           </div>
-          <button class="conv-delete" @click.stop="deleteConversation(conv.id)" title="删除">×</button>
-        </div>
+        </section>
       </div>
+      <Teleport to="body">
+        <div v-if="openConvMenuId" ref="conversationMenuRef" class="conv-action-menu" role="menu" :style="conversationMenuStyle" @click.stop>
+          <button type="button" role="menuitem" @click="renameFromMenu"><Pencil :size="14" />重命名</button>
+          <button type="button" role="menuitem" class="conv-action-danger" @click="deleteFromMenu"><Trash2 :size="14" />删除</button>
+        </div>
+      </Teleport>
     </div>
 
     <!-- Main Chat Area -->
@@ -256,6 +269,17 @@
 
         <button v-if="hasNewContent" class="new-content-button" @click="scrollToBottom(true)">有新内容 ↓</button>
 
+        <section v-if="curSession?.goal?.reason === 'collaboration_approval_required'" class="goal-panel" aria-label="协作授权">
+          <div class="goal-approval">
+            <p>请选择允许参与本次任务的智能体。</p>
+            <label v-for="candidate in curSession.goalCandidates" :key="candidate.id" class="goal-candidate">
+              <input type="checkbox" v-model="curSession.goalSelection" :value="candidate.id" :disabled="curSession.approvalBusy" />
+              <span><strong>{{ candidate.name }}</strong><small>{{ candidate.description }}</small></span>
+            </label>
+            <p v-if="!curSession.goalCandidates.length">候选已不可用，可以拒绝并继续。</p>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="curSession.approvalBusy || sending || streaming" @click="approveGoal">{{ curSession.approvalBusy ? '正在保存…' : curSession.goalSelection.length ? '允许所选并继续' : '全部拒绝并继续' }}</button>
+          </div>
+        </section>
         <!-- Input Area -->
         <div class="chat-input-area" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop="handleDrop">
           <!-- Drag overlay -->
@@ -283,13 +307,13 @@
 
           <p v-if="curSession?.draftError" class="msg-error-bar">{{ curSession.draftError }}</p>
           <div class="chat-input-wrap">
-            <CollaborationComposer ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
+            <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
             <div class="chat-input-row">
             <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
               <Paperclip :size="18" />
             </button>
             <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.zip,.rar" style="display:none" @change="handleFileSelect" />
-            <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部 Agent 的消息' : '给当前 Agent 的指令；@ 添加协作任务'"
+            <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
               @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
             <button v-if="sending || streaming" class="stop-generation" @click="stopGeneration" :disabled="!controllers.has(currentConvId)"><span class="runtime-bars" aria-hidden="true"><i></i><i></i><i></i></span>停止生成</button>
             <button v-else class="chat-send" :title="curSession?.collaborationDrafts?.length ? '发送并开始协作' : '发送'" aria-label="发送消息并执行已配置的协作任务" @click="sendMessage" :disabled="sending || streaming || (!input.trim() && pendingFiles.length === 0)">
@@ -367,7 +391,7 @@
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
-import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, Wrench, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
+import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, Wrench, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
@@ -382,7 +406,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { can } from '../auth'
 const router = useRouter()
 const route = useRoute()
-import { conversationApi, usableAgentApi, chatUploadApi, collaborationApi, configApi } from '../api'
+import { conversationApi, usableAgentApi, chatUploadApi, collaborationApi, debugPreferenceApi, goalApi } from '../api'
 
 const isCollaborationOnlyMessage = (msg) =>
   Boolean(msg.metadata_json?.collaboration_drafts?.length) &&
@@ -401,6 +425,69 @@ const filteredConversations = computed(() => {
     (c.agent_name || '').toLowerCase().includes(q)
   )
 })
+const collapsedAgentGroups = ref(new Set())
+const groupedConversations = computed(() => {
+  const groups = new Map()
+  const agentsById = new Map(agents.value.map(agent => [String(agent.id), agent]))
+  for (const conv of filteredConversations.value) {
+    const key = String(conv.agent_id || 'general')
+    const agent = agentsById.get(key)
+    if (!groups.has(key)) groups.set(key, {
+      key,
+      name: conv.agent_name || agent?.name || '通用对话',
+      avatar: conv.agent_avatar || agent?.avatar || '',
+      conversations: [],
+    })
+    groups.get(key).conversations.push(conv)
+  }
+  return [...groups.values()]
+})
+const isGroupCollapsed = key => !searchQuery.value.trim() && collapsedAgentGroups.value.has(key)
+const toggleAgentGroup = key => {
+  if (searchQuery.value.trim()) return
+  const next = new Set(collapsedAgentGroups.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedAgentGroups.value = next
+}
+const openConvMenuId = ref(null)
+const conversationMenuRef = ref(null)
+const conversationMenuStyle = ref({})
+let conversationMenuTrigger = null
+const closeConversationMenu = (restoreFocus = false) => {
+  openConvMenuId.value = null
+  if (restoreFocus) conversationMenuTrigger?.focus()
+  conversationMenuTrigger = null
+}
+const toggleConversationMenu = async (event, convId) => {
+  if (openConvMenuId.value === convId) { closeConversationMenu(); return }
+  conversationMenuTrigger = event.currentTarget
+  const rect = conversationMenuTrigger.getBoundingClientRect()
+  conversationMenuStyle.value = {
+    top: `${Math.min(rect.bottom + 4, window.innerHeight - 96)}px`,
+    left: `${Math.max(8, Math.min(rect.right - 144, window.innerWidth - 152))}px`,
+  }
+  openConvMenuId.value = convId
+  await nextTick()
+  conversationMenuRef.value?.querySelector('button')?.focus()
+}
+const renameFromMenu = () => {
+  const conv = conversations.value.find(item => item.id === openConvMenuId.value)
+  closeConversationMenu()
+  if (conv) startRename(conv)
+}
+const deleteFromMenu = () => {
+  const convId = openConvMenuId.value
+  closeConversationMenu()
+  if (convId) deleteConversation(convId)
+}
+const onConversationMenuKeydown = event => {
+  if (event.key === 'Escape' && openConvMenuId.value) { event.preventDefault(); closeConversationMenu(true) }
+}
+const onConversationMenuOutsideClick = event => {
+  if (openConvMenuId.value && !conversationMenuRef.value?.contains(event.target) && !conversationMenuTrigger?.contains(event.target)) closeConversationMenu()
+}
+const onConversationMenuScroll = () => closeConversationMenu()
 
 // Multi-session state
 const openTabs = ref([])  // ordered list of convIds that are open as tabs
@@ -500,6 +587,7 @@ const getOrCreateSession = (convId) => {
       agentId: getConv(convId)?.agent_id, unavailable: false,
       messages: [], sending: false, streaming: false,
       streamContent: '', streamError: '', unread: false,
+      goalEnabled: false, goalMode: false, goalLoaded: false, goal: null, goalCandidates: [], goalSelection: [], approvalBusy: false, pendingGoalRequest: null,
       collaborationDrafts: [], lastDrafts: null, draftError: '',
       input: '', statusSteps: [], lastUserMessage: '',
       collabPending: [],  // in-progress collaborations
@@ -529,7 +617,7 @@ watch([input, collaborationAgents], () => {
   const previous = session.collaborationDrafts || []
   session.collaborationDrafts = syncDrafts(input.value, previous, collaborationAgents.value)
   const added = session.collaborationDrafts.find(d => !previous.some(old => old.agent_id === d.agent_id))
-  if (added) nextTick(() => { if (curSession.value === session) collaborationComposerRef.value?.focusTask(added.agent_id) })
+  if (added && !session.goalMode) nextTick(() => { if (curSession.value === session) collaborationComposerRef.value?.focusTask(added.agent_id) })
 })
 const updateDraft = (id, changes) => {
   const session = curSession.value
@@ -603,7 +691,7 @@ const handleMentionSelect = async (agent) => {
   showMentionPopover.value = false
   mentionQuery.value = ''
   await nextTick()
-  if (curSession.value === session) await collaborationComposerRef.value?.focusTask(agent.id)
+  if (curSession.value === session && !session.goalMode) await collaborationComposerRef.value?.focusTask(agent.id)
 }
 
 const closeMentionPopover = () => {
@@ -718,8 +806,8 @@ const loadAgents = async () => {
 
 const loadDebugConfig = async () => {
   try {
-    const { data } = await configApi.get()
-    debugEnabled.value = Boolean(data.conversation_debug_enabled)
+    const { data } = await debugPreferenceApi.get()
+    debugEnabled.value = Boolean(data.allowed && data.enabled)
     if (!debugEnabled.value) showDebugPanel.value = false
   } catch (error) {
     console.error('加载对话调试配置失败', error)
@@ -742,12 +830,66 @@ const loadConversations = async () => {
   }
 }
 
+const refreshGoal = async (convId, session) => {
+  if (!session.goal?.goal_id) return
+  const { data } = await goalApi.get(convId, session.goal.goal_id)
+  session.goal = data
+  session.goalCandidates = []
+  session.goalSelection = []
+  if (data.reason === 'collaboration_approval_required') {
+    session.goalCandidates = (await goalApi.candidates(convId, data.goal_id)).data
+  }
+}
+const loadGoalSession = async (convId, session) => {
+  try {
+    const { data } = await goalApi.options(convId)
+    session.goalEnabled = data.enabled
+    if (!session.goalLoaded) session.goalMode = false
+    session.goalLoaded = true
+    const prior = session.messages.at(-1)
+    if (!session.goal) session.goal = prior?.metadata_json?.goal_id ? { goal_id: prior.metadata_json.goal_id } : null
+    await refreshGoal(convId, session)
+  } catch (error) { session.streamError = '任务状态加载失败，请重试：' + (error.response?.data?.detail || error.message) }
+}
+const approveGoal = async () => {
+  const convId = activeTabId.value
+  const session = curSession.value
+  if (session.approvalBusy) return
+  session.approvalBusy = true
+  try {
+    const approved = session.goalSelection
+    const { data } = await goalApi.authorize(convId, session.goal.goal_id, {
+      revision: session.goal.revision, approved_agents: approved,
+      denied_agents: (session.goal.pending_agents || []).filter(id => !approved.includes(id)),
+    })
+    session.goal = data
+    session.goalCandidates = []
+    if (activeTabId.value === convId) {
+      session.input = '继续执行目标'
+      await sendMessage()
+    }
+  } catch (error) {
+    session.streamError = '协作选择未完成：' + (error.response?.data?.detail || error.message)
+    try { await refreshGoal(convId, session) } catch {}
+  } finally { session.approvalBusy = false }
+}
+
 const selectConversation = async (convId) => {
   if (removedConversations.has(convId)) return
   // If already open as tab, just switch to it
   if (openTabs.value.includes(convId)) {
     activeTabId.value = convId
-    sessions.value[convId].unread = false
+    const session = sessions.value[convId]
+    session.unread = false
+    if (!session.sending && !session.streaming) {
+      try {
+        const { data } = await conversationApi.messages(convId)
+        if (!removedConversations.has(convId)) session.messages = data
+        await loadGoalSession(convId, session)
+      } catch (error) {
+        session.streamError = '对话刷新失败，请重试：' + (error.response?.data?.detail || error.message)
+      }
+    }
     scrollToBottom()
     return
   }
@@ -760,6 +902,7 @@ const selectConversation = async (convId) => {
   try {
     const { data } = await conversationApi.messages(convId)
     if (!removedConversations.has(convId)) session.messages = data
+    await loadGoalSession(convId, session)
     scrollToBottom()
   } catch (e) {
     if (e.response?.status === 404) {
@@ -851,22 +994,74 @@ const sendMessage = async () => {
   if (session.unavailable) { session.streamError = sendErrorMessage(404); return }
   if ((!text && pendingFiles.value.length === 0) || session.sending || session.streaming) return
 
+  let goalMode = false
+  if (session.goalEnabled && text && !pendingFiles.value.length) {
+    session.sending = true
+    try {
+      const { data } = await goalApi.route(convId, {
+        content: text,
+        participant_ids: (session.collaborationDrafts || []).map(d => d.agent_id),
+        has_attachments: false,
+      })
+      goalMode = Boolean(data.use_goal)
+    } catch (error) {
+      session.streamError = '消息发送前检查失败，请重试：' + (error.response?.data?.detail || error.message)
+      session.sending = false
+      return
+    }
+    session.sending = false
+  }
+  const newTopic = /^(?:另一个|另外|新问题|新任务|重新开始)/.test(text)
+  const continuing = session.goalEnabled && !pendingFiles.value.length && session.goal?.status === 'WAITING' && !newTopic
+  if (continuing) goalMode = true
+  session.goalMode = goalMode
+  if (session.goal?.status === 'WAITING' && newTopic) {
+    session.goal = null
+    session.goalCandidates = []
+  }
+  if (goalMode && session.goal?.reason === 'collaboration_approval_required') { session.draftError = '请先选择本次允许协作的 Agent。'; return }
+  if (goalMode && ['COMPLETE', 'BLOCKED', 'FAILED'].includes(session.goal?.status)) {
+    session.goal = null
+    session.goalCandidates = []
+    session.pendingGoalRequest = null
+  }
+  if (goalMode && session.goal?.status === 'RUNNING' && !session.goal.recovery_allowed) {
+    await refreshGoal(convId, session)
+    if (session.goal?.status === 'RUNNING' && !session.goal.recovery_allowed) {
+      session.streamError = '上一项任务仍在进行，请稍后再试。'
+      return
+    }
+  }
   const drafts = session.collaborationDrafts || []
   const mentioned = [...text.matchAll(/@([^\s@]+)/g)].map(m => m[1])
   if (currentConvAgent.value?.agent_type !== 'proxy' && mentioned.some(name => !drafts.some(d => d.name === name))) {
     session.draftError = '请从 @ 候选列表选择协作 Agent，确认每个 Agent 都有任务卡。'; return
   }
-  if (drafts.length > 3) { session.draftError = '每轮最多邀请 3 个 Agent'; return }
-  if (drafts.some((d, i) => d.depends_on.some(id => !drafts.slice(0,i).some(prior => prior.agent_id === id)))) {
+  if (drafts.length > (goalMode ? 5 : 3)) { session.draftError = `每轮最多邀请 ${goalMode ? 5 : 3} 个 Agent`; return }
+  if (!goalMode && drafts.some((d, i) => d.depends_on.some(id => !drafts.slice(0,i).some(prior => prior.agent_id === id)))) {
     session.draftError = '请修正已移除的协作依赖。'; return
   }
-  const emptyDraft = drafts.find(d => !d.task.trim())
+  const emptyDraft = !goalMode && drafts.find(d => !d.task.trim())
   if (emptyDraft) {
     session.draftError = `请在 ${emptyDraft.name} 的卡片中填写任务，主输入框内容只用于当前 Agent。`
     await collaborationComposerRef.value?.focusTask(emptyDraft.agent_id)
     return
   }
-  const collaborationDrafts = draftPayload(drafts, text)
+  let goalParticipants = []
+  if (goalMode) {
+    try {
+      goalParticipants = drafts.map(d => {
+        const participant = { agent_id: d.agent_id, ...(d.task?.trim() ? { task: d.task.trim() } : {}) }
+        if (d.proxyInputsRaw?.trim()) {
+          const params = JSON.parse(d.proxyInputsRaw)
+          if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error(`${d.name} 的显式参数必须是 JSON 对象`)
+          participant.inputs = params
+        }
+        return participant
+      })
+    } catch (error) { session.draftError = '代理参数无效：' + error.message; return }
+  }
+  const collaborationDrafts = goalMode ? undefined : draftPayload(drafts, text)
   session.draftError = ''
 
   const submittedFiles = [...pendingFiles.value]
@@ -883,6 +1078,24 @@ const sendMessage = async () => {
   const displayText = text || (attachments.length > 0 ? '请查看我上传的附件' : '')
   if (!displayText && attachments.length === 0) return
 
+  let endpoint = `/api/conversations/${convId}/messages/stream`
+  let body = { content: displayText, collaboration_drafts: collaborationDrafts, attachments: attachments.length ? attachments : undefined }
+  if (goalMode) {
+    if (session.goal?.status === 'WAITING' || session.goal?.recovery_allowed) {
+      endpoint = `/api/conversations/${convId}/goals/${session.goal.goal_id}/resume`
+      body = { content: displayText, revision: session.goal.revision, participants: goalParticipants }
+    } else {
+      const participants = goalParticipants
+      const signature = JSON.stringify([displayText, participants])
+      if (session.pendingGoalRequest && session.pendingGoalRequest.signature !== signature) {
+        session.streamError = '上次目标是否接收尚未确认，请重试原请求，或刷新页面读取已保存的目标。'
+        return
+      }
+      session.pendingGoalRequest ||= { signature, key: globalThis.crypto?.randomUUID?.() || `goal-${Date.now()}-${Math.random().toString(36).slice(2)}` }
+      endpoint = `/api/conversations/${convId}/goals/stream`
+      body = { content: displayText, idempotency_key: session.pendingGoalRequest.key, participants }
+    }
+  }
   const attempt = {id: ++sendSequence, text: displayText, drafts: JSON.parse(JSON.stringify(drafts))}
   session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
   session.lastUserMessage = displayText
@@ -902,11 +1115,11 @@ const sendMessage = async () => {
   let rejected = false
 
   try {
-    const response = await fetch(`/api/conversations/${convId}/messages/stream`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AgentDevStu', 'X-Workspace-Id': currentWorkspace() },
-      body: JSON.stringify({ content: displayText, collaboration_drafts: collaborationDrafts, attachments: attachments.length > 0 ? attachments : undefined })
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'Cortexa', 'X-Workspace-Id': currentWorkspace() },
+      body: JSON.stringify(body)
     })
     if (!response.ok) {
       rejected = true
@@ -914,6 +1127,15 @@ const sendMessage = async () => {
       try { detail = (await response.json()).detail } catch {}
       if (response.status === 404) markConversationUnavailable(convId, session)
       throw new Error(sendErrorMessage(response.status, detail))
+    }
+
+    if (goalMode && !response.headers.get('content-type')?.includes('text/event-stream')) {
+      session.goal = await response.json()
+      session.pendingGoalRequest = null
+      session.messages = (await conversationApi.messages(convId)).data
+      await refreshGoal(convId, session)
+      completed = true
+      return
     }
 
     // Keep sending=true during status phase; switch to streaming on 'start' event
@@ -934,7 +1156,20 @@ const sendMessage = async () => {
         if (!line.startsWith('data: ')) continue
         try {
           const event = JSON.parse(line.slice(6))
-          if (event.type === 'start') {
+          if (event.type === 'goal_status') {
+            session.goal = { ...(session.goal || {}), ...event }
+          } else if (event.type === 'user_message') {
+            if (event.conversation_title) {
+              const conversation = conversations.value.find(item => item.id === convId)
+              if (conversation) conversation.title = event.conversation_title
+            }
+            const optimistic = session.messages.find(m => m._attemptId === attempt.id)
+            if (optimistic) optimistic.id = event.id
+            if (goalMode) {
+              session.goal = { goal_id: event.goal_id }
+              if (optimistic) optimistic.metadata_json = { goal_id: event.goal_id }
+            }
+          } else if (event.type === 'start') {
             session.sending = false
             session.streamContent = ''
             session.statusSteps = []
@@ -996,9 +1231,15 @@ const sendMessage = async () => {
             scrollToBottom()
           } else if (event.type === 'done') {
             completed = true
-            session.sending = false
-            session.streaming = false
+            session.sending = goalMode
+            session.streaming = goalMode
             const meta = {}
+            if (goalMode) {
+              session.goal = { ...(session.goal || {}), ...event }
+              session.pendingGoalRequest = null
+              meta.goal_id = event.goal_id
+              meta.goal_status = event.status
+            }
             if (event.sources?.length) meta.sources = event.sources
             if (event.stats) meta.stats = event.stats
             if (event.collaborations?.length) meta.collaborations = event.collaborations
@@ -1007,7 +1248,7 @@ const sendMessage = async () => {
             session.messages.push({
               id: event.id,
               role: 'assistant',
-              content: session.streamContent || event.content || '（无回复）',
+              content: event.content || session.streamContent || '（无回复）',
               _steps: [...session.statusSteps],
               metadata_json: Object.keys(meta).length ? meta : null,
               created_at: new Date().toISOString(),
@@ -1038,8 +1279,17 @@ const sendMessage = async () => {
     }
     if (!completed && !controller.signal.aborted && !session.streamError) session.streamError = '连接中断，请重试'
     if (rejected) {
+      if (goalMode) session.pendingGoalRequest = null
       restoreRejectedSend(session, attempt)
       if (activeTabId.value === convId && !pendingFiles.value.length) pendingFiles.value = submittedFiles
+    }
+    if (goalMode && session.goal?.goal_id) {
+      try {
+        await refreshGoal(convId, session)
+        // Reconcile partial saves and identical retries without replaying actions.
+        session.messages = (await conversationApi.messages(convId)).data
+        session.pendingGoalRequest = null
+      } catch { session.streamError ||= '目标状态读取失败，请刷新状态后继续。' }
     }
     session.sending = false
     session.streaming = false
@@ -1079,6 +1329,10 @@ const retryMessage = async () => {
   const session = curSession.value
   if (!session || !session.lastUserMessage || !activeTabId.value) return
   session.streamError = ''
+  if (session.goalMode && session.goal?.goal_id) {
+    try { await refreshGoal(activeTabId.value, session) } catch { session.streamError = '目标状态刷新失败'; return }
+    if (session.goal.status !== 'WAITING' || session.goal.reason === 'collaboration_approval_required') return
+  }
   if (!session.input.trim()) {
     session.input = session.lastUserMessage
     await nextTick()
@@ -1094,9 +1348,11 @@ const renameTitle = ref('')
 const startRename = (conv) => {
   editingConvId.value = conv.id
   renameTitle.value = conv.title || ''
+  nextTick(() => document.querySelector('.conv-rename-input')?.focus())
 }
 
 const saveRename = async (convId) => {
+  if (editingConvId.value !== convId) return
   if (!renameTitle.value.trim()) { editingConvId.value = null; return }
   try {
     await conversationApi.update(convId, { title: renameTitle.value.trim() })
@@ -1403,16 +1659,6 @@ const renderTable = (lines) => {
   return html
 }
 
-const formatTime = (t) => {
-  if (!t) return ''
-  const d = new Date(t)
-  const now = new Date()
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
-
 const formatMessageTime = (t) => {
   if (!t) return ''
   const d = new Date(t)
@@ -1423,6 +1669,9 @@ const formatMessageTime = (t) => {
 
 onMounted(async () => {
   window.addEventListener('conversation-debug-config', handleDebugConfigChanged)
+  document.addEventListener('keydown', onConversationMenuKeydown)
+  document.addEventListener('click', onConversationMenuOutsideClick)
+  window.addEventListener('scroll', onConversationMenuScroll, true)
   await Promise.all([loadAgents(), loadConversations(), loadDebugConfig()])
   const target = route.query.conversation
   if (target && conversations.value.some(c => c.id === target)) {
@@ -1433,6 +1682,9 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('conversation-debug-config', handleDebugConfigChanged)
+  document.removeEventListener('keydown', onConversationMenuKeydown)
+  document.removeEventListener('click', onConversationMenuOutsideClick)
+  window.removeEventListener('scroll', onConversationMenuScroll, true)
   for (const controller of controllers.values()) controller.abort()
   controllers.clear()
 })
@@ -1440,13 +1692,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* Sidebar spinner + unread */
-.conv-spinner { color: var(--primary); animation: spin 1s linear infinite; flex-shrink: 0; margin-left: auto; }
+/* Sidebar activity */
+.conv-spinner { color: var(--primary); animation: spin 1s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.conv-unread {
-  width: 8px; height: 8px; border-radius: 50%; background: #EF4444;
-  flex-shrink: 0; margin-left: 4px;
-}
 
 
 /* ===== Layout ===== */
@@ -1501,41 +1749,43 @@ onBeforeUnmount(() => {
 
 .conv-list { min-height: 0; flex: 1; overflow-y: auto; padding: 4px 8px; }
 .conv-empty { text-align: center; color: var(--text3); font-size: 13px; padding: 40px 16px; }
+.conv-group { margin: 4px 0 10px; }
+.conv-group-heading {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 9px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text2);
+  font-size: 12px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.conv-group-heading:hover { background: var(--surface2); color: var(--text); }
+.conv-group-heading:focus-visible, .conv-title-text:focus-visible, .conv-more:focus-visible, .conv-action-menu button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.conv-group-chevron { flex-shrink: 0; transition: transform .15s; }
+.conv-group-chevron.collapsed { transform: rotate(-90deg); }
+.conv-group-avatar { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 7px; overflow: hidden; background: var(--surface2); color: var(--text2); }
+.conv-group-avatar :deep(img), .conv-group-avatar :deep(.agent-avatar-inline) { width: 100%; height: 100%; object-fit: cover; }
+.conv-group-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-group-count { min-width: 20px; padding: 1px 5px; border-radius: 99px; background: var(--surface2); color: var(--text2); text-align: center; font-variant-numeric: tabular-nums; }
 
 .conv-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 10px; border-radius: 10px;
+  display: flex; align-items: center; gap: 6px;
+  margin-left: 22px; min-height: 40px; padding: 8px; border-radius: 9px;
   cursor: pointer; transition: all 0.12s; position: relative;
 }
 .conv-item:hover { background: var(--surface2); }
 .conv-item.active { background: var(--primary-light); }
 .conv-item.active .conv-title-text { color: var(--primary); font-weight: 600; }
-.conv-item.active .conv-meta { color: var(--primary); opacity: 0.6; }
-
-.conv-avatar {
-  width: 34px; height: 34px; border-radius: 10px; background: var(--surface2);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; color: var(--text3); font-size: 16px;
-}
-.conv-avatar-img { width: 100%; height: 100%; border-radius: 10px; object-fit: cover; }
 .conv-info { flex: 1; min-width: 0; }
-.conv-title-row { display: flex; align-items: center; gap: 4px; }
-.conv-title-text { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; color: var(--text); }
-.conv-rename-btn {
-  background: none; border: none; color: var(--text3); cursor: pointer;
-  padding: 2px; border-radius: 4px; opacity: 0; transition: opacity 0.15s;
-  display: flex; align-items: center; flex-shrink: 0;
+.conv-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.conv-title-text { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.conv-title-text.unread { font-weight: 650; }
+.conv-more { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text2); cursor: pointer; }
+.conv-more:hover, .conv-more[aria-expanded="true"] { background: var(--surface); border-color: var(--border); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .conv-more { opacity: 0; pointer-events: none; }
+  .conv-item:hover .conv-more, .conv-item:focus-within .conv-more, .conv-more[aria-expanded="true"] { opacity: 1; pointer-events: auto; }
 }
-.conv-item:hover .conv-rename-btn { opacity: 1; }
-.conv-rename-btn:hover { color: var(--primary); }
-.conv-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.conv-delete {
-  background: none; border: none; color: var(--text3); cursor: pointer;
-  font-size: 16px; padding: 2px 6px; border-radius: 4px; opacity: 0;
-  transition: opacity 0.15s; line-height: 1;
-}
-.conv-item:hover .conv-delete { opacity: 1; }
-.conv-delete:hover { color: var(--danger); }
+.conv-action-menu { position: fixed; z-index: 2000; width: 144px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--glass-menu-background, var(--surface)); -webkit-backdrop-filter: var(--glass-menu-backdrop, blur(20px)); backdrop-filter: var(--glass-menu-backdrop, blur(20px)); box-shadow: var(--shadow-md); }
+.conv-action-menu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+.conv-action-menu button:hover { background: var(--surface2); }
+.conv-action-menu .conv-action-danger { color: var(--danger); }
 
 /* New Chat Form */
 .new-chat-form { padding: 16px; min-height: 0; overflow-y: auto; }
@@ -1559,7 +1809,7 @@ onBeforeUnmount(() => {
 .btn-create:hover { background: var(--primary-hover); }
 
 .conv-rename-input {
-  width: 100%; padding: 2px 6px; border: 1px solid #7C3AED;
+  width: 100%; padding: 2px 6px; border: 1px solid var(--primary);
   border-radius: 6px; font-size: 13px; background: var(--surface);
   color: var(--text); outline: none;
 }
@@ -2035,9 +2285,9 @@ onBeforeUnmount(() => {
 .chat-sidebar { background: var(--surface); }
 .sidebar-search { background: var(--surface); border-color: var(--border); }
 .search-input { min-width: 0; width: 100%; }
-.conv-item { margin-bottom: 4px; gap: 8px; padding: 9px 8px; }
+.conv-item { margin-bottom: 2px; }
 .conv-item:hover { background: var(--surface2); }
-.conv-item.active { background: var(--primary-light, #f3eeff); box-shadow: inset 3px 0 var(--primary); }
+.conv-item.active { background: var(--primary-light); box-shadow: inset 3px 0 var(--primary); }
 .chat-header { padding: 16px 28px; }
 .chat-conv-title { font-size: 16px; letter-spacing: -.02em; }
 .chat-agent-name { margin-top: 3px; color: var(--text3); }
@@ -2059,7 +2309,6 @@ onBeforeUnmount(() => {
 .chat-input-area { border-top: 0; padding: 14px 28px 18px; }
 .chat-input-wrap { border: 1px solid var(--border); background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-md); }
 .chat-input-wrap:focus-within { box-shadow: 0 0 0 3px var(--primary-light, #f4f4f5); }
-.conv-item.active .conv-meta { color: var(--text2); opacity: 1; }
 .source-chip, .sources-btn { background: var(--surface2); }
 .new-content-button, .stop-generation, .source-open { border-color: var(--border); background: var(--surface); }
 @media(max-width: 760px) { .msg-row { padding-left: 18px; padding-right: 18px; } .chat-input-area { padding: 10px 16px; } .msg-bubble-user { max-width: 90%; } }
@@ -2080,4 +2329,15 @@ onBeforeUnmount(() => {
   .chat-sidebar:has(.new-chat-form) { max-height:330px; overflow-y:auto; }
   .msg-row { padding-left:12px; padding-right:12px; }
 }
+</style>
+
+<style scoped>
+.goal-mode-select { display:flex; align-items:center; gap:6px; color:var(--text2); font-size:12px; margin-left:auto }
+.goal-mode-select select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px }
+.goal-panel { padding:10px 16px; border-top:1px solid var(--border); color:var(--text2); background:var(--surface); font-size:13px; max-height:35vh; overflow-y:auto; flex-shrink:0 }
+.goal-panel > button { margin-left:8px }
+.goal-approval p { margin:8px 0 }
+.goal-candidate { display:flex; align-items:flex-start; gap:8px; padding:8px 0; color:var(--text) }
+.goal-candidate small { display:block; color:var(--text2); overflow-wrap:anywhere }
+@media(max-width:640px) { .goal-mode-select { flex-wrap:wrap; max-width:125px } }
 </style>

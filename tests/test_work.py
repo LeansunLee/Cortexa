@@ -217,7 +217,7 @@ async def integration(tmp_path, monkeypatch):
                 transport=transport,
                 base_url="http://test",
                 cookies={COOKIE: t},
-                headers={"X-Workspace-Id": str(ws.id), "X-Requested-With": "AgentDevStu"},
+                headers={"X-Workspace-Id": str(ws.id), "X-Requested-With": "Cortexa"},
             )
             for t in tokens
         ]

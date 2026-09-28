@@ -164,6 +164,10 @@ class UsageCallback(BaseCallbackHandler):
             usage_detail={"source": "provider", "retry_visibility": "callback_only"},
             **normalize_usage(),
         )
+        if ctx.get("purpose") == "RUNTIME_REASONING" and ctx.get("goal_id") and ctx.get("action_id"):
+            call["usage_detail"]["runtime"] = {
+                key: str(ctx[key])[:128] for key in ("purpose", "goal_id", "action_id")
+            }
         record = {"operation": operation, "call": call}
         with self.lock:
             self.active[str(run_id)] = (record, time.monotonic())

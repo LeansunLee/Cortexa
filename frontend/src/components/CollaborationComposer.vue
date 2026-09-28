@@ -1,23 +1,28 @@
 <template>
-  <section v-if="drafts.length" class="collaboration-composer" aria-label="协作任务，按从左到右执行">
+  <section v-if="drafts.length" class="collaboration-composer" :aria-label="autonomous ? '目标参与者，由任务依赖决定执行次序' : '协作任务，按从左到右执行'">
     <div v-for="(draft, index) in drafts" :key="draft.agent_id" class="agent-chip">
-      <span class="chip-order">{{ index + 1 }}</span>
+      <span v-if="!autonomous" class="chip-order">{{ index + 1 }}</span>
       <label class="chip-name" :for="'task-' + draft.agent_id" :title="draft.name">{{ draft.name }}</label>
       <span class="chip-input-wrap">
-        <span class="chip-input-measure" aria-hidden="true">{{ draft.task || '输入协作任务' }}</span>
+        <span class="chip-input-measure" aria-hidden="true">{{ draft.task || (autonomous ? '分工（可选）' : '输入协作任务') }}</span>
       <input
         :ref="el => { if (el) taskInputs[draft.agent_id] = el; else delete taskInputs[draft.agent_id] }"
         :id="'task-' + draft.agent_id" class="chip-input" type="text"
         :value="draft.task" :disabled="disabled" :aria-label="'给' + draft.name + '的协作任务'"
-        placeholder="输入协作任务" :title="draft.task || '只输入给该 Agent 的任务；Enter 返回主输入框'"
+        :placeholder="autonomous ? '分工（可选）' : '输入协作任务'" :title="draft.task || '只输入给该 Agent 的任务；Enter 返回主输入框'"
         @input="$emit('update', draft.agent_id, { task: $event.target.value, dirty: true, basedOn: input })"
         @keydown="handleKey"
       />
       </span>
-      <span class="context-policy" :title="draft.agent_type === 'proxy' ? 'Proxy：只发送本轮任务和补充提示词，不携带上下文' : 'LLM：自动携带最近对话及本轮前面 Agent 的成功输出，以本轮任务为准'">{{ draft.agent_type === 'proxy' ? 'Proxy · 仅任务' : 'LLM · 带上下文' }}</span>
+      <span v-if="autonomous" class="context-policy" title="只传递本次任务、契约输入与所需的已完成结果">按目标按需协作</span>
+      <span v-else class="context-policy" :title="draft.agent_type === 'proxy' ? 'Proxy：只发送本轮任务和补充提示词，不携带上下文' : 'LLM：自动携带最近对话及本轮前面 Agent 的成功输出，以本轮任务为准'">{{ draft.agent_type === 'proxy' ? 'Proxy · 仅任务' : 'LLM · 带上下文' }}</span>
+      <details v-if="autonomous && draft.agent_type === 'proxy'" class="proxy-input-fields">
+        <summary>显式参数</summary>
+        <textarea :value="draft.proxyInputsRaw || ''" :disabled="disabled" :aria-label="draft.name + '显式参数 JSON'" placeholder='{"city":"杭州"}' rows="3" @input="$emit('update', draft.agent_id, { proxyInputsRaw: $event.target.value })"></textarea>
+      </details>
       <div class="chip-controls">
-        <button type="button" :disabled="disabled || index === 0" :aria-label="'向左移动' + draft.name" title="提前执行" @click="$emit('move', draft.agent_id, -1)">‹</button>
-        <button type="button" :disabled="disabled || index === drafts.length - 1" :aria-label="'向右移动' + draft.name" title="延后执行" @click="$emit('move', draft.agent_id, 1)">›</button>
+        <button v-if="!autonomous" type="button" :disabled="disabled || index === 0" :aria-label="'向左移动' + draft.name" title="提前执行" @click="$emit('move', draft.agent_id, -1)">‹</button>
+        <button v-if="!autonomous" type="button" :disabled="disabled || index === drafts.length - 1" :aria-label="'向右移动' + draft.name" title="延后执行" @click="$emit('move', draft.agent_id, 1)">›</button>
         <button type="button" :disabled="disabled" :aria-label="'移除' + draft.name" title="移除协作" @click="$emit('remove', draft)">×</button>
       </div>
     </div>
@@ -26,7 +31,7 @@
 </template>
 <script setup>
 import { nextTick } from 'vue'
-const props = defineProps({ drafts: Array, input: String, conversationId: String, disabled: Boolean })
+const props = defineProps({ drafts: Array, input: String, conversationId: String, disabled: Boolean, autonomous: Boolean })
 const emit = defineEmits(['update', 'remove', 'move', 'finish'])
 const taskInputs = {}
 async function focusTask(id) {
@@ -62,4 +67,10 @@ defineExpose({ focusTask })
 
 <style scoped>
 .context-policy {font-size:10px;white-space:nowrap;opacity:.75;flex-shrink:0}
+</style>
+
+<style scoped>
+.proxy-input-fields { color:var(--text2); font-size:12px; flex-shrink:0 }
+.proxy-input-fields summary { cursor:pointer }
+.proxy-input-fields textarea { display:block; width:200px; max-width:50vw; background:var(--surface); color:var(--text); border:1px solid var(--border); margin-top:5px; padding:6px; border-radius:5px }
 </style>

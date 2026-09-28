@@ -1,5 +1,16 @@
 <template>
   <div class="settings">
+    <section v-if="can('conversation.debug')" class="card debug-preference">
+      <div>
+        <strong>对话调试</strong>
+        <p>在聊天中查看调试过程。仅对你的账号生效。</p>
+      </div>
+      <label class="debug-switch">
+        <input type="checkbox" v-model="debugEnabled" :disabled="debugSaving" @change="saveDebug" />
+        <span>{{ debugEnabled ? '已开启' : '已关闭' }}</span>
+      </label>
+      <p v-if="debugError" role="alert">{{ debugError }}</p>
+    </section>
     <!-- Theme Color -->
     <div class="card">
       <div class="theme-card-heading">
@@ -124,7 +135,28 @@
 </template>
 <script setup>
 import { Palette, Check, Sun, Moon, Monitor } from "lucide-vue-next"
-import { ref, computed, watch } from "vue"
+import { ref, computed, watch, onMounted } from "vue"
+import { can } from '../auth'
+import { debugPreferenceApi } from '../api'
+const debugEnabled = ref(false)
+const debugSaving = ref(false)
+const debugError = ref('')
+onMounted(async () => {
+  if (!can('conversation.debug')) return
+  try { debugEnabled.value = Boolean((await debugPreferenceApi.get()).data.enabled) }
+  catch { debugError.value = '调试设置加载失败，请刷新页面重试。' }
+})
+const saveDebug = async () => {
+  debugSaving.value = true
+  debugError.value = ''
+  try {
+    const { data } = await debugPreferenceApi.save(debugEnabled.value)
+    window.dispatchEvent(new CustomEvent('conversation-debug-config', { detail: data }))
+  } catch {
+    debugEnabled.value = !debugEnabled.value
+    debugError.value = '保存失败，请重试。'
+  } finally { debugSaving.value = false }
+}
 import { themeGroups, themeColors, solidCategories, readTheme, saveTheme, themeVariables, swatchStyle, normalizeTheme } from "../utils/theme"
 import { texturePresets, textureCategories } from "../utils/textures"
 import { glassFinishes } from "../utils/glass"
@@ -198,6 +230,9 @@ watch(tempTheme, persistTheme)
 </script>
 <style scoped>
 .settings { padding: 0; max-width: 900px; }
+.debug-preference { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; padding:20px; }
+.debug-preference p { margin:6px 0 0; color:var(--text2); font-size:13px; }
+.debug-switch { display:flex; align-items:center; gap:8px; white-space:nowrap; }
 .settings h1 { font-size: 24px; font-weight: 700; margin: 0; }
 .subtitle { color: var(--text3); margin: 4px 0 24px; font-size: 14px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }

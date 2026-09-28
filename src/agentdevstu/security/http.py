@@ -33,7 +33,7 @@ class SecurityMiddleware:
         try:
             if request.method not in ("GET", "HEAD", "OPTIONS"):
                 origin = request.headers.get("origin")
-                if request.headers.get("x-requested-with") != "AgentDevStu":
+                if request.headers.get("x-requested-with") not in {"Cortexa", "AgentDevStu"}:
                     raise HTTPException(403, "缺少请求校验标识")
                 if origin and urlsplit(origin).netloc != request.headers.get("host"):
                     raise HTTPException(403, "不允许跨站请求")
@@ -154,7 +154,7 @@ async def authorize_request(request: Request):
         if path in ("/docs", "/redoc", "/openapi.json"):
             require("config.manage")
         return
-    if path.startswith("/api/auth/") or path.startswith("/api/admin/"):
+    if path.startswith("/api/auth/") or path.startswith("/api/admin/") or path.startswith("/api/me/"):
         return  # Authentication middleware + explicit security-service checks.
     actor = actor_required()
     parts = path.removeprefix("/api/").strip("/").split("/")

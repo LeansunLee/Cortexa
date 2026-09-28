@@ -10,7 +10,7 @@ test('expanded collaboration renders full output beyond summary and escapes mark
   try {
     const source = (await readFile(new URL('../src/components/AgentCollaborationCard.vue', import.meta.url), 'utf8')).replace('const isExpanded = ref(false)', 'const isExpanded = ref(true)')
     const { descriptor } = parse(source)
-    const code = compileScript(descriptor, { id: 'collab', inlineTemplate: true }).content.replace("import { avatarUrl } from '../utils/avatar'", 'const avatarUrl = value => value').replace("import { collaborationApi } from '../api/index.js'", 'const collaborationApi = {}')
+    const code = compileScript(descriptor, { id: 'collab', inlineTemplate: true }).content.replace("import AgentAvatar from './AgentAvatar.vue'", "const AgentAvatar = { render: () => null }").replace("import { avatarUrl } from '../utils/avatar'", 'const avatarUrl = value => value').replace("import { collaborationApi } from '../api/index.js'", 'const collaborationApi = {}')
     await writeFile(`${dir}/card.mjs`, code)
     const { default: Card } = await import(`${dir}/card.mjs`)
     const result = '原文'.repeat(1000) + '结尾标记<script>alert(1)</script>'
@@ -30,6 +30,11 @@ test('expanded collaboration renders full output beyond summary and escapes mark
     assert.ok(failedHtml.includes('背景 · 自动'))
     assert.ok(!failedHtml.includes('背景详情'))
     assert.ok(!failedHtml.includes('完整输出'))
+    const partialApp = createSSRApp(Card, { collabs: [{ agent_name: '销售部', status: 'partial', summary: '已取得部分数据', result: '已取得部分数据' }] })
+    partialApp.component('AppIcon', { render: () => null })
+    const partialHtml = await renderToString(partialApp)
+    assert.ok(partialHtml.includes('部分完成'))
+    assert.ok(!partialHtml.includes('进行中'))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

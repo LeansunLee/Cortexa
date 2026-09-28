@@ -15,6 +15,8 @@ export default defineConfig({
   },
   build: {
     outDir: '../src/agentdevstu/web/static/dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    // The default CSS minifier drops standard backdrop-filter from glass themes.
+    cssMinify: false
   }
 })

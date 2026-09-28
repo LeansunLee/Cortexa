@@ -149,7 +149,7 @@ async def run_integration():
             db.add(m.ConversationMessage(conversation_id=private.id, role="user", content="PRIVATE"))
             db.add(m.Memory(workspace_id=w1.id, agent_id=ag1.id, content="Bob secret", owner_user_id=b.id))
             await db.commit()
-        headers = {"X-Requested-With": "AgentDevStu", "X-Workspace-Id": str(w1.id)}
+        headers = {"X-Requested-With": "Cortexa", "X-Workspace-Id": str(w1.id)}
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
         async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=headers) as client:
             assert (await client.get("/api/workspaces")).status_code == 401

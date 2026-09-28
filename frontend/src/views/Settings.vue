@@ -1,19 +1,5 @@
 <template>
   <div class="settings">
-    <section class="card feature-card" aria-labelledby="conversation-debug-heading">
-      <div class="feature-row">
-        <div class="feature-copy">
-          <h2 id="conversation-debug-heading" class="card-title"><Bug :size="18" /> 对话调试窗口</h2>
-          <p class="card-desc">记录并展示每轮对话的上下文组装、知识库与记忆检索、工具调用和 Agent 协作传递过程。关闭后不再采集新轨迹，已保存的历史轨迹不会删除。</p>
-        </div>
-        <label class="switch" :title="conversationDebugEnabled ? '关闭对话调试' : '开启对话调试'">
-          <input v-model="conversationDebugEnabled" type="checkbox" :disabled="savingConversationDebug" @change="saveConversationDebug" />
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-          <span class="switch-label">{{ conversationDebugEnabled ? '已开启' : '已关闭' }}</span>
-        </label>
-      </div>
-    </section>
-
     <!-- LLM Providers -->
     <section class="card llm-provider-card" aria-labelledby="llm-provider-heading">
       <div class="card-header llm-provider-header">
@@ -138,14 +124,12 @@
 </template>
 
 <script setup>
-import { Server, Bug } from 'lucide-vue-next'
+import { Server } from 'lucide-vue-next'
 
 import { computed, ref, onMounted } from 'vue'
 import { configApi } from '../api'
 
 const testing = ref({})
-const conversationDebugEnabled = ref(false)
-const savingConversationDebug = ref(false)
 
 
 const providers = ref({})
@@ -191,24 +175,8 @@ const loadConfig = async () => {
     providers.value = data.providers || {}
     defaultProvider.value = data.default_provider || ''
     selectedDefault.value = data.default_provider || ''
-    conversationDebugEnabled.value = Boolean(data.conversation_debug_enabled)
   } catch (e) {
     console.error(e)
-  }
-}
-
-const saveConversationDebug = async () => {
-  const enabled = conversationDebugEnabled.value
-  savingConversationDebug.value = true
-  try {
-    await configApi.saveConversationDebug(enabled)
-    window.dispatchEvent(new CustomEvent('conversation-debug-config', { detail: { enabled } }))
-    showToast(enabled ? '对话调试窗口已开启' : '对话调试窗口已关闭')
-  } catch (error) {
-    conversationDebugEnabled.value = !enabled
-    showToast('保存失败: ' + (error.response?.data?.detail || error.message), 'error')
-  } finally {
-    savingConversationDebug.value = false
   }
 }
 

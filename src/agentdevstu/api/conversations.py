@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentdevstu.api.deps import get_db, get_current_workspace
+from agentdevstu.api.conversation_titles import assign_first_message_title
 from agentdevstu.db.engine import async_session_factory
 from agentdevstu.api.schemas import (
     ConversationCreate,
@@ -41,6 +42,10 @@ from agentdevstu.collaboration.mention_parser import parse_mentions, fuzzy_match
 from agentdevstu.collaboration.schemas import AgentHandoff, AgentHandoffResult, DEFAULT_LIMITS
 from agentdevstu.collaboration.manager import execute_handoff, list_collaboration_agents, stream_handoff
 from agentdevstu.tools.runtime import DATA_QUERY_GROUNDING_FAILURE, bind_tools_for_first_response, called_required_tool, should_require_business_tool
+from agentdevstu.runtime.shadow import shadow_enabled, goal_shadow_entry, can_read_goal_trace, visible_trace
+from agentdevstu.runtime.capture import CapabilityCapture, capability_shadow_enabled
+from agentdevstu.runtime.adapters import tool_adapter, retrieval_adapter, agent_adapter
+from agentdevstu.runtime.capabilities import CapabilityType
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -54,7 +59,7 @@ def _conversation_debug_enabled() -> bool:
     """Read the runtime feature flag without importing the FastAPI app."""
     try:
         config = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
-        return bool(config.get("features", {}).get("conversation_debug_enabled", False))
+        return bool(config.get("features", {}).get("conversation_debug_enabled", False)) and can_read_goal_trace()
     except Exception:
         return False
 
@@ -219,14 +224,12 @@ async def list_messages(
         .order_by(ConversationMessage.created_at)
     )
     messages=list(result.scalars().all())
-    from agentdevstu.security.access import actor_required
-    if not actor_required().has('agent.operate'):
+    if not can_read_goal_trace():
         from sqlalchemy.orm.attributes import set_committed_value
         for msg in messages:
             meta=dict(msg.metadata_json or {})
             meta.pop('memory_trace',None)
-            if isinstance(meta.get('debug_trace'),list):
-                meta['debug_trace']=[item for item in meta['debug_trace'] if item.get('stage')!='memory']
+            meta.pop('debug_trace', None)
             set_committed_value(msg,'metadata_json',meta)
     return messages
 
@@ -249,6 +252,7 @@ async def create_message(
         role="user",
         content=payload.content,
     )
+    await assign_first_message_title(db, conv_id, payload.content)
     db.add(msg)
 
     # If there's an agent, generate response
@@ -636,7 +640,7 @@ async def _resolve_data_tool_args(model, *, instructions, schema, arguments, use
     return result
 
 
-def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *, model: Any | None = None, user_query: str | None = None, context: list | None = None, agent_id: uuid.UUID | None = None):
+def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *, model: Any | None = None, user_query: str | None = None, context: list | None = None, agent_id: uuid.UUID | None = None, read_only: bool = False):
     """Convert data capabilities to langchain Tool objects."""
     from langchain_core.tools import StructuredTool
     from pydantic import ConfigDict, Field
@@ -741,6 +745,7 @@ def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *
                         params=params,
                         row_limit=max(1, min(cap_db.row_limit or 1000, 10000)),
                         timeout_seconds=cap_db.timeout_seconds,
+                        **({"read_only": True} if read_only else {}),
                     )
                     # The tool owns this short-lived session so the audit row
                     # is committed independently of the streaming response.
@@ -961,11 +966,21 @@ async def create_message_stream(
 
     process_steps = []
     debug_enabled = _conversation_debug_enabled()
+    goal_shadow_enabled = shadow_enabled(_CONFIG_PATH)
     debug_trace = []
+    capability_capture = CapabilityCapture(capability_shadow_enabled(_CONFIG_PATH), debug_trace)
+
+    def _phase2_event(entry):
+        if entry and debug_enabled and can_read_goal_trace():
+            return f"data: {json.dumps({'type': 'debug', 'entry': entry}, ensure_ascii=False)}\n\n"
+        return None
+
+    def _observe(adapter_factory, raw, **kwargs):
+        return _phase2_event(capability_capture.observe(adapter_factory, raw, **kwargs))
 
     async def _debug(stage, title, *, status="info", summary="", detail=None):
         """Persist one bounded trace entry and mirror it to the live SSE client."""
-        if not debug_enabled:
+        if not debug_enabled or not can_read_goal_trace():
             return None
         entry = {
             "seq": len(debug_trace) + 1,
@@ -1011,6 +1026,7 @@ async def create_message_stream(
 
                 # Save user message
                 attachments = payload.attachments or []
+                generated_title = await assign_first_message_title(db, conv_id, payload.content)
                 user_msg = ConversationMessage(
                     conversation_id=conv_id,
                     role="user",
@@ -1021,8 +1037,23 @@ async def create_message_stream(
                 await db.flush()
                 await db.refresh(user_msg)
 
+                # Shadow parsing is side-effect free and never controls legacy execution.
+                # Persist on the original message too, so failures/cancel before any
+                # assistant tokens still retain a trace without another transaction.
+                shadow_entry = None
+                if goal_shadow_enabled:
+                    shadow_entry = goal_shadow_entry(
+                        payload.content, str(user_msg.id),
+                        explicit_agent_ids=tuple(str(d.agent_id) for d in payload.collaboration_drafts or []),
+                    )
+                    shadow_entry["seq"] = len(debug_trace) + 1
+                    debug_trace.append(shadow_entry)
+                    user_msg.metadata_json = {**user_msg.metadata_json, "debug_trace": [shadow_entry]}
+
                 await db.commit()
-                yield f"data: {json.dumps({'type': 'user_message', 'id': str(user_msg.id), 'content': payload.content, 'attachments': attachments})}\n\n"
+                yield f"data: {json.dumps({'type': 'user_message', 'id': str(user_msg.id), 'content': payload.content, 'attachments': attachments, 'conversation_title': generated_title})}\n\n"
+                if shadow_entry and debug_enabled and can_read_goal_trace():
+                    yield f"data: {json.dumps({'type': 'debug', 'entry': shadow_entry}, ensure_ascii=False)}\n\n"
 
                 debug_event = await _debug(
                     "round",
@@ -1091,6 +1122,9 @@ async def create_message_stream(
                             "conversation_context": proxy_context,
                         },
                     )
+                    observation_event = _observe(lambda: agent_adapter(agent), result)
+                    if observation_event:
+                        yield observation_event
                     if result["success"]:
                         out = result.get("output_data", {})
                         reply_content = out.get("answer", str(out)) if isinstance(out, dict) else str(out)
@@ -1117,7 +1151,7 @@ async def create_message_stream(
                         conversation_id=conv_id,
                         role="assistant",
                         content=reply_content,
-                        metadata_json={"proxy": True, "duration_ms": duration_ms, "agent_name": agent.name, "stats": proxy_stats, **({"debug_trace": debug_trace} if debug_enabled else {})},
+                        metadata_json={"proxy": True, "duration_ms": duration_ms, "agent_name": agent.name, "stats": proxy_stats, **({"debug_trace": debug_trace} if debug_trace else {})},
                     )
                     db.add(assistant_msg)
                     await db.flush()
@@ -1130,7 +1164,7 @@ async def create_message_stream(
                     proxy_message = "需要补充参数" if result.get("requires_input") else ("完成" if result["success"] else "失败")
                     yield await _status(proxy_status, message=f"Proxy 参数解析{proxy_message} ({duration_ms}ms)")
                     yield f"data: {json.dumps({'type': 'assistant_message', 'id': str(assistant_msg.id), 'content': reply_content, 'agent_name': agent.name, 'agent_avatar': agent.avatar or '🤖'})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': reply_content, 'stats': proxy_stats, **({'debug_trace': debug_trace} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': reply_content, 'stats': proxy_stats, **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
                     await db.commit()
                     return
@@ -1178,6 +1212,7 @@ async def create_message_stream(
                     yield await _status("knowledge_start", message=f"🔍 正在检索知识库...", agent=agent_name)
                     kb_ids = agent.knowledge_base_ids or []
                     knowledge_context = ""
+                    knowledge_stats = {}
                     knowledge_started = time.time()
                     debug_event = await _debug(
                         "knowledge",
@@ -1190,9 +1225,16 @@ async def create_message_stream(
                         yield debug_event
                     try:
                         knowledge_context = await asyncio.wait_for(
-                            _retrieve_knowledge(agent, payload.content, db, sources=sources),
+                            _retrieve_knowledge(agent, payload.content, db, sources=sources, stats=knowledge_stats),
                             timeout=10
                         )
+                        observation_event = _observe(
+                            lambda: retrieval_adapter(agent, CapabilityType.KNOWLEDGE), knowledge_context,
+                            evidence=[item for item in sources if item.get("type") == "knowledge_base"],
+                            metadata=knowledge_stats,
+                        )
+                        if observation_event:
+                            yield observation_event
                         if knowledge_context:
                             references.append(reference_message("参考知识", knowledge_context))
                             yield await _status("knowledge_done", message=f"✅ 知识库检索完成，读取 {len(sources)} 份相关文档（无法读取的文件会在回复中说明）", sources=[s["name"] for s in sources])
@@ -1222,6 +1264,9 @@ async def create_message_stream(
                             yield debug_event
                     except Exception as e:
                         print(f"[RAG] Knowledge retrieval skipped: {e}", flush=True)
+                        observation_event = _observe(lambda: retrieval_adapter(agent, CapabilityType.KNOWLEDGE), None, error=e)
+                        if observation_event:
+                            yield observation_event
                         yield await _status("knowledge_done", message="ℹ️ 知识库检索跳过")
                         debug_event = await _debug(
                             "knowledge", "知识库检索失败", status="error",
@@ -1261,6 +1306,9 @@ async def create_message_stream(
                             ),
                             timeout=5
                         )
+                        observation_event = _observe(lambda: retrieval_adapter(agent, CapabilityType.MEMORY), relevant_memories)
+                        if observation_event:
+                            yield observation_event
                         if relevant_memories:
                             memory_text = format_memories_for_prompt(relevant_memories)
                             references.append(reference_message("相关记忆", memory_text))
@@ -1268,7 +1316,7 @@ async def create_message_stream(
                             debug_event = await _debug(
                                 "memory", "记忆检索完成", status="success",
                                 summary=f"命中 {len(relevant_memories)} 条记忆 · {round((time.time() - memory_started) * 1000)}ms",
-                                detail={"memory_trace": __import__('agentdevstu.memory.retrieval',fromlist=['last_trace']).last_trace.get()} if __import__('agentdevstu.security.access',fromlist=['actor_required']).actor_required().has('agent.operate') else {"count":len(relevant_memories)},
+                                detail={"memory_trace": __import__('agentdevstu.memory.retrieval',fromlist=['last_trace']).last_trace.get()} if can_read_goal_trace() else {"count":len(relevant_memories)},
                             )
                         else:
                             yield await _status("memory_done", message="ℹ️ 暂无相关记忆")
@@ -1281,6 +1329,9 @@ async def create_message_stream(
                             yield debug_event
                     except Exception as e:
                         print(f"[MEMORY] Retrieval failed: {e}", flush=True)
+                        observation_event = _observe(lambda: retrieval_adapter(agent, CapabilityType.MEMORY), None, error=e)
+                        if observation_event:
+                            yield observation_event
                         yield await _status("memory_done", message="ℹ️ 记忆检索跳过")
                         debug_event = await _debug(
                             "memory", "记忆检索失败", status="error",
@@ -1512,6 +1563,9 @@ async def create_message_stream(
                             yield debug_event
                         if any(cr["result"].status != "success" for cr in dependencies):
                             result = AgentHandoffResult(status="failed", summary="前置协作失败，本任务未执行", result="前置协作失败，本任务未执行")
+                            observation_event = _observe(lambda: agent_adapter(target_agent), result, metadata={"skipped": True})
+                            if observation_event:
+                                yield observation_event
                             collaboration_results.append({"agent_id": str(target_agent.id), "agent_name": matched_name, "agent_avatar": target_info.get("avatar", "🤖"), "result": result, "task": draft.task, "background": background})
                             yield f"data: {json.dumps({'type': 'collab_status', 'status': 'completed', 'target_agent_name': matched_name, 'collab_status': 'failed', 'summary': result.summary, 'task': draft.task, 'background': background})}\n\n"
                             continue
@@ -1580,6 +1634,9 @@ async def create_message_stream(
                             full_reply += notice
                             yield f"data: {json.dumps({'type': 'token', 'content': notice})}\n\n"
 
+                        observation_event = _observe(lambda: agent_adapter(target_agent), result)
+                        if observation_event:
+                            yield observation_event
                         result.input_snapshot = await save_input_snapshot(conv_id, visible_snapshot(result.input_snapshot)) if result.input_snapshot else {}
                         collaboration_results.append({
                             "agent_id": str(target_agent.id),
@@ -1663,7 +1720,7 @@ async def create_message_stream(
                                 }
                                 for cr in successful_results
                             ],
-                            **({"debug_trace": debug_trace} if debug_enabled else {}),
+                            **({"debug_trace": debug_trace} if debug_trace else {}),
                         }
 
                         # Save assistant message to DB
@@ -1688,7 +1745,7 @@ async def create_message_stream(
                             "sources": sources,
                             "stats": collab_meta["stats"],
                             "collaborations": collab_meta["collaborations"],
-                            **({"debug_trace": debug_trace} if debug_enabled else {}),
+                            **({"debug_trace": visible_trace(debug_trace)} if debug_enabled else {}),
                         }
                         yield "data: " + json.dumps(done_payload, ensure_ascii=False) + "\n\n"
 
@@ -1735,6 +1792,19 @@ async def create_message_stream(
                 data_tools = list(business_tools)
                 from agentdevstu.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
+
+                # Describe already-loaded tools. Matching is shadow-only: preserve the
+                # full legacy tool list and its existing schema, binding and permissions.
+                capability_by_tool = {f"query_{item['capability'].id.hex}": item["capability"] for item in cap_list}
+                adapter_factories = {
+                    tool.name: (lambda tool=tool: tool_adapter(tool, str(agent.workspace_id), capability=capability_by_tool.get(tool.name)))
+                    for tool in data_tools
+                }
+                catalog_event = _phase2_event(capability_capture.catalog(
+                    list(adapter_factories.values()), payload.content, str(agent.workspace_id),
+                ))
+                if catalog_event:
+                    yield catalog_event
 
                 if cap_list:
                     cap_names = [item["capability"].name for item in cap_list]
@@ -1908,12 +1978,24 @@ async def create_message_stream(
                                     tool_result = None
                                     for t in data_tools:
                                         if t.name == tool_name:
-                                            tool_result = await t.ainvoke(tool_args)
+                                            try:
+                                                tool_result = await t.ainvoke(tool_args)
+                                            except Exception as tool_error:
+                                                observation_event = _observe(adapter_factories[tool_name], None,
+                                                                             action_id=tc["id"], error=tool_error)
+                                                if observation_event:
+                                                    yield observation_event
+                                                raise
                                             break
                                 if tool_result is None:
                                     tool_result = {"error": f"工具 {tool_name} 未找到"}
                                 # Cache result for dedup
                                 tool_call_cache[args_key] = tool_result
+                                if tool_name in adapter_factories:
+                                    observation_event = _observe(adapter_factories[tool_name], tool_result,
+                                                                 action_id=tc["id"], metadata={"reused_cache": reused_cache})
+                                    if observation_event:
+                                        yield observation_event
 
                                 # Preview result for status
                                 result_preview = ""
@@ -2009,7 +2091,7 @@ async def create_message_stream(
                 trace=last_trace.get()
                 if trace and trace.get("agent_id")==str(agent.id):
                     meta["memory_trace"]=trace
-                if debug_enabled:
+                if debug_trace:
                     meta["debug_trace"] = debug_trace
                 assistant_msg = ConversationMessage(
                     conversation_id=conv_id,
@@ -2024,7 +2106,7 @@ async def create_message_stream(
                 from agentdevstu.memory.integration import register_extraction
                 await register_extraction(db,conv_id,user_msg.id)
 
-                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': debug_trace} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
 
             except asyncio.CancelledError:
@@ -2036,7 +2118,7 @@ async def create_message_stream(
                                 conversation_id=conv_id,
                                 role="assistant",
                                 content=full_reply,
-                                metadata_json={"stopped": True, "steps": process_steps, **({"debug_trace": debug_trace} if debug_enabled else {})},
+                                metadata_json={"stopped": True, "steps": process_steps, **({"debug_trace": debug_trace} if debug_trace else {})},
                             ))
                             await save_db.commit()
                 raise

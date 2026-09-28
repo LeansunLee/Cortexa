@@ -2,7 +2,7 @@ use_default_settings:
   engines:
     keep_only: [360search, bing, yandex]
 general:
-  instance_name: AgentDevStu Search
+  instance_name: Cortexa Search
 search:
   formats: [html, json]
   default_lang: zh-CN

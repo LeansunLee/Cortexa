@@ -272,6 +272,22 @@
                 <input v-model="proxyCfg.endpoint" placeholder="https://api.example.com/v1/run" class="mono" />
               </div>
 
+              <section class="prompt-resolution-card goal-proxy-contract">
+                <h4>目标模式输入契约</h4>
+                <label><input type="checkbox" :checked="proxyGoalContract.enabled" @change="setGoalContractEnabled($event.target.checked)" /> 允许作为目标协作参与者</label>
+                <p class="section-hint">只发送契约允许的字段。完整对话、记忆和主 Agent 提示词不会进入请求；下方的自动整理、补充提示词和重试设置仅用于普通对话。</p>
+                <template v-if="proxyGoalContract.enabled">
+                  <div class="form-group"><label>输入预算（保守估算，256–8000）</label><input type="number" v-model.number="proxyGoalContract.input_budget" min="256" max="8000" /></div>
+                  <p v-if="!schemaFields.length">请先在「输入输出 Schema」声明 object 输入字段和类型。</p>
+                  <div v-for="field in schemaFields" :key="field.name" class="form-group">
+                    <label>{{ field.name }} · 允许来源</label>
+                    <label v-for="source in goalInputSources" :key="source.value"><input type="checkbox" :checked="(proxyGoalContract.fields[field.name] || []).includes(source.value)" @change="toggleGoalSource(field.name, source.value, $event.target.checked)" /> {{ source.label }}</label>
+                  </div>
+                  <p class="section-hint">任务原文优先使用本代理的分工，未填写时使用当前目标；Observation 只取指定事实字段或已有摘要。</p>
+                  <label><input type="checkbox" v-model="editingAgent.collaboration.allow_incoming" /> 允许接收协作邀请</label>
+                  <label><input type="checkbox" v-model="editingAgent.collaboration.discoverable" /> 允许被自主发现</label>
+                </template>
+              </section>
               <div class="prompt-resolution-card">
                 <div class="resolution-config-head">
                   <div>
@@ -406,6 +422,43 @@
           <div v-if="currentSection === 'model' && editingAgent.agent_type !== 'proxy'" class="section">
             <h3>模型配置</h3>
             <div class="form-group">
+              <label>目标协作权限</label>
+              <SearchSelect v-model="editingAgent.collaboration.autonomy" class="collaboration-autonomy-select" :options="autonomyOptions" aria-label="目标协作权限" :disabled="!can('agent.update')" />
+              <small>用于目标模式；空间策略和用户本次指令可以进一步收紧范围。</small>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" v-model="editingAgent.collaboration.allow_incoming" :disabled="!can('agent.update')" /> 允许其他 Agent 邀请协作</label>
+              <label><input type="checkbox" v-model="editingAgent.collaboration.discoverable" :disabled="!can('agent.update')" /> 允许根据描述与能力被发现</label>
+            </div>
+            <section class="agent-budget-card" aria-labelledby="agent-budget-title">
+              <div class="agent-budget-head">
+                <div>
+                  <h4 id="agent-budget-title"><Gauge :size="17" /> Runtime Budget <small>运行预算</small></h4>
+                  <p>默认继承 Workspace；只勾选需要为当前 Agent 单独收紧的额度。</p>
+                </div>
+                <button type="button" class="btn btn-ghost" :disabled="runtimeBudgetLoading" @click="loadAgentBudget(editingAgent.id)">刷新额度</button>
+              </div>
+              <p v-if="runtimeBudgetError" class="agent-budget-error">{{ runtimeBudgetError }}</p>
+              <template v-else-if="runtimeBudgetLoaded">
+                <div class="agent-budget-grid">
+                  <div v-for="field in runtimeBudgetFields" :key="field.key" class="agent-budget-field">
+                    <label class="agent-budget-override">
+                      <input v-model="runtimeBudgetSelected[field.key]" type="checkbox" :disabled="!can('agent.update')" />
+                      <span>{{ field.label }} <small>{{ field.zh }}</small></span>
+                    </label>
+                    <input v-model.number="runtimeBudgetDraft[field.key]" type="number" step="1" :min="field.min" :max="runtimeWorkspaceBudget[field.key] === UNLIMITED_BUDGET ? undefined : runtimeWorkspaceBudget[field.key]" :disabled="!runtimeBudgetSelected[field.key] || !can('agent.update')" :aria-label="field.label" />
+                    <small>Workspace Limit · 工作空间上限 {{ runtimeWorkspaceBudget[field.key] === UNLIMITED_BUDGET ? '不限' : runtimeWorkspaceBudget[field.key] }}</small>
+                  </div>
+                </div>
+                <div class="agent-budget-actions">
+                  <router-link v-if="can('workspace.manage')" to="/workspaces">调整 Workspace 上限</router-link>
+                  <button v-if="can('agent.update')" type="button" class="btn btn-primary" :disabled="runtimeBudgetSaving" @click="saveAgentBudget">
+                    {{ runtimeBudgetSaving ? '保存中…' : 'Save Runtime Budget · 保存预算' }}
+                  </button>
+                </div>
+              </template>
+            </section>
+            <div class="form-group">
               <label>选择模型</label>
               <div class="model-selector">
                 <div v-if="workspaceDefaultModel" class="default-model-hint">
@@ -523,7 +576,7 @@ import {
   MessageSquare, Wrench, PieChart, Activity, Send, Bell, Mail, Star, Heart,
   User, Smile, Briefcase, Globe, BarChart3, Lightbulb, Brain, PenTool, Sparkles, MoreHorizontal,
   Scale, Rocket, HelpCircle, Palette, Mic, Users, Headphones, PenLine,
-  Calendar, DollarSign, Award, Megaphone, TrendingUp, CircleDot, Archive, Eye, Plus
+  Calendar, DollarSign, Award, Megaphone, TrendingUp, CircleDot, Archive, Eye, Plus, Gauge
 } from 'lucide-vue-next'
 
 const iconComponents = {
@@ -544,6 +597,35 @@ import axios from 'axios'
 
 const agents = ref([])
 const editingAgent = ref(null)
+const runtimeBudgetLoaded = ref(false)
+const runtimeBudgetLoading = ref(false)
+const runtimeBudgetSaving = ref(false)
+const runtimeBudgetError = ref('')
+const runtimeWorkspaceBudget = ref({})
+const runtimeBudgetDraft = ref({})
+const runtimeBudgetSelected = ref({})
+const UNLIMITED_BUDGET = 1000000000000000
+const runtimeBudgetFields = [
+  { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', min: 1 },
+  { key: 'llm_calls', label: 'Max LLM Calls', zh: '模型调用次数', min: 0 },
+  { key: 'tool_calls', label: 'Max Tool Calls', zh: '工具调用次数', min: 0 },
+  { key: 'tool_iterations', label: 'Max Tool Iterations', zh: '工具执行轮次', min: 0 },
+  { key: 'web_calls', label: 'Max Web Calls', zh: '网页调用次数', min: 0 },
+  { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', min: 0 },
+  { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', min: 0 },
+  { key: 'context_tokens', label: 'Max Context Tokens', zh: '上下文词元', min: 256 },
+  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出词元', min: 0 },
+  { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', min: 1 },
+  { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', min: 0 },
+  { key: 'max_failures', label: 'Max Failures', zh: '失败次数', min: 1 },
+  { key: 'max_collaborators', label: 'Max Collaborators', zh: '协作 Agent 数量', min: 0 },
+]
+const autonomyOptions = [
+  { value: 'INHERIT_WORKSPACE', label: '♧ Inherit Workspace · 继承工作空间' },
+  { value: 'EXPLICIT_ONLY', label: 'Explicit Only · 仅使用用户指定的 Agent' },
+  { value: 'ASK_BEFORE_COLLABORATION', label: 'Ask Before Collaboration · 协作前请求授权' },
+  { value: 'AUTONOMOUS', label: 'Autonomous · 在权限与预算内自主协作' },
+]
 const versions = ref([])
 const providers = ref({})
 const currentSection = ref('basic')
@@ -667,6 +749,25 @@ const proxyCfg = computed({
   },
   set: (v) => { if (editingAgent.value) editingAgent.value.proxy_config = v }
 })
+
+const proxyGoalContract = computed(() => {
+  const cfg = proxyCfg.value
+  cfg.goal_contract ||= { enabled: false, input_budget: 4000, response_bytes: 128000, fields: {} }
+  cfg.goal_contract.fields ||= {}
+  return cfg.goal_contract
+})
+const goalInputSources = [
+  { value: 'explicit', label: '用户填写的显式参数' }, { value: 'goal_task', label: '本次任务原文' },
+  { value: 'observation_facts', label: '指定 Observation 的结构化事实' }, { value: 'observation_summary', label: '指定 Observation 的已有摘要' },
+]
+const setGoalContractEnabled = enabled => {
+  proxyGoalContract.value.enabled = enabled
+  if (enabled) for (const field of schemaFields.value) proxyGoalContract.value.fields[field.name] ||= ['explicit']
+}
+const toggleGoalSource = (field, source, enabled) => {
+  const prior = proxyGoalContract.value.fields[field] || []
+  proxyGoalContract.value.fields[field] = enabled ? [...new Set([...prior, source])] : prior.filter(value => value !== source)
+}
 
 const resolutionSources = [
   { value: 'current_task', label: '当前任务' },
@@ -1085,12 +1186,63 @@ const loadProviders = async () => {
   }
 }
 
+const normalizeAgent = agent => ({ ...agent, collaboration: {
+  autonomy: 'INHERIT_WORKSPACE', allow_incoming: true, discoverable: true, ...(agent.collaboration || {}),
+} })
+
+const loadAgentBudget = async id => {
+  if (!id) return
+  runtimeBudgetLoading.value = true
+  runtimeBudgetLoaded.value = false
+  runtimeBudgetError.value = ''
+  try {
+    const { data } = await agentApi.runtimeBudget(id)
+    if (editingAgent.value?.id !== id) return
+    runtimeWorkspaceBudget.value = data.workspace_budget
+    runtimeBudgetSelected.value = Object.fromEntries(runtimeBudgetFields.map(field => [field.key, Object.hasOwn(data.budget || {}, field.key)]))
+    runtimeBudgetDraft.value = Object.fromEntries(runtimeBudgetFields.map(field => [field.key,
+      data.budget?.[field.key] ?? (data.workspace_budget[field.key] === UNLIMITED_BUDGET ? '' : data.workspace_budget[field.key])
+    ]))
+    runtimeBudgetLoaded.value = true
+  } catch (e) {
+    if (editingAgent.value?.id === id) runtimeBudgetError.value = e.response?.data?.detail || '运行预算读取失败，请重试'
+  } finally {
+    runtimeBudgetLoading.value = false
+  }
+}
+
+const saveAgentBudget = async () => {
+  if (!editingAgent.value?.id || !runtimeBudgetLoaded.value) return
+  const budget = {}
+  for (const field of runtimeBudgetFields) {
+    if (!runtimeBudgetSelected.value[field.key]) continue
+    const value = runtimeBudgetDraft.value[field.key]
+    if (value === '' || value == null || !Number.isSafeInteger(Number(value)) || Number(value) < field.min || Number(value) > runtimeWorkspaceBudget.value[field.key]) {
+      showToast(`${field.label} 必须为 ${field.min}–${runtimeWorkspaceBudget.value[field.key] === UNLIMITED_BUDGET ? '不限' : runtimeWorkspaceBudget.value[field.key]} 的整数`, 'error')
+      return
+    }
+    budget[field.key] = Number(value)
+  }
+  runtimeBudgetSaving.value = true
+  try {
+    const agentId = editingAgent.value.id
+    await agentApi.saveRuntimeBudget(agentId, Object.keys(budget).length ? budget : null)
+    await loadAgentBudget(agentId)
+    showToast('运行预算已保存')
+  } catch (e) {
+    showToast(e.response?.data?.detail || '运行预算保存失败', 'error')
+  } finally {
+    runtimeBudgetSaving.value = false
+  }
+}
+
 const createNewAgent = async () => {
   const ws = currentWorkspace()
   if (!ws) { alert('请先选择工作空间'); return }
   try {
     const { data } = await agentApi.create(ws, { name: '新智能体', agent_type: 'llm' })
-    editingAgent.value = { ...data }
+    editingAgent.value = normalizeAgent(data)
+    loadAgentBudget(data.id)
     await loadAgents()
   } catch (e) {
     alert('创建失败: ' + (e.response?.data?.detail || e.message))
@@ -1098,8 +1250,9 @@ const createNewAgent = async () => {
 }
 
 const editAgent = (agent) => {
-  editingAgent.value = { ...agent }
+  editingAgent.value = normalizeAgent(agent)
   currentSection.value = 'basic'
+  loadAgentBudget(agent.id)
   loadVersions(agent.id)
 }
 
@@ -1115,7 +1268,7 @@ const saveAgent = async () => {
   try {
     const { id, ...data } = editingAgent.value
     const result = await agentApi.update(id, data)
-    editingAgent.value = { ...result.data }
+    editingAgent.value = normalizeAgent(result.data)
     showToast(result.data.status === 'draft' ? '草稿已保存，发布后可供用户使用' : '保存成功')
   } catch (e) {
     alert('保存失败: ' + (e.response?.data?.detail || e.message))
@@ -1426,15 +1579,19 @@ onMounted(() => {
 .form-group label {
   display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px;
 }
-.form-group input, .form-group textarea {
+.form-group input:not([type="checkbox"]):not([type="radio"]), .form-group textarea {
   width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
   font-size: 14px; box-sizing: border-box; background: var(--surface); color: var(--text);
   transition: all var(--transition); height: 44px;
 }
 .form-group textarea { height: auto; min-height: 120px; }
-.form-group input:focus, .form-group textarea:focus {
+.form-group input:not([type="checkbox"]):not([type="radio"]):focus, .form-group textarea:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(139,92,246,0.1);
+}
+.form-group input[type="checkbox"], .form-group input[type="radio"] {
+  width: 16px; height: 16px; margin: 0 7px 0 0; vertical-align: -3px;
+  accent-color: var(--primary); cursor: pointer;
 }
 .form-group .mono { font-family: 'SF Mono', 'Consolas', monospace; font-size: 13px; }
 .form-row { display: flex; gap: 16px; }
@@ -1562,7 +1719,24 @@ onMounted(() => {
 .resolver-test-button { width: 100%; }
 
 /* Model */
+.agent-budget-card { margin: 12px 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.agent-budget-head, .agent-budget-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-budget-head h4 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 15px; }
+.agent-budget-head h4 small { color: var(--text3); font-size: 12px; font-weight: 400; }
+.agent-budget-head p { margin: 6px 0 0; color: var(--text2); font-size: 12px; }
+.agent-budget-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+.agent-budget-field { display: grid; gap: 6px; min-width: 0; }
+.agent-budget-override { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.agent-budget-override input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--primary); }
+.agent-budget-override small { color: var(--text3); font-weight: 400; }
+.agent-budget-field > input { width: 100%; height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-sizing: border-box; }
+.agent-budget-field > input:disabled { background: var(--surface2); color: var(--text3); }
+.agent-budget-field > small { color: var(--text3); font-size: 11px; }
+.agent-budget-actions { margin-top: 18px; }
+.agent-budget-actions a { color: var(--primary); font-size: 12px; }
+.agent-budget-error { color: var(--danger); font-size: 12px; }
 .model-selector { margin-bottom: 12px; }
+.collaboration-autonomy-select :deep(.search-select-trigger) { font-size: 14px; }
 .default-model-hint { font-size: 12px; color: var(--text3); margin-bottom: 6px; padding: 6px 10px; background: var(--accent-light); border-radius: var(--radius-xs); }
 .model-select { width: 100%; }
 .model-select :deep(.search-select-trigger) { min-height: 38px; }

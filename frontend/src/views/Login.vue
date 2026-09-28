@@ -1,6 +1,6 @@
 <template>
   <div class="login-page">
-    <div class="login-story"><div class="wordmark"><Bot :size="28" /> AgentDevStu</div><div><p class="eyebrow">YOUR AGENTS. YOUR WORKSPACE.</p><h1>让智能协作<br>从这里开始。</h1><p>在属于你的工作空间，与获授权的 Agent 一起工作。</p></div><span class="story-footer">统一身份 · 空间隔离 · 按需授权</span></div>
+    <div class="login-story"><div class="wordmark"><Bot :size="28" /> Cortexa</div><div><p class="eyebrow">YOUR AGENTS. YOUR WORKSPACE.</p><h1>让智能协作<br>从这里开始。</h1><p>在属于你的工作空间，与获授权的 Agent 一起工作。</p></div><span class="story-footer">统一身份 · 空间隔离 · 按需授权</span></div>
     <main class="login-main"><form class="login-card" @submit.prevent="submit">
       <div class="login-icon"><ShieldCheck :size="28" /></div>
       <h2>{{ changing ? '设置你的新密码' : '欢迎回来' }}</h2>

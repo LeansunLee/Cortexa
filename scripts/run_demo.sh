@@ -11,4 +11,4 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
-uv run agentdevstu --goal "Research LangGraph and draft a short multi-agent project outline using search, RAG, and a simple exec helper"
+uv run cortexa --goal "Research LangGraph and draft a short multi-agent project outline using search, RAG, and a simple exec helper"

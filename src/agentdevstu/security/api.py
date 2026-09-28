@@ -29,9 +29,30 @@ from .access import actor_required, current_actor, require, raw
 from .catalog import PERMISSIONS, SPACE, SYSTEM
 from .passwords import hash_password, verify_password, token_digest
 from .http import COOKIE
+from .debug_preferences import debug_enabled, set_debug_enabled
 
 router = APIRouter(tags=["identity"])
 _failures = defaultdict(deque)
+
+
+class DebugPreference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+@router.get("/me/conversation-debug")
+async def get_my_debug_preference():
+    actor = actor_required()
+    allowed = actor.has("conversation.debug")
+    return {"allowed": allowed, "enabled": allowed and debug_enabled(actor.user_id)}
+
+
+@router.put("/me/conversation-debug")
+async def save_my_debug_preference(payload: DebugPreference):
+    actor = actor_required()
+    require("conversation.debug")
+    set_debug_enabled(actor.user_id, payload.enabled)
+    return {"allowed": True, "enabled": payload.enabled}
 
 
 class StrictModel(BaseModel):

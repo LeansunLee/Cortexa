@@ -141,7 +141,7 @@ async def integration(monkeypatch):
                     transport=httpx.ASGITransport(app=app),
                     base_url="http://test",
                     cookies={COOKIE: t},
-                    headers={"X-Workspace-Id": str(spaces[i // 2].id), "X-Requested-With": "AgentDevStu"},
+                    headers={"X-Workspace-Id": str(spaces[i // 2].id), "X-Requested-With": "Cortexa"},
                 )
             )
         admin, reader, outsider = clients

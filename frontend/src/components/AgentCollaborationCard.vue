@@ -16,7 +16,7 @@
       </div>
       <div class="collab-summary-meta" v-if="completedCollabs.length > 0">
         <span v-for="c in completedCollabs" :key="c.agent_name" class="collab-chip" :class="c.status">
-          <span class="collab-chip-icon"><AppIcon :name="c.status === 'success' ? 'Check' : 'X'" :size="12" /></span>
+          <span class="collab-chip-icon"><AppIcon :name="c.status === 'success' ? 'Check' : c.status === 'partial' ? 'AlertTriangle' : 'X'" :size="12" /></span>
           {{ c.agent_name }}
           <span v-if="c.duration_ms" class="collab-chip-time">{{ formatDuration(c.duration_ms) }}</span>
         </span>
@@ -72,6 +72,9 @@
                 <span class="flow-node-role">{{ c.task || '协作任务' }}</span>
                 <span v-if="c.status === 'success'" class="flow-node-time">
                   <AppIcon name="Check" :size="12" /> 已完成<span v-if="c.duration_ms"> · {{ formatDuration(c.duration_ms) }}</span>
+                </span>
+                <span v-else-if="c.status === 'partial'" class="flow-node-time warning">
+                  <AppIcon name="AlertTriangle" :size="12" /> 部分完成<span v-if="c.duration_ms"> · {{ formatDuration(c.duration_ms) }}</span>
                 </span>
                 <span v-else-if="c.status === 'failed'" class="flow-node-time error">
                   <AppIcon name="X" :size="12" /> {{ resultStatus(c) }}
@@ -132,7 +135,11 @@
                 <summary>实际输入<AppIcon name="ChevronDown" :size="12" /></summary>
                 <pre class="result-detail-body">{{ JSON.stringify(c.input_snapshot.snapshot_id ? (snapshots[c.input_snapshot.snapshot_id] || '正在读取快照…') : c.input_snapshot, null, 2) }}</pre>
               </details>
-              <details v-if="c.result && c.result !== c.summary && c.result !== c.background?.reason" class="result-full">
+              <details v-if="c.goal_result" class="result-full" @toggle="loadGoalResult(c, $event)">
+                <summary>完整输出<AppIcon name="ChevronDown" :size="12" /></summary>
+                <pre class="result-detail-body">{{ goalResults[c.goal_result.action_id]?.result ?? (goalResults[c.goal_result.action_id]?.error || '正在读取结果…') }}</pre>
+              </details>
+              <details v-else-if="c.result && c.result !== c.summary && c.result !== c.background?.reason" class="result-full">
                 <summary>完整输出 <span class="result-count">{{ c.result.length }} 字符</span><AppIcon name="ChevronDown" :size="12" /></summary>
                 <pre class="result-detail-body">{{ c.result }}</pre>
               </details>
@@ -159,6 +166,13 @@ const props = defineProps({
 
 const isExpanded = ref(false)
 const snapshots = ref({})
+const goalResults = ref({})
+async function loadGoalResult(c, event) {
+  const value = c.goal_result
+  if (!event.target.open || !value || goalResults.value[value.action_id]?.result !== undefined) return
+  try { goalResults.value[value.action_id] = (await collaborationApi.goalResult(value.conversation_id, value.goal_id, value.action_id)).data }
+  catch { goalResults.value[value.action_id] = { error: '读取失败，请重新展开重试' } }
+}
 async function loadInput(c, event) {
   const value = c.input_snapshot
   if (!event.target.open && typeof snapshots.value[value?.snapshot_id] === 'string') delete snapshots.value[value.snapshot_id]
@@ -172,6 +186,7 @@ function backgroundLabel(mode) {
 }
 function resultStatus(c) {
   if (c.status === 'success') return '已完成'
+  if (c.status === 'partial') return '部分完成'
   if (c.status === 'timeout') return '已超时'
   if (c.status === 'input_required') return '等待补充参数'
   if (c.status === 'failed') return c.background?.status && c.background.status !== 'ready' || c.summary?.includes('本任务未执行') ? '未执行' : '协作失败'
@@ -256,6 +271,7 @@ function formatDuration(ms) {
   background: var(--success-bg);
   color: var(--success);
 }
+.collab-chip.partial { background: color-mix(in srgb,#f59e0b 14%,transparent); color: var(--warning, #b45309); }
 
 .collab-chip.failed,
 .collab-chip.timeout {
@@ -523,6 +539,7 @@ function formatDuration(ms) {
 .result-status { color: var(--text2); background: var(--surface2); }
 .result-status.failed, .result-status.timeout { color: var(--danger); background: var(--danger-bg); }
 .result-status.input_required { color: light-dark(#92400e,#fbbf24); background: color-mix(in srgb,#f59e0b 14%,transparent); }
+.result-status.partial { color: light-dark(#92400e,#fbbf24); background: color-mix(in srgb,#f59e0b 14%,transparent); }
 .result-status.success { color: var(--success); background: var(--success-bg); }
 .result-mode { margin-left: auto; color: var(--text3); background: var(--surface2); }
 .result-text { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }

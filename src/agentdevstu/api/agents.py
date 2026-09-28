@@ -5,9 +5,10 @@ import json
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,8 +28,50 @@ from agentdevstu.api.schemas import (
     AgentPublishResponse,
 )
 from agentdevstu.db.models import Agent, AgentVersion, AgentRun, Workspace
+from agentdevstu.runtime.policy import platform_config, resolve_effective_policy
+from agentdevstu.runtime.state import BudgetLimits
+from agentdevstu.security.access import actor_required, require
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+class AgentRuntimeBudgetUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    budget: dict | None
+
+
+async def runtime_budget_context(agent_id: uuid.UUID, db: AsyncSession, permission: str):
+    require(permission)
+    agent = await db.get(Agent, agent_id)
+    if agent is None or agent.workspace_id != actor_required().workspace_id:
+        raise HTTPException(404, "Agent not found")
+    workspace_policy = await db.scalar(select(Workspace.runtime_policy).where(Workspace.id == agent.workspace_id))
+    config = platform_config()
+    return agent, workspace_policy, config
+
+
+def runtime_budget_response(agent, workspace_policy, config):
+    inherited = resolve_effective_policy(config, workspace_policy)
+    effective = resolve_effective_policy(config, workspace_policy, agent)
+    return {
+        "budget": ((agent.quality_policy or {}).get("runtime") or {}).get("budget"),
+        "workspace_budget": inherited.effective_budget.model_dump(),
+        "effective_budget": effective.effective_budget.model_dump(),
+        "source_trace": effective.trace["budget"],
+    }
+
+
+def validate_goal_proxy(agent):
+    if agent.agent_type == "proxy":
+        from agentdevstu.runtime.proxy import validate_configuration
+        try:
+            validate_configuration(agent)
+        except Exception:
+            raise HTTPException(
+                422,
+                "目标模式 Proxy 契约无效：请声明静态 object 输入字段、字段类型和允许来源，"
+                "并配置 GET/POST Endpoint",
+            ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +108,7 @@ async def create_agent(
     agent = Agent(
         workspace_id=uuid.UUID(workspace_id),
         name=payload.name,
+        collaboration=payload.collaboration.model_dump(mode="json"),
         description=payload.description,
         avatar=payload.avatar,
         agent_type=payload.agent_type,
@@ -84,6 +128,7 @@ async def create_agent(
         knowledge_base_ids=[str(i) for i in payload.knowledge_base_ids],
         tool_ids=[str(i) for i in payload.tool_ids],
     )
+    validate_goal_proxy(agent)
     if payload.web_search_enabled:
         from agentdevstu.tools.web_search import configure_search
         await configure_search(db, agent, True)
@@ -161,6 +206,13 @@ async def update_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "collaboration" in update_data:
+        if payload.collaboration is None:
+            raise HTTPException(422, "协作配置不能为 null")
+        update_data["collaboration"] = {
+            **(agent.collaboration or {}),
+            **payload.collaboration.model_dump(mode="json", exclude_unset=True),
+        }
     if "knowledge_base_ids" in update_data:
         update_data["knowledge_base_ids"] = [str(i) for i in update_data["knowledge_base_ids"]]
     if "tool_ids" in update_data:
@@ -181,6 +233,7 @@ async def update_agent(
     changed = any(getattr(agent, field) != value for field, value in update_data.items())
     for field, value in update_data.items():
         setattr(agent, field, value)
+    validate_goal_proxy(agent)
     if changed:
         agent.status = "draft"
     elif requested_status:
@@ -188,6 +241,41 @@ async def update_agent(
     await db.flush()
     await db.refresh(agent)
     return agent
+
+
+@router.get("/{agent_id}/runtime-budget")
+async def get_agent_runtime_budget(agent_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
+    agent, workspace_policy, config = await runtime_budget_context(agent_id, db, "agent.read")
+    return runtime_budget_response(agent, workspace_policy, config)
+
+
+@router.put("/{agent_id}/runtime-budget")
+async def put_agent_runtime_budget(
+    agent_id: uuid.UUID, payload: AgentRuntimeBudgetUpdate, db: Annotated[AsyncSession, Depends(get_db)]
+) -> dict:
+    agent, workspace_policy, config = await runtime_budget_context(agent_id, db, "agent.update")
+    inherited = resolve_effective_policy(config, workspace_policy).effective_budget.model_dump()
+    if payload.budget is not None:
+        try:
+            validated_budget = BudgetLimits.model_validate(payload.budget)
+        except ValueError:
+            raise HTTPException(422, "Agent 运行预算格式或范围不合法") from None
+        exceeded = [name for name in payload.budget if getattr(validated_budget, name) > inherited[name]]
+        if exceeded:
+            raise HTTPException(422, f"Agent 预算不能超过工作空间额度：{', '.join(exceeded)}")
+    quality = dict(agent.quality_policy or {})
+    runtime = dict(quality.get("runtime") or {})
+    if payload.budget is None:
+        runtime.pop("budget", None)
+    else:
+        runtime["budget"] = payload.budget
+    if runtime:
+        quality["runtime"] = runtime
+    else:
+        quality.pop("runtime", None)
+    agent.quality_policy = quality
+    await db.flush()
+    return runtime_budget_response(agent, workspace_policy, config)
 
 
 @router.delete("/{agent_id}", status_code=204)
@@ -285,6 +373,7 @@ async def _create_version_impl(
     # Create snapshot of current agent state
     snapshot = {
         "name": agent.name,
+        "collaboration": agent.collaboration,
         "description": agent.description,
         "agent_type": agent.agent_type,
         "proxy_config": agent.proxy_config,
@@ -438,6 +527,7 @@ async def resolve_proxy_agent_input(
         raise HTTPException(status_code=422, detail="仅 Proxy Agent 支持上下文解析测试")
 
     from types import SimpleNamespace
+
     from agentdevstu.agents.proxy_input_resolver import (
         prompt_resolution_enabled,
         resolve_proxy_input,

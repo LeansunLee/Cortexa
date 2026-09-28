@@ -3,7 +3,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   timeout: 60000,
-  headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AgentDevStu' }
+  headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'Cortexa' }
 })
 
 // 请求拦截器 - 添加 workspace header
@@ -21,7 +21,9 @@ export const workspaceApi = {
   create: (data) => api.post('/workspaces', data),
   get: (id) => api.get(`/workspaces/${id}`),
   update: (id, data) => api.put(`/workspaces/${id}`, data),
-  delete: (id) => api.delete(`/workspaces/${id}`)
+  delete: (id) => api.delete(`/workspaces/${id}`),
+  runtimePolicy: (id) => api.get(`/workspaces/${id}/runtime-policy`),
+  saveRuntimePolicy: (id, data) => api.put(`/workspaces/${id}/runtime-policy`, data)
 }
 
 // Config API
@@ -38,8 +40,15 @@ export const configApi = {
   saveConversationDebug: (enabled) => api.post('/config/conversation-debug', { enabled })
 }
 
+export const debugPreferenceApi = {
+  get: () => api.get('/me/conversation-debug'),
+  save: enabled => api.put('/me/conversation-debug', { enabled })
+}
+
 // Agent API
 export const agentApi = {
+  runtimeBudget: id => api.get(`/agents/${id}/runtime-budget`),
+  saveRuntimeBudget: (id, budget) => api.put(`/agents/${id}/runtime-budget`, { budget }),
   resources: id => api.get(`/agents/${id}/resources`),
   list: (wsId) => api.get('/agents', { params: { workspace_id: wsId } }),
   get: (id) => api.get(`/agents/${id}`),
@@ -207,6 +216,7 @@ export const chatUploadApi = {
 
 // Agent Collaboration API
 export const collaborationApi = {
+  goalResult: (conv, goal, action) => api.get(`/conversations/${conv}/goals/${goal}/collaborations/${action}`),
   background: (payload) => api.post('/collaboration/background', payload),
   inputSnapshot: (conversationId, snapshotId) => api.get(`/collaboration/input/${conversationId}`, {params: {snapshot_id: snapshotId}}),
   draftOptions: (agentId) => api.get('/collaboration/draft-options', {params: {agent_id: agentId}}),
@@ -280,4 +290,13 @@ export const workApi = {
   extract: (id, message_id) => api.post(`/conversations/${id}/work-candidates/extract`, { message_id }),
   accept: (id, data) => api.post(`/work-candidates/${id}/accept`, data),
   ignore: id => api.post(`/work-candidates/${id}/reject`),
+}
+
+// Goal-scoped execution and collaboration decisions; streams use fetch in Chat.
+export const goalApi = {
+  route: (conv, data) => api.post(`/conversations/${conv}/message-route`, data),
+  options: conv => api.get(`/conversations/${conv}/goal-options`),
+  get: (conv, goal) => api.get(`/conversations/${conv}/goals/${goal}`),
+  candidates: (conv, goal) => api.get(`/conversations/${conv}/goals/${goal}/candidates`),
+  authorize: (conv, goal, data) => api.post(`/conversations/${conv}/goals/${goal}/authorization`, data),
 }

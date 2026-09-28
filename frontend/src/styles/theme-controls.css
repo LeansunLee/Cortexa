@@ -176,6 +176,30 @@
 
 /* --- Glass material surfaces ---
    Large panels use restrained edge-only sheen; compact menus keep stronger refraction. */
+:root[data-color-theme=glass] {
+  --glass-field-border: color-mix(in srgb, var(--text) 28%, var(--glass-edge-border-soft));
+}
+:root[data-theme=dark][data-color-theme=glass] {
+  --glass-field-border: color-mix(in srgb, var(--text) 34%, var(--glass-edge-border-soft));
+}
+:root[data-color-theme=glass] body .agent-budget-card {
+  background-color: var(--glass-panel-background);
+  background-image: var(--glass-panel-gradient);
+  border-color: var(--glass-edge-border-soft);
+  box-shadow: var(--glass-edge-shadow);
+  backdrop-filter: var(--glass-surface-backdrop);
+  -webkit-backdrop-filter: var(--glass-surface-backdrop);
+}
+:root[data-color-theme=glass] body .agent-budget-field > input {
+  background-color: var(--glass-search-background);
+  border-color: var(--glass-field-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .56)), 0 1px 3px color-mix(in srgb, var(--text) 10%, transparent);
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] body .agent-budget-field > input:disabled {
+  background-color: var(--glass-surface-background-strong);
+}
 :root[data-color-theme=glass] body :is(.card, .panel, .work-panel, .agent-card, .knowledge-card, .work-card, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .stat-card, .action-card, .meeting-card, .workflow-card, .workspace-card, .feature-card, .llm-provider-card, .capability-panel, .debug-panel, .event-card, .agent-status-panel, .collab-card, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .kb-card, .prompt-resolution-card, .role-preset-card, .preset-card-item, .chat-input-wrap, .theme-demo) {
   position: relative;
   isolation: isolate;
@@ -344,8 +368,8 @@
 }
 :root[data-color-theme=glass] body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea) {
   background-color: var(--glass-search-background);
-  border-color: var(--glass-edge-border-soft);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .56));
+  border-color: var(--glass-field-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .56)), 0 1px 3px color-mix(in srgb, var(--text) 10%, transparent);
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
 }
@@ -353,8 +377,12 @@
   border-color: var(--glass-edge-border-soft);
 }
 :root[data-color-theme=glass] body :is(input, textarea, select):focus-visible {
-  outline: none;
-  box-shadow: none;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+:root[data-color-theme=glass] body :is(input, textarea, select)[aria-invalid=true] {
+  border-color: var(--danger);
+  outline-color: var(--danger);
 }
 
 /* Provider forms are rendered in a fixed modal. Keep their fields opaque enough
