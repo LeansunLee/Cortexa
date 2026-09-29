@@ -127,7 +127,7 @@
         <div class="theme-demo-grid" aria-label="常用控件效果预览">
           <div class="theme-demo-field">
             <span class="theme-demo-field-title">下拉列表</span>
-            <SearchSelect v-model="previewSelect" :options="previewTabs" :searchable="false" aria-label="预览下拉列表" />
+            <SearchSelect v-model="previewSelect" :options="previewTabs" searchable aria-label="预览下拉列表" />
           </div>
           <label class="theme-demo-field">
             <span class="theme-demo-field-title">文本框</span>
@@ -144,7 +144,7 @@
               <label class="theme-demo-choice"><input v-model="previewRadio" type="radio" value="second" name="theme-preview-radio" /> 选项二</label>
             </div>
           </div>
-          <div class="theme-demo-field">
+          <div class="theme-demo-field theme-demo-switch-field">
             <span class="theme-demo-field-title">开关</span>
             <label class="theme-demo-switch capability-switch">
               <input v-model="previewSwitch" type="checkbox" role="switch" aria-label="预览开关" />
@@ -347,6 +347,7 @@ watch(tempTheme, persistTheme)
 .theme-demo-choice { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; width: fit-content; color: var(--text); cursor: pointer; white-space: nowrap; }
 .theme-demo-choice input { flex: none; margin: 0; cursor: pointer; }
 .theme-demo-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; width: fit-content; min-height: 24px; cursor: pointer; color: var(--text); }
+.theme-demo-switch-field .theme-demo-switch { align-self: center; margin-block: auto; }
 .theme-demo-switch input { position: absolute; width: 38px; height: 22px; margin: 0; opacity: 0; cursor: pointer; }
 .theme-demo-switch .capability-switch-track { display: block; flex: 0 0 38px; width: 38px; height: 22px; border-radius: 12px; background: var(--border); pointer-events: none; transition: background .15s; }
 .theme-demo-switch .capability-switch-track::after { content: ''; display: block; width: 16px; height: 16px; margin: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
