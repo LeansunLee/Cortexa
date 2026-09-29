@@ -313,20 +313,15 @@
 }
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
   background:
-    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .26)) 0%, transparent 10%),
-    linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .12)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 100%);
-  filter: saturate(1.05) contrast(1.02);
+    radial-gradient(140px 44px at 8% 0%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .42)), transparent),
+    radial-gradient(110px 52px at 96% 100%, rgba(var(--glass-rgb),calc(var(--glass-edge-alpha) * .28)), transparent);
 }
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
-  background:
-    radial-gradient(ellipse at 50% -18%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)) 0%, transparent 15%),
-    radial-gradient(ellipse at 101% 12%, rgba(var(--glass-rgb), calc(var(--glass-edge-alpha) * .16)) 0%, transparent 15%),
-    linear-gradient(93deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)) 0%, transparent 9%, transparent 91%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 100%);
+  background: none;
   box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .54)),
-    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .90)),
-    inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .22)),
-    inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .18));
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .36)),
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)),
+    inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .20));
 }
 :root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   background-color: var(--glass-panel-background, var(--glass-surface-background-strong));

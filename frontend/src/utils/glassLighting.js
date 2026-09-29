@@ -67,8 +67,6 @@ export function installGlassLighting() {
     if (!pointer || document.documentElement.dataset.colorTheme !== 'glass') return
     const frosted = document.documentElement.dataset.glassFinish === 'frosted'
     const maxDistance = frosted ? 95 : 130
-    const colorStrength = frosted ? .10 : .22
-    const whiteStrength = frosted ? .12 : .20
     const setback = frosted ? 36 : 28
     const progress = reducedMotion.matches ? 1 : 1 - Math.exp(-Math.min(lastTime ? time - lastTime : 16, 50) / 150)
     lastTime = time
@@ -93,6 +91,11 @@ export function installGlassLighting() {
       const whiteRy = (52 + 38 * Math.abs(light.nx)).toFixed(2)
       const strength = (1 - distance / maxDistance) ** (frosted ? 2.4 : 1.7)
       const style = getComputedStyle(element)
+      // Read the surface value so personalization previews follow their own
+      // slider before the theme is saved.
+      const edgeAlpha = parseFloat(style.getPropertyValue('--glass-edge-alpha')) || .09
+      const colorStrength = frosted ? .10 : edgeAlpha * .50
+      const whiteStrength = frosted ? .12 : edgeAlpha * .70
       // Swatches define their own reflection color; other surfaces inherit the theme.
       const color = style.getPropertyValue('--glass-light-color').trim()
       if (!color) continue
@@ -102,7 +105,7 @@ export function installGlassLighting() {
         priority: element.style.getPropertyPriority('background-image'),
       })
       // Keep refraction local to the edge; an unbounded conic layer lights the whole card.
-      const lens = frosted ? '' : ', radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * .07) + '), transparent 82%)'
+      const lens = frosted ? '' : ', radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * edgeAlpha * .25) + '), transparent 82%)'
       // Dark panel adapters use !important; the temporary light must layer above them too.
       element.style.setProperty('background-image', 'radial-gradient(' + rx + 'px ' + ry + 'px at ' + x + 'px ' + y + 'px, rgba(' + color + ',' + (strength * colorStrength) + '), transparent 100%), radial-gradient(' + whiteRx + 'px ' + whiteRy + 'px at ' + x + 'px ' + y + 'px, rgba(255,255,255,' + (strength * whiteStrength) + '), transparent 100%)' + lens + (base === 'none' ? '' : ', ' + base), 'important')
     }

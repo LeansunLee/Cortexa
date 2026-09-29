@@ -39,12 +39,15 @@ export function glassImage(rgb, reflection = 0.16, finish = 'clear') {
     frostedGrain,
     'linear-gradient(145deg, light-dark(rgba(255,255,255,.58),rgba(255,255,255,.15)) 0%, light-dark(rgba(244,248,252,.38),rgba(255,255,255,.075)) 58%, light-dark(rgba(235,241,247,.50),rgba(255,255,255,.11)) 100%)',
   ].join(', ')
+  // A clear lens has a quiet centre and narrow highlights near its perimeter.
+  // Keep the reflection parameter local to this surface (buttons, swatches,
+  // navigation) instead of painting a bright conic wash over the whole shape.
+  const intensity = Math.max(0, Math.min(1, Number(reflection) || 0))
   return [
-    `radial-gradient(ellipse at 105% 108%, rgba(${color},calc(var(--glass-edge-alpha, .10) * 1.45)) 0%, transparent 68%)`,
-    `radial-gradient(ellipse at -4% -8%, rgba(${color},calc(var(--glass-edge-alpha, .10) * .42)) 0%, transparent 44%)`,
-    'conic-gradient(from 222deg at 12% 3%, rgba(255,255,255,.54), transparent 16%, rgba(255,255,255,.12) 30%, transparent 48%, rgba(255,255,255,.28) 72%, transparent 100%)',
-    'linear-gradient(175deg, rgba(255,255,255,.34), transparent 18%)',
-    'linear-gradient(155deg, light-dark(rgba(255,255,255,.32),rgba(255,255,255,.10)) 0%, transparent 34%, light-dark(rgba(255,255,255,.05),rgba(255,255,255,.018)) 68%, light-dark(rgba(255,255,255,.24),rgba(255,255,255,.07)) 100%)',
+    `radial-gradient(110px 58px at 100% 100%, rgba(${color},calc(var(--glass-edge-alpha, .10) * ${(.48 + intensity).toFixed(2)})) 0%, transparent 100%)`,
+    `radial-gradient(100px 42px at 0% 0%, rgba(255,255,255,calc(var(--glass-edge-alpha, .10) * ${(.32 + intensity).toFixed(2)})) 0%, transparent 100%)`,
+    `linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha, .10) * ${(.24 + intensity).toFixed(2)})) 0%, transparent 16%)`,
+    'linear-gradient(150deg, light-dark(rgba(255,255,255,.045),rgba(255,255,255,.025)), transparent 42%, light-dark(rgba(255,255,255,.02),rgba(255,255,255,.015)))',
   ].join(', ')
 }
 
@@ -55,7 +58,7 @@ export function glassSwatch(value, finish = 'clear', glow = 20) {
     '--glass-light-color': rgb.join(','),
     '--glass-edge-alpha': glassEdgeAlpha(glow),
     backgroundColor: frosted ? 'light-dark(rgba(240,245,249,.82),rgba(227,235,243,.16))' : 'light-dark(rgba(255,255,255,.10),rgba(255,255,255,.018))',
-    backgroundImage: glassImage(rgb, frosted ? 0.22 : 0.26, finish),
+    backgroundImage: glassImage(rgb, frosted ? 0.22 : 0.20, finish),
     backgroundOrigin: 'border-box',
     backgroundRepeat: 'no-repeat',
     boxShadow: frosted
