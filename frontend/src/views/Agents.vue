@@ -241,29 +241,6 @@
             </div>
           </div>
 
-          <!-- 工作方式 -->
-          <div v-if="currentSection === 'behavior' && editingAgent.agent_type !== 'proxy'" class="section">
-            <h3>工作方式</h3>
-            <div class="form-group">
-              <label>Behavior</label>
-              <textarea v-model="editingAgent.behavior" rows="5" 
-                placeholder="描述智能体的工作流程和方式"></textarea>
-              <small class="field-usage-note">当前运行链路尚未把此字段加入对话模型上下文。</small>
-            </div>
-            <div class="form-group">
-              <label>预设工作方式（点击自动填入）</label>
-              <div class="preset-card-grid">
-                <div v-for="bp in behaviorPresets" :key="bp.name" class="preset-card-item" @click="applyBehaviorPreset(bp)">
-                  <div class="preset-card-icon"><component :is="iconComponents[bp.icon]" :size="18" /></div>
-                  <div class="preset-card-info">
-                    <div class="preset-card-name">{{ bp.name }}</div>
-                    <div class="preset-card-desc">{{ bp.desc }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Proxy 配置 -->
           <div v-if="currentSection === 'proxy' && editingAgent.agent_type === 'proxy'" class="section">
             <h3><Link :size="18" /> Proxy 代理配置</h3>
@@ -869,7 +846,6 @@ const allSectionGroups = [
     { id: 'personality', icon: 'Smile', name: '人格' },
     { id: 'role', icon: 'Briefcase', name: '职责' },
     { id: 'boundary', icon: 'Shield', name: '工作边界' },
-    { id: 'behavior', icon: 'Settings', name: '工作方式' },
   ]},
   { label: '能力', items: [
     { id: 'proxy', icon: 'Link', name: 'Proxy 配置' },
@@ -969,24 +945,6 @@ const applyBoundaryPreset = (bp) => {
   if (!editingAgent.value) return
   editingAgent.value.boundaries = bp.value
   showToast('已填入「' + bp.name + '」边界预设')
-}
-
-// --- Behavior Presets ---
-const behaviorPresets = [
-  { icon: 'FileText', name: '结构化输出', desc: '分步骤、分模块输出，注重逻辑层次', value: '【工作方式 - 结构化输出】\n1. 先理解问题，确认关键需求\n2. 拆解为子任务，按优先级排列\n3. 逐项分析并输出结论\n4. 汇总关键发现和行动建议\n5. 标注需要人工确认的事项' },
-  { icon: 'RefreshCw', name: '迭代式', desc: '先出草稿，再逐步完善优化', value: '【工作方式 - 迭代式】\n1. 快速输出初版方案（80%完成度）\n2. 自我审查，找出不足和遗漏\n3. 补充细节，优化表达\n4. 再次检查一致性和完整性\n5. 输出最终版本并标注改动点' },
-  { icon: 'HelpCircle', name: '追问式', desc: '先提问澄清，再给出精准方案', value: '【工作方式 - 追问式】\n1. 分析输入，识别模糊或缺失信息\n2. 提出关键澄清问题（最多3个）\n3. 基于澄清结果调整理解\n4. 给出针对性方案\n5. 说明假设前提和适用范围' },
-  { icon: 'BarChart3', name: '数据驱动', desc: '基于数据和证据做判断，量化分析', value: '【工作方式 - 数据驱动】\n1. 收集相关数据和事实\n2. 进行定量分析和对比\n3. 基于数据得出结论\n4. 用数据支撑每条建议\n5. 标注数据来源和置信度' },
-  { icon: 'Brain', name: '思维链', desc: '展示完整推理过程，逐步推导', value: '【工作方式 - 思维链】\n1. 明确问题本质和约束条件\n2. 列出可能的解决路径\n3. 评估每条路径的优劣\n4. 选择最优路径并推导\n5. 给出结论和备选方案' },
-  { icon: 'Zap', name: '敏捷响应', desc: '快速给出核心结论，细节按需补充', value: '【工作方式 - 敏捷响应】\n1. 直接给出核心结论或操作建议\n2. 简要说明理由（1-2句）\n3. 标注可深入展开的方向\n4. 根据反馈决定是否展开细节\n5. 保持回复简洁高效' },
-  { icon: 'Target', name: '目标导向', desc: '围绕最终目标反推，聚焦可落地动作', value: '【工作方式 - 目标导向】\n1. 明确最终目标和成功标准\n2. 反推达成目标的关键路径\n3. 识别当前差距和障碍\n4. 给出具体可执行的下一步\n5. 量化预期效果和时间线' },
-  { icon: 'Search', name: '根因分析', desc: '深入分析问题本质，不止于表面', value: '【工作方式 - 根因分析】\n1. 描述问题现象和影响范围\n2. 用5Why或鱼骨图追溯根因\n3. 区分症状和根本原因\n4. 针对根因设计解决方案\n5. 制定预防措施防止复发' },
-]
-
-const applyBehaviorPreset = (bp) => {
-  if (!editingAgent.value) return
-  editingAgent.value.behavior = bp.value
-  showToast('已填入「' + bp.name + '」工作方式预设')
 }
 
 // --- Avatar Crop ---
