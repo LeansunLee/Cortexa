@@ -90,7 +90,6 @@
 
         <!-- 中间编辑区 -->
         <div class="editor-content">
-          <p class="llm-context-legend"><LlmContextHint text="字段内容会在相应场景进入平台 LLM 的上下文。" collaboration-text="字段会用于协作发现、选择、参数构造或协作执行。" /> 标识说明字段如何用于模型和协作，悬浮或聚焦图标可查看具体用途</p>
           <!-- 基础信息 -->
           <div v-if="currentSection === 'basic'" class="section">
             <h3>基础信息</h3>
@@ -1532,8 +1531,6 @@ onMounted(() => {
 
 /* Main Content */
 .editor-content { flex: 1; min-width: 0; overflow-y: auto; padding: 28px 32px; background: var(--bg); }
-.llm-context-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0 0 18px; color: var(--text3); font-size: 12px; }
-.llm-context-legend :deep(.context-hints) { margin-left: 0; }
 .field-usage-note { display: block; margin-top: 6px; color: var(--text3); font-size: 12px; line-height: 1.5; }
 .section { width: 100%; min-width: 0; max-width: none; }
 .section h3 {

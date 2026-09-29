@@ -1,11 +1,11 @@
 <template>
   <span class="context-hints">
-    <span class="llm-context-hint" tabindex="0" :aria-label="`LLM：${text}`" :title="text" @click.stop>
+    <span class="llm-context-hint" tabindex="0" :aria-label="`LLM：${text}`" @click.stop>
       <Sparkles :size="11" aria-hidden="true" />
       <span>LLM</span>
       <span class="llm-context-tooltip" aria-hidden="true">{{ text }}</span>
     </span>
-    <span v-if="collaborationText" class="collaboration-context-hint" tabindex="0" :aria-label="`协同：${collaborationText}`" :title="collaborationText" @click.stop>
+    <span v-if="collaborationText" class="collaboration-context-hint" tabindex="0" :aria-label="`协同：${collaborationText}`" @click.stop>
       <UsersRound :size="11" aria-hidden="true" />
       <span>协同</span>
       <span class="collaboration-context-tooltip" aria-hidden="true">{{ collaborationText }}</span>
