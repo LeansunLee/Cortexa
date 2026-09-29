@@ -349,10 +349,10 @@ watch(tempTheme, persistTheme)
 .theme-demo-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; width: fit-content; min-height: 24px; cursor: pointer; color: var(--text); }
 .theme-demo-switch-field .theme-demo-switch { align-self: center; margin-block: auto; }
 .theme-demo-switch input { position: absolute; width: 38px; height: 22px; margin: 0; opacity: 0; cursor: pointer; }
-.theme-demo-switch .capability-switch-track { display: block; flex: 0 0 38px; width: 38px; height: 22px; border-radius: 12px; background: var(--border); pointer-events: none; transition: background .15s; }
-.theme-demo-switch .capability-switch-track::after { content: ''; display: block; width: 16px; height: 16px; margin: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.theme-demo-switch .capability-switch-track { position: relative; display: block; flex: 0 0 38px; box-sizing: border-box; width: 38px; height: 22px; border-radius: 12px; background: var(--border); pointer-events: none; transition: background .15s; }
+.theme-demo-switch .capability-switch-track::after { content: ''; position: absolute; top: 50%; left: 3px; display: block; width: 16px; height: 16px; margin: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transform: translateY(-50%); transition: transform .15s; }
 .theme-demo-switch input:checked + .capability-switch-track { background: var(--primary); }
-.theme-demo-switch input:checked + .capability-switch-track::after { transform: translateX(16px); }
+.theme-demo-switch input:checked + .capability-switch-track::after { transform: translate(16px, -50%); }
 .theme-demo-switch input:focus-visible + .capability-switch-track { outline: 2px solid var(--primary); outline-offset: 3px; }
 .theme-demo-tabs { margin: 0; gap: 2px; }
 .theme-demo-tabs .tab { padding: 5px 10px; font-size: 12px; }
