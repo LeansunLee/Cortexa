@@ -141,8 +141,9 @@
               </div>
             </div>
             <div class="form-group">
-              <label>Agent 名称 * <LlmContextHint :text="editingAgent.agent_type === 'proxy' ? '作为协作候选的名称提供给主 Agent 模型；Proxy 自身由外部系统执行。' : '写入本 Agent 的系统提示词，定义模型当前身份；参与协作时也作为候选名称提供给主 Agent。'" collaboration-text="作为候选身份提供给发起协作的 Agent，帮助其识别并选择协作者。" /></label>
+              <label>Agent 名称 *</label>
               <input v-model="editingAgent.name" placeholder="例如：Peter、产品经理" />
+              <small class="field-usage-note">展示给用户；@ 提及时按此名称查找。</small>
             </div>
             <div class="form-group">
               <label>智能体类型</label>
@@ -164,8 +165,9 @@
               LLM 智能体由本平台调用模型，使用工作空间规则及人格、角色、职责等提示词，并可使用本地知识库和数据能力。
             </div>
             <div class="form-group">
-              <label>能力简介（供协同发现） <LlmContextHint text="用于匹配协作候选；成为候选后，作为能力说明提供给发起协作的主 Agent 模型。不会加入本 Agent 自己的系统提示词。" collaboration-text="其他 Agent 根据这段简介发现并判断是否邀请本 Agent。" /></label>
-              <textarea v-model="editingAgent.description" rows="3" placeholder="例如：擅长研究市场与竞品，可协助制定销售计划"></textarea>
+              <label>能力简介（展示给用户）</label>
+              <textarea v-model="editingAgent.description" rows="3" placeholder="向用户介绍这个 Agent 能提供什么帮助"></textarea>
+              <small class="field-usage-note">仅供用户了解能力，协作匹配请填写“角色与职责”。</small>
             </div>
           </div>
 
@@ -184,16 +186,15 @@
           </div>
 
           <!-- 职责 -->
-          <div v-if="currentSection === 'role' && editingAgent.agent_type !== 'proxy'" class="section">
+          <div v-if="currentSection === 'role'" class="section">
             <h3>角色与职责</h3>
-            <p class="section-desc">这里定义 Agent 自己如何执行任务；基础信息中的能力简介用于协同发现。</p>
+            <p class="section-desc">业务角色定义模型身份，执行职责定义任务范围；协作发现与选择也依据这两项配置。</p>
             <div class="form-group">
-              <label>业务角色（可选） <LlmContextHint text="作为「角色」写入本 Agent 的系统提示词，帮助模型理解当前扮演的业务身份。" collaboration-text="在 @ 协作候选列表中展示，也可按此角色名称搜索 Agent。" /></label>
-              <input v-model="editingAgent.role" placeholder="例如：名称为 Peter 时填写「产品经理」" />
-              <small class="field-usage-note">仅在名称未说明业务身份时填写；与 Agent 名称相同可留空。</small>
+              <label>业务角色 * <LlmContextHint text="LLM Agent 用它定义自身身份；协作时也作为候选角色提供给发起 Agent 模型。" collaboration-text="用于协作候选匹配和能力说明；@ 提及仍只按 Agent 名称搜索。" /></label>
+              <input ref="businessRoleInput" v-model="editingAgent.role" required aria-required="true" placeholder="例如：产品经理" />
             </div>
             <div class="form-group">
-              <label>执行职责 <LlmContextHint text="作为「职责」写入本 Agent 的系统提示词，指导模型处理任务；此字段不参与协作候选的词法匹配。" /></label>
+              <label>执行职责 <LlmContextHint text="写入 LLM Agent 的系统提示词；协作时作为能力说明提供给发起 Agent 模型。" collaboration-text="用于协作候选匹配，帮助判断这个 Agent 能执行哪些任务。" /></label>
               <textarea v-model="editingAgent.responsibilities" rows="5" 
                 placeholder="写具体任务和执行要求，例如：分析销售数据、识别风险、输出行动建议"></textarea>
             </div>
@@ -570,6 +571,7 @@ import axios from 'axios'
 
 const agents = ref([])
 const editingAgent = ref(null)
+const businessRoleInput = ref(null)
 const runtimeBudgetLoaded = ref(false)
 const runtimeBudgetLoading = ref(false)
 const runtimeBudgetSaving = ref(false)
@@ -856,7 +858,7 @@ const allSectionGroups = [
 const sectionGroups = computed(() => allSectionGroups.map(group => ({
   ...group,
   items: group.items.filter(item => editingAgent.value?.agent_type === 'proxy'
-    ? ['basic', 'proxy', 'schema', 'versions'].includes(item.id)
+    ? ['basic', 'role', 'proxy', 'schema', 'versions'].includes(item.id)
     : item.id !== 'proxy'),
 })).filter(group => group.items.length))
 watch(sectionGroups, groups => {
@@ -918,7 +920,7 @@ const appendPersonality = (trait) => {
 
 const applyRolePreset = (rp) => {
   if (!editingAgent.value) return
-  editingAgent.value.role = editingAgent.value.name?.trim().toLocaleLowerCase() === rp.role.toLocaleLowerCase() ? '' : rp.role
+  editingAgent.value.role = rp.role
   editingAgent.value.responsibilities = rp.responsibilities
   showToast('已填入「' + rp.role + '」预设内容')
 }
@@ -1210,32 +1212,44 @@ const editAgent = (agent) => {
 }
 
 const saveAndExit = async () => {
-  if (can('agent.update')) await saveAgent()
+  if (can('agent.update') && !await saveAgent()) return
   editingAgent.value = null
   loadAgents()
 }
 
+const requireBusinessRole = () => {
+  if (editingAgent.value?.role?.trim()) return true
+  currentSection.value = 'role'
+  showToast('请填写业务角色', 'error')
+  nextTick(() => businessRoleInput.value?.focus())
+  return false
+}
+
 const saveAgent = async () => {
-  if (!editingAgent.value) return
+  if (!editingAgent.value || !requireBusinessRole()) return false
   saving.value = true
   try {
     const { id, ...data } = editingAgent.value
+    data.role = data.role.trim()
     const result = await agentApi.update(id, data)
     editingAgent.value = normalizeAgent(result.data)
     showToast(result.data.status === 'draft' ? '草稿已保存，发布后可供用户使用' : '保存成功')
+    return true
   } catch (e) {
     alert('保存失败: ' + (e.response?.data?.detail || e.message))
+    return false
   } finally {
     saving.value = false
   }
 }
 
 const publishAgent = async () => {
-  if (!editingAgent.value) return
+  if (!editingAgent.value || !requireBusinessRole()) return
   publishing.value = true
   try {
     // Auto-save before publish
     const { id, ...saveData } = editingAgent.value
+    saveData.role = saveData.role.trim()
     if (can('agent.update')) await agentApi.update(id, saveData)
     
     const { data } = await agentApi.publish(id)

@@ -353,6 +353,10 @@ async def stream_meeting(
             participants = list(result.scalars().all())
             host = next((p for p in participants if p.is_host), participants[0] if participants else None)
             non_host = [p for p in participants if not p.is_host]
+            participant_labels = {
+                p.id: f"参会者{index + 1}（{p.role or 'AI助手'}）"
+                for index, p in enumerate(participants)
+            }
 
             if not non_host:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'No participants'})}\n\n"
@@ -472,7 +476,7 @@ async def stream_meeting(
                         db.add(msg)
                         await db.flush()
 
-                        all_messages.append({"role": p.name, "content": agent_reply, "round": round_num})
+                        all_messages.append({"role": participant_labels[p.id], "content": agent_reply, "round": round_num})
 
                         yield f"data: {json.dumps({'type': 'agent_message', 'round': round_num, 'agent': p.name, 'agent_id': str(p.agent_id), 'content': agent_reply, 'tool_calls': tool_calls_log, 'message_id': str(msg.id)})}\n\n"
 
@@ -512,7 +516,7 @@ async def stream_meeting(
                             db.add(msg)
                             await db.flush()
 
-                            all_messages.append({"role": host.name, "content": host_summary, "round": round_num, "type": host_msg_type})
+                            all_messages.append({"role": participant_labels[host.id], "content": host_summary, "round": round_num, "type": host_msg_type})
 
                             yield f"data: {json.dumps({'type': 'host_message', 'round': round_num, 'agent': host.name, 'content': host_summary, 'message_type': host_msg_type, 'conflict': conflict_detected, 'message_id': str(msg.id)})}\n\n"
 
@@ -613,8 +617,6 @@ def _read_attachments(attachments: list) -> str:
 
 def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachments: list | None = None, tool_names: list[str] | None = None) -> str:
     parts = [f"你正在参加一个 AI 会议。"]
-    if agent.name:
-        parts.append(f"你是{agent.name}。")
     if agent.role:
         parts.append(f"你的角色：{agent.role}")
     if agent.responsibilities:
@@ -657,9 +659,7 @@ def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachme
 
 
 def _build_host_summary_prompt(agent: Agent, topic: str, round_num: int, max_rounds: int) -> str:
-    parts = [f"你是本次会议的主持人。"]
-    if agent.name:
-        parts[0] = f"你是{agent.name}，本次会议的主持人。"
+    parts = [f"你是本次会议的主持人，业务角色是{agent.role or 'AI助手'}。"]
 
     parts.append(f"\n会议议题：{topic}")
     parts.append(f"当前是第 {round_num}/{max_rounds} 轮讨论。")
@@ -731,9 +731,11 @@ def _generate_todos_sync(topic: str, conclusion: str, participants: list) -> lis
         from cortexa.config.llm_providers import create_llm
         model = create_llm()
 
-        participant_info = "\n".join([
-            f"- {p.name} ({p.role or '未指定角色'})" for p in participants
-        ])
+        participants_by_ref = {f"P{index + 1}": p for index, p in enumerate(participants)}
+        participant_info = "\n".join(
+            f"- {ref}: {participant.role or 'AI助手'}"
+            for ref, participant in participants_by_ref.items()
+        )
 
         prompt = f"""根据以下会议结论，生成待办事项列表。
 
@@ -748,7 +750,7 @@ def _generate_todos_sync(topic: str, conclusion: str, participants: list) -> lis
 请输出 JSON 数组格式的待办事项，每个事项包含：
 - title: 任务标题
 - description: 任务描述
-- assignee_name: 负责人名称（从参会人员中选择最合适的）
+- assignee_ref: 负责人编号（从参会人员编号中选择最合适的，例如 P1）
 - priority: 优先级 (high/medium/low)
 - due_date: 建议截止日期 (YYYY-MM-DD 格式，基于今天 {datetime.now().strftime('%Y-%m-%d')} 推算)
 
@@ -762,7 +764,18 @@ def _generate_todos_sync(topic: str, conclusion: str, participants: list) -> lis
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 
-        return json.loads(text)
+        todos = json.loads(text)
+        if not isinstance(todos, list):
+            raise ValueError("待办事项必须是数组")
+        for todo in todos:
+            if not isinstance(todo, dict):
+                raise ValueError("待办事项格式错误")
+            participant = participants_by_ref.get(str(todo.pop("assignee_ref", "")))
+            todo.pop("assignee_name", None)
+            todo.pop("assignee_agent_id", None)
+            if participant:
+                todo["assignee_agent_id"] = str(participant.agent_id)
+                todo["assignee_name"] = participant.name
+        return todos
     except Exception:
         return [{"title": topic, "description": "请根据会议结论手动创建待办事项", "priority": "medium"}]
-

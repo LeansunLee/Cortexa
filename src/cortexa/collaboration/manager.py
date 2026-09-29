@@ -62,7 +62,7 @@ async def list_collaboration_agents(
     列出当前工作空间中可用于协作的 Agent。
 
     Returns:
-        Agent 列表，包含 id, name, description, avatar, role, status
+        Agent 列表，包含供 @ 搜索的名称和供用户辨认的业务角色。
     """
     query = select(Agent).where(Agent.status == "active")
     if workspace_id:
@@ -77,9 +77,9 @@ async def list_collaboration_agents(
         {
             "id": str(a.id),
             "name": a.name,
-            "description": a.description or "",
             "avatar": a.avatar or "🤖",
             "role": a.role or "",
+            "responsibilities": a.responsibilities or "",
             "status": a.status,
             "agent_type": a.agent_type,
             "workspace_id": str(a.workspace_id),
@@ -251,7 +251,7 @@ async def execute_handoff(
         return AgentHandoffResult(
             status="timeout",
             input_snapshot=handoff.input_snapshot,
-            summary=f"Agent {target_agent.name} 协作超时",
+            summary=f"{target_agent.role or '目标 Agent'} 协作超时",
             result=f"目标 Agent 在 {timeout_seconds:g} 秒内未完成协作任务",
             completed_at=datetime.now(timezone.utc).isoformat(),
             duration_ms=duration_ms,
@@ -272,7 +272,7 @@ async def execute_handoff(
         return AgentHandoffResult(
             status="failed",
             input_snapshot=handoff.input_snapshot,
-            summary=f"Agent {target_agent.name} 协作失败",
+            summary=f"{target_agent.role or '目标 Agent'} 协作失败",
             result=f"协作执行出错：{error_msg}",
             completed_at=datetime.now(timezone.utc).isoformat(),
             duration_ms=duration_ms,

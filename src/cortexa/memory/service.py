@@ -58,7 +58,7 @@ async def extract_memories(agent, conversation_id, current_message, recent_messa
                         "role": "user",
                         "content": json.dumps(
                             {
-                                "agent": agent.name,
+                                "role": agent.role,
                                 "responsibilities": agent.responsibilities,
                                 "boundaries": agent.boundaries,
                                 "current_time": str(now()),

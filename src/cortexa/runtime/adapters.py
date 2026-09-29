@@ -209,10 +209,9 @@ def agent_adapter(agent) -> CapabilityAdapter:
         CapabilityDescriptor(
             id=f"agent:{agent.id}",
             workspace_id=str(agent.workspace_id),
-            name=agent.name,
+            name=agent.role or "AI助手",
             type=CapabilityType.AGENT,
-            description=agent.description or "",
-            domains=agent.tags or [],
+            description=agent.responsibilities or "",
             input_schema=_schema(agent.input_schema),
             output_schema=_schema(agent.output_schema),
             availability=_availability(agent.status),

@@ -27,9 +27,11 @@ def agent():
     return SimpleNamespace(
         id="agent-id",
         workspace_id="ws",
-        name="销售",
-        description="销售数据分析",
-        tags=["销售"],
+        name="Peter 用户名",
+        description="面向用户的简介",
+        role="销售分析师",
+        responsibilities="分析销售数据",
+        tags=["展示标签"],
         input_schema={"type": "object"},
         output_schema={},
         status="active",
@@ -73,6 +75,16 @@ def test_descriptor_reuses_effective_schema_without_copying_secrets():
     assert "secret" not in agent_adapter(agent()).descriptor.model_dump_json()
     assert "private-host" not in agent_adapter(agent()).descriptor.model_dump_json()
     assert agent_adapter(agent()).descriptor.context_policy["strict_projection"] is False
+    descriptor = agent_adapter(agent()).descriptor
+    assert descriptor.name == "销售分析师"
+    assert descriptor.description == "分析销售数据"
+    assert "Peter 用户名" not in descriptor.model_dump_json()
+    assert "面向用户的简介" not in descriptor.model_dump_json()
+    assert "展示标签" not in descriptor.model_dump_json()
+    scope = MatchScope("ws", frozenset({descriptor.id}))
+    assert match_capabilities("分析销售", [descriptor], scope)
+    assert not match_capabilities("Peter 用户名", [descriptor], scope)
+    assert not match_capabilities("面向用户的简介", [descriptor], scope)
 
 
 def test_matcher_filters_scope_availability_and_reserved_types_before_ranking():

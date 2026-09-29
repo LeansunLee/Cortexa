@@ -58,7 +58,7 @@ class TestFuzzyMatch:
     def test_partial_match(self):
         from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场营销部", "产品部", "财务部"]
-        assert fuzzy_match_agent("市场", names) == "市场营销部"
+        assert fuzzy_match_agent("市场", names) is None
 
     def test_no_match(self):
         from cortexa.collaboration.mention_parser import fuzzy_match_agent
@@ -74,7 +74,7 @@ class TestFuzzyMatch:
         from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场营销部", "产品研发部"]
         result = fuzzy_match_agent("marketing", names)
-        assert result == "市场营销部"
+        assert result is None
 
 
 def test_email_address_is_not_an_agent_mention():
@@ -161,7 +161,8 @@ class TestHandoffPromptBuilding:
         from cortexa.collaboration.manager import _build_handoff_system_prompt
         prompt = _build_handoff_system_prompt(source, target, handoff)
 
-        assert "你是市场部" in prompt
+        assert "你是市场分析师" in prompt
+        assert "你是市场部" not in prompt
         assert "市场分析师" in prompt
         from cortexa.agents.prompts import handoff_message
         task = handoff_message(handoff)

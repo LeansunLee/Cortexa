@@ -298,7 +298,7 @@ async def create_message(
                     for cr in collaboration_results:
                         cr_result = cr["result"]
                         collab_context_parts.append(
-                            f"### {cr['agent_name']} Agent 的分析\n本轮任务：{cr.get('task', '')}\n{cr_result.result}"
+                            f"### {cr.get('agent_role') or '协作 Agent'} 的分析\n本轮任务：{cr.get('task', '')}\n{cr_result.result}"
                         )
                     references.append(reference_message("协作结果", "\n".join(collab_context_parts)))
 
@@ -1573,7 +1573,7 @@ async def create_message_stream(
                             observation_event = _observe(lambda: agent_adapter(target_agent), result, metadata={"skipped": True})
                             if observation_event:
                                 yield observation_event
-                            collaboration_results.append({"agent_id": str(target_agent.id), "agent_name": matched_name, "agent_avatar": target_info.get("avatar", "🤖"), "result": result, "task": draft.task, "background": background})
+                            collaboration_results.append({"agent_id": str(target_agent.id), "agent_name": matched_name, "agent_role": target_agent.role, "agent_avatar": target_info.get("avatar", "🤖"), "result": result, "task": draft.task, "background": background})
                             yield f"data: {json.dumps({'type': 'collab_status', 'status': 'completed', 'target_agent_name': matched_name, 'collab_status': 'failed', 'summary': result.summary, 'task': draft.task, 'background': background})}\n\n"
                             continue
                         proxy_collaboration = proxy_collaboration or target_agent.agent_type == "proxy" or payload.collaboration_drafts is not None
@@ -1585,7 +1585,7 @@ async def create_message_stream(
                         handoff = AgentHandoff(
                             source_agent_id=str(agent.id),
                             target_agent_id=str(target_agent.id),
-                            task=mention.message_after or f"来自 {agent.name} 的协作请求",
+                            task=mention.message_after or f"来自 {agent.role or '主 Agent'} 的协作请求",
                             known_facts=[],
                             include_history=False,
                             background_context=background,
@@ -1594,14 +1594,14 @@ async def create_message_stream(
                             constraints=draft.constraints if draft else [],
                             supplemental_prompt=draft.supplemental_prompt if draft else None,
                             dependency_results=[{
-                                "agent_name": cr["agent_name"], "status": cr["result"].status,
+                                "agent_name": cr.get("agent_role") or "协作 Agent", "status": cr["result"].status,
                                 "result": cr["result"].result if cr["result"].status == "success" else "",
                                 **({"note": "该任务未成功完成，无有效结果；请勿推测或编造其输出"} if cr["result"].status != "success" else {}),
                             } for cr in collaboration_results] if target_agent.agent_type != "proxy" else [],
                             resolver_context={
                                 **resolver_context,
                                 "previous_agent_output": [{
-                                    "agent_name": cr["agent_name"],
+                                    "agent_name": cr.get("agent_role") or "协作 Agent",
                                     "result": cr["result"].result,
                                 } for cr in dependencies if cr["result"].status == "success"],
                             } if target_agent.agent_type == "proxy" else {},
@@ -1650,6 +1650,7 @@ async def create_message_stream(
                             "task": handoff.task,
                             "background": background,
                             "agent_name": matched_name,
+                            "agent_role": target_agent.role,
                             "agent_avatar": target_info.get("avatar", "🤖"),
                             "result": result,
                         })
@@ -1768,7 +1769,7 @@ async def create_message_stream(
                     for cr in collaboration_results:
                         cr_result = cr["result"]
                         collab_context_parts.append(
-                            f"### {cr['agent_name']} Agent 的分析\n本轮任务：{cr.get('task', '')}\n{cr_result.result}"
+                            f"### {cr.get('agent_role') or '协作 Agent'} 的分析\n本轮任务：{cr.get('task', '')}\n{cr_result.result}"
                         )
                     collaboration_reference = reference_message("本轮已执行的协作结果", "\n".join(collab_context_parts))
 

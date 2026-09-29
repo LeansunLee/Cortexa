@@ -24,8 +24,8 @@ def build_system_prompt(agent, workspace=None):
     parts = [PLATFORM_RULES, f"当前时间：{datetime.now(ZoneInfo('Asia/Shanghai')):%Y年%m月%d日 %H:%M}（北京时间）"]
     if workspace and workspace.system_prompt:
         parts.append(f"## 工作空间规则\n{workspace.system_prompt}")
-    parts.append(f"## Agent 定义\n你是{agent.name or 'AI助手'}。")
-    for field, title in (("personality", "人格特征"), ("role", "角色"), ("responsibilities", "职责"), ("boundaries", "工作边界"), ("system_prompt", "补充说明")):
+    parts.append(f"## Agent 定义\n你是{agent.role or 'AI助手'}。")
+    for field, title in (("personality", "人格特征"), ("responsibilities", "职责"), ("boundaries", "工作边界"), ("system_prompt", "补充说明")):
         value = getattr(agent, field, None)
         if value:
             parts.append(f"### {title}\n{value}")

@@ -730,7 +730,7 @@ async def approval_candidates(conv_id: uuid.UUID, goal_id: uuid.UUID):
     if row.status != GoalStatus.WAITING or state.reason != "collaboration_approval_required":
         return []
     return [
-        {"id": str(a.id), "name": a.name, "description": (a.description or "")[:600], "avatar": a.avatar}
+        {"id": str(a.id), "name": a.name, "role": a.role or "", "responsibilities": (a.responsibilities or "")[:600], "avatar": a.avatar}
         for a in agents
         if str(a.id) in state.pending_agents
         and str(a.id) not in state.denied_agents

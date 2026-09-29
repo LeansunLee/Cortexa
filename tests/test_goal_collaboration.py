@@ -145,6 +145,8 @@ async def setup(tmp_path, monkeypatch):
                 name=name,
                 status="active",
                 description="分析销售汇总",
+                role="销售分析师",
+                responsibilities="分析销售汇总",
                 collaboration={},
             )
             for i, name in enumerate(["销售Agent", "分析Agent", "未授权Agent"])

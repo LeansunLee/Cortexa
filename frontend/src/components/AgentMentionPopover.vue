@@ -25,7 +25,7 @@
           </div>
           <div class="mention-agent-info">
             <div class="mention-agent-name">{{ agent.name }}</div>
-            <div class="mention-agent-desc">{{ agent.role || agent.description || '智能体' }}</div>
+            <div class="mention-agent-desc">{{ agent.role || '智能体' }}</div>
           </div>
           <div class="mention-agent-status">
             <span class="status-dot online"></span>
@@ -62,11 +62,7 @@ const listRef = ref(null)
 const filteredAgents = computed(() => {
   if (!props.query) return agents.value
   const q = props.query.toLowerCase()
-  return agents.value.filter(a =>
-    a.name.toLowerCase().includes(q) ||
-    (a.role && a.role.toLowerCase().includes(q)) ||
-    (a.description && a.description.toLowerCase().includes(q))
-  )
+  return agents.value.filter(a => a.name.toLowerCase().includes(q))
 })
 
 const popoverStyle = computed(() => ({

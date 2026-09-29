@@ -81,7 +81,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         descriptor.constraints["target_input_contract"] = target.input_schema or {}
         ident = str(target.id)
         explicit_task = payload.get("participant_tasks", {}).get(ident, "")
-        description = f"参与者 {target.name}：{(target.description or '')[:1200]}"
+        description = f"协作角色：{target.role or 'AI助手'}\n执行职责：{(target.responsibilities or '')[:1200]}"
         if explicit_task:
             description += "\n用户明确分工：" + explicit_task
         description += "\n输入契约：" + json.dumps(target.input_schema or {}, ensure_ascii=False)
@@ -326,12 +326,12 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                     failure = child_state.budget_failure
                     if failure and failure["resource"] == "duration" and not child_payload.get("observations"):
                         output = (
-                            f"目标 Agent {fresh.name} 的模型推理在分配的 {failure['limit']} 秒内未取得可用回复；"
+                            f"目标角色 {fresh.role or 'AI助手'} 的模型推理在分配的 {failure['limit']} 秒内未取得可用回复；"
                             "本次尚未执行工具。"
                         )
                     elif failure:
                         status_text = "预算已耗尽" if failure["current"] >= failure["limit"] else "可用预算不足"
-                        output = f"目标 Agent {fresh.name} 的 {failure['resource']} {status_text}，未能完成协作。"
+                        output = f"目标角色 {fresh.role or 'AI助手'} 的 {failure['resource']} {status_text}，未能完成协作。"
                     else:
                         output = {
                             "budget_exhausted:output_tokens": "目标 Agent 的共享输出预算已耗尽",

@@ -83,7 +83,7 @@ def goal_constraints(payload):
 
 
 def permitted_by_goal(agent, payload, *, discovery=False):
-    names = {agent.name.casefold(), *(x.casefold() for x in settings(agent).aliases)}
+    names = {agent.name.casefold()}
     for constraint in goal_constraints(payload):
         if not constraint.allow_collaboration or (discovery and not constraint.allow_discovery):
             return False
@@ -135,7 +135,7 @@ async def resolve_explicit(db, source, goal, ids=(), config=None):
         matches = [
             a
             for a in agents
-            if participant.reference.casefold() in {a.name.casefold(), *(x.casefold() for x in settings(a).aliases)}
+            if participant.reference.casefold() == a.name.casefold()
         ]
         if len(matches) != 1:
             raise HTTPException(422, "@Agent 不存在、未授权或名称不唯一，请从候选列表选择")
@@ -180,7 +180,6 @@ async def discover(db, source, state, payload, config):
     descriptors = []
     for agent in candidates:
         descriptor = agent_adapter(agent).descriptor
-        descriptor.aliases = settings(agent).aliases
         descriptor.operations = settings(agent).operations
         descriptors.append(descriptor)
     query = payload["goal"]["raw_request"] + "\n" + "\n".join(payload.get("clarifications", []))

@@ -277,7 +277,7 @@
             <p>请选择允许参与本次任务的智能体。</p>
             <label v-for="candidate in curSession.goalCandidates" :key="candidate.id" class="goal-candidate">
               <input type="checkbox" v-model="curSession.goalSelection" :value="candidate.id" :disabled="curSession.approvalBusy" />
-              <span><strong>{{ candidate.name }}</strong><small>{{ candidate.description }}</small></span>
+              <span><strong>{{ candidate.name }}</strong><small>{{ candidate.role }}{{ candidate.responsibilities ? ` · ${candidate.responsibilities}` : '' }}</small></span>
             </label>
             <p v-if="!curSession.goalCandidates.length">候选已不可用，可以拒绝并继续。</p>
             <button type="button" class="btn btn-primary btn-sm" :disabled="curSession.approvalBusy || sending || streaming" @click="approveGoal">{{ curSession.approvalBusy ? '正在保存…' : curSession.goalSelection.length ? '允许所选并继续' : '全部拒绝并继续' }}</button>

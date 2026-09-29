@@ -109,22 +109,9 @@ def build_mention_display_html(name: str, agent_name: str = "") -> str:
     return f'<span class="mention-tag" data-agent="{name}">@{display}</span>'
 
 
-# 预定义的 Agent 名称别名映射（用于模糊匹配）
-ALIAS_MAP: dict[str, list[str]] = {
-    "市场部": ["市场", "marketing"],
-    "产品部": ["产品", "product"],
-    "财务部": ["财务", "finance"],
-    "法务部": ["法务", "legal"],
-    "品牌部": ["品牌", "brand"],
-    "研发部": ["研发", "rd", "开发", "engineering"],
-    "人力资源部": ["人力", "hr", "人事"],
-    "运营部": ["运营", "operation", "ops"],
-}
-
-
 def fuzzy_match_agent(query: str, agent_names: list[str]) -> str | None:
     """
-    模糊匹配 Agent 名称。
+    Only the Agent's display name can identify an @ participant.
 
     Args:
         query: 用户输入的 @名称
@@ -135,17 +122,7 @@ def fuzzy_match_agent(query: str, agent_names: list[str]) -> str | None:
     """
     query_lower = query.lower().strip()
 
-    # 精确匹配
     for name in agent_names:
         if name.lower() == query_lower:
             return name
-
-    # Only an exact name or an unambiguous, configured alias can invoke an Agent.
-    for canonical, aliases in ALIAS_MAP.items():
-        if query_lower in aliases or query_lower == canonical.lower():
-            stem = canonical.removesuffix("部")
-            matches = [name for name in agent_names if stem.casefold() in name.casefold()]
-            if len(matches) == 1:
-                return matches[0]
-
     return None

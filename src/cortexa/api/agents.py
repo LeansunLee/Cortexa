@@ -113,7 +113,7 @@ async def create_agent(
         avatar=payload.avatar,
         agent_type=payload.agent_type,
         proxy_config=payload.proxy_config,
-        role=payload.role,
+        role=(payload.role or "").strip() or None,
         personality=payload.personality,
         responsibilities=payload.responsibilities,
         boundaries=payload.boundaries,
@@ -206,6 +206,11 @@ async def update_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    role = (update_data.get("role", agent.role) or "").strip()
+    if not role:
+        raise HTTPException(422, "业务角色不能为空")
+    if "role" in update_data:
+        update_data["role"] = role
     if "collaboration" in update_data:
         if payload.collaboration is None:
             raise HTTPException(422, "协作配置不能为 null")
@@ -461,6 +466,8 @@ async def publish_agent(
     errors = []
     if not agent.name:
         errors.append("Name is required")
+    if not (agent.role or "").strip():
+        errors.append("业务角色不能为空")
     if agent.input_schema is None:
         errors.append("Input Schema is required")
     if agent.output_schema is None:
@@ -576,14 +583,10 @@ def _build_system_prompt(agent: Agent) -> str:
     """Build system prompt from agent configuration."""
     parts = []
 
-    if agent.name:
-        parts.append(f"你是{agent.name}。")
+    parts.append(f"你是{agent.role or 'AI助手'}。")
 
     if agent.personality:
         parts.append(f"\n## 人格特征\n{agent.personality}")
-
-    if agent.role:
-        parts.append(f"\n## 角色\n{agent.role}")
 
     if agent.responsibilities:
         parts.append(f"\n## 职责\n{agent.responsibilities}")

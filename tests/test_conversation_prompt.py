@@ -8,27 +8,30 @@ from cortexa.agents.prompts import reference_message
 
 
 def test_prompt_accepts_workspace_and_keeps_agent_instructions():
-    agent = Agent(name="渠道部", system_prompt="分析渠道目标")
+    agent = Agent(name="Peter", description="面向用户的简介", role="渠道经理", system_prompt="分析渠道目标")
     workspace = Workspace(name="销售", system_prompt="遵循销售政策")
     prompt = _build_system_prompt(agent, workspace)
     assert "遵循销售政策" in prompt
     assert "分析渠道目标" in prompt
-    assert "你是渠道部" in prompt
+    assert "你是渠道经理" in prompt
+    assert "Peter" not in prompt
+    assert "面向用户的简介" not in prompt
 
 
 def test_prompt_supports_missing_workspace_and_empty_workspace_prompt():
-    agent = Agent(name="渠道部")
+    agent = Agent(name="Peter", role="渠道经理")
     for prompt in (
         _build_system_prompt(agent),
         _build_system_prompt(agent, None),
         _build_system_prompt(agent, Workspace(name="销售")),
     ):
-        assert "你是渠道部" in prompt
+        assert "你是渠道经理" in prompt
+        assert "Peter" not in prompt
         assert "工作空间说明" not in prompt
 
 
 def test_rule_order_and_reference_content_are_separate():
-    agent = Agent(name="渠道部", system_prompt="Agent配置")
+    agent = Agent(name="Peter", role="渠道经理", system_prompt="Agent配置")
     workspace = Workspace(name="销售", system_prompt="空间配置")
     prompt = _build_system_prompt(agent, workspace)
     assert prompt.index("## 平台规则") < prompt.index("空间配置") < prompt.index("Agent配置")
