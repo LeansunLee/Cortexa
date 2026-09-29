@@ -167,15 +167,6 @@
               <label>能力简介（供协同发现） <LlmContextHint text="用于匹配协作候选；成为候选后，作为能力说明提供给发起协作的主 Agent 模型。不会加入本 Agent 自己的系统提示词。" collaboration-text="其他 Agent 根据这段简介发现并判断是否邀请本 Agent。" /></label>
               <textarea v-model="editingAgent.description" rows="3" placeholder="例如：擅长研究市场与竞品，可协助制定销售计划"></textarea>
             </div>
-            <div class="form-group">
-              <label>标签</label>
-              <input v-model="tagInput" placeholder="输入标签后按回车" @keydown.enter.prevent="addTag" />
-              <div class="tags">
-                <span v-for="(tag, i) in editingAgent.tags" :key="i" class="tag">
-                  {{ tag }} <button @click="removeTag(i)">×</button>
-                </span>
-              </div>
-            </div>
           </div>
 
           <!-- 人格 -->
@@ -632,7 +623,6 @@ const resolutionTestSystem = ref('{}')
 const resolutionTestResult = ref(null)
 const resolutionTestError = ref('')
 const knowledgeBases = ref([])
-const tagInput = ref('')
 const webSearchStatus = ref({ configured: false, message: '正在检查搜索服务配置…' })
 const availableModels = ref([])
 const workspaceDefaultModel = ref('')
@@ -1360,18 +1350,6 @@ const duplicateAgent = async (agent) => {
   }
 }
 
-const addTag = () => {
-  if (tagInput.value && editingAgent.value) {
-    editingAgent.value.tags = [...(editingAgent.value.tags || []), tagInput.value]
-    tagInput.value = ''
-  }
-}
-
-const removeTag = (i) => {
-  editingAgent.value.tags.splice(i, 1)
-}
-
-
 function updateResourceBindings(patch) {
   Object.assign(editingAgent.value, patch)
 }
@@ -1562,7 +1540,6 @@ onMounted(() => {
 .form-row .form-group { flex: 1; min-width: 0; }
 
 /* Tags */
-.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tag {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
   background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-xs);
