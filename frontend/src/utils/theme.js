@@ -198,6 +198,10 @@ export function themeVariables(color) {
       : 'linear-gradient(145deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 0%, transparent 22%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .04)) 100%)',
   ].join(', ') : 'none'
   const glassMenuGradient = glass ? (frosted ? frostedRefractionGradient : liquidRefractionGradient) + ', ' + glassImage(reflectionRgb, frosted ? 0.16 : 0.44, theme.finish) : 'none'
+  const glassPopoverGradient = glass ? [
+    `radial-gradient(ellipse at 100% 100%, rgba(${reflection},calc(var(--glass-edge-alpha) * ${frosted ? '.12' : '.28'})) 0%, transparent 24%)`,
+    `linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * ${frosted ? '.18' : '.32'})) 0%, transparent 12%)`,
+  ].join(', ') : 'none'
   return {
     '--glass-finish': glass ? theme.finish || 'clear' : 'none',
     '--glass-rgb': reflection,
@@ -212,6 +216,7 @@ export function themeVariables(color) {
     '--glass-surface-gradient': glassSurfaceGradient,
     '--glass-panel-gradient': glassPanelGradient,
     '--glass-menu-gradient': glassMenuGradient,
+    '--glass-popover-gradient': glassPopoverGradient,
     '--glass-selection-background': glass ? frosted ? 'color-mix(in srgb, var(--surface) 78%, var(--primary-light))' : 'color-mix(in srgb, var(--surface) 58%, var(--primary-light))' : 'var(--primary-light)',
     '--glass-edge-shadow': glass ? frosted ? 'inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.16)), inset 0 -1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)), inset 0 0 18px rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)), 0 18px 42px rgba(15,23,42,.16)' : 'inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.96)), inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.08)), inset -1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .44)), inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .40)), 0 20px 52px rgba(15,23,42,.22)' : 'none',
     '--glass-opacity': glass ? frosted ? '0.92' : '0.72' : '1',

@@ -540,7 +540,7 @@ a { text-decoration: none; color: inherit; }
 :root[data-color-theme="glass"] .user-dropdown {
   isolation: isolate;
   background-color: var(--glass-menu-background, var(--surface));
-  background-image: var(--glass-menu-gradient, var(--theme-gradient));
+  background-image: var(--glass-popover-gradient, none);
   background-clip: padding-box;
   border-color: var(--glass-edge-border);
   box-shadow: var(--glass-edge-shadow), 0 18px 44px color-mix(in srgb, var(--text) 20%, transparent);
@@ -557,9 +557,7 @@ a { text-decoration: none; color: inherit; }
   z-index: 0;
 }
 :root[data-color-theme="glass"] .user-dropdown::before {
-  background: var(--glass-menu-gradient, none);
-  opacity: .34;
-  mix-blend-mode: screen;
+  background: none;
 }
 :root[data-color-theme="glass"] .user-dropdown::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .22)) 0%, transparent 14%);
@@ -581,17 +579,14 @@ a { text-decoration: none; color: inherit; }
 :root[data-color-theme="glass"] .dropdown-divider { background: var(--glass-edge-border-soft); }
 :root[data-theme="dark"][data-color-theme="glass"] .user-dropdown {
   background-color: var(--glass-menu-background, color-mix(in srgb, var(--surface) 88%, transparent));
-  background-image: var(--glass-panel-gradient, none);
+  background-image: var(--glass-popover-gradient, none);
   border-color: var(--glass-edge-border-soft);
   box-shadow: var(--glass-edge-shadow, none), 0 24px 58px rgba(0,0,0,.48);
   backdrop-filter: var(--glass-menu-backdrop, blur(24px) saturate(135%)) !important;
   -webkit-backdrop-filter: var(--glass-menu-backdrop, blur(24px) saturate(135%)) !important;
 }
 :root[data-theme="dark"][data-color-theme="glass"] .user-dropdown::before {
-  background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 0%, transparent 13%), linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 0%, transparent 8%, transparent 92%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 100%);
-  opacity: 1;
-  filter: saturate(1.02) contrast(1.02);
-  mix-blend-mode: normal;
+  background: none;
 }
 :root[data-theme="dark"][data-color-theme="glass"] .user-dropdown::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 0%, transparent 14%);
