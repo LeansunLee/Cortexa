@@ -23,8 +23,8 @@ export const glassFinishes = [
 export function glassEdgeAlpha(glow = 20) {
   const value = Number(glow)
   const normalized = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 20))
-  // Keep a faint edge at zero while limiting the brightest setting.
-  return String((4 + normalized * 24) / 200)
+  // 压缩常驻边缘泛光：0% 仍保留约原 10% 的弱亮边，100% 约等于原 50%。
+  return String((10 + normalized * 0.4) / 200)
 }
 
 const frostedGrain = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='table' tableValues='0 .16'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.48'/%3E%3C/svg%3E")`
@@ -32,20 +32,19 @@ const frostedGrain = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 export function glassImage(rgb, reflection = 0.16, finish = 'clear') {
   const frosted = finish === 'frosted'
   const color = rgb.join(',')
-  const edge = 'var(--glass-edge-alpha, .07)'
   if (frosted) return [
-    `radial-gradient(ellipse at 100% 100%, rgba(${color},calc(${edge} * 1.1)) 0%, transparent 52%)`,
-    `radial-gradient(ellipse at 0% 0%, rgba(${color},calc(${edge} * .34)) 0%, transparent 34%)`,
-    `linear-gradient(175deg, rgba(255,255,255,calc(${edge} * .9)), transparent 16%)`,
+    `radial-gradient(ellipse at 100% 100%, rgba(${color},var(--glass-edge-alpha, .10)) 0%, transparent 72%)`,
+    `radial-gradient(ellipse at 0% 0%, rgba(${color},calc(var(--glass-edge-alpha, .10) * .3)) 0%, transparent 48%)`,
+    'linear-gradient(175deg, rgba(255,255,255,.20), transparent 24%)',
     frostedGrain,
     'linear-gradient(145deg, light-dark(rgba(255,255,255,.58),rgba(255,255,255,.15)) 0%, light-dark(rgba(244,248,252,.38),rgba(255,255,255,.075)) 58%, light-dark(rgba(235,241,247,.50),rgba(255,255,255,.11)) 100%)',
   ].join(', ')
   return [
-    `radial-gradient(ellipse at 105% 108%, rgba(${color},calc(${edge} * 1.25)) 0%, transparent 48%)`,
-    `radial-gradient(ellipse at -4% -8%, rgba(${color},calc(${edge} * .38)) 0%, transparent 30%)`,
-    `conic-gradient(from 222deg at 12% 3%, rgba(255,255,255,calc(${edge} * 1.2)), transparent 16%, rgba(255,255,255,calc(${edge} * .28)) 30%, transparent 48%, rgba(255,255,255,calc(${edge} * .62)) 72%, transparent 100%)`,
-    `linear-gradient(175deg, rgba(255,255,255,calc(${edge} * .9)), transparent 13%)`,
-    `linear-gradient(155deg, light-dark(rgba(255,255,255,calc(${edge} * .82)),rgba(255,255,255,calc(${edge} * .40))) 0%, transparent 30%, light-dark(rgba(255,255,255,calc(${edge} * .12)),rgba(255,255,255,calc(${edge} * .08))) 68%, light-dark(rgba(255,255,255,calc(${edge} * .62)),rgba(255,255,255,calc(${edge} * .28))) 100%)`,
+    `radial-gradient(ellipse at 105% 108%, rgba(${color},calc(var(--glass-edge-alpha, .10) * 1.45)) 0%, transparent 68%)`,
+    `radial-gradient(ellipse at -4% -8%, rgba(${color},calc(var(--glass-edge-alpha, .10) * .42)) 0%, transparent 44%)`,
+    'conic-gradient(from 222deg at 12% 3%, rgba(255,255,255,.54), transparent 16%, rgba(255,255,255,.12) 30%, transparent 48%, rgba(255,255,255,.28) 72%, transparent 100%)',
+    'linear-gradient(175deg, rgba(255,255,255,.34), transparent 18%)',
+    'linear-gradient(155deg, light-dark(rgba(255,255,255,.32),rgba(255,255,255,.10)) 0%, transparent 34%, light-dark(rgba(255,255,255,.05),rgba(255,255,255,.018)) 68%, light-dark(rgba(255,255,255,.24),rgba(255,255,255,.07)) 100%)',
   ].join(', ')
 }
 
