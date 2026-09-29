@@ -347,7 +347,7 @@
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   position: relative;
   isolation: isolate;
-  background-color: color-mix(in srgb, var(--surface) 24%, transparent) !important;
+  background-color: color-mix(in srgb, var(--surface) 4%, transparent) !important;
   background-image: none !important;
   border-color: rgba(255,255,255,calc(var(--glass-edge-alpha) * .8)) !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .9)), 0 20px 54px rgba(15,23,42,.20) !important;
@@ -355,7 +355,7 @@
   -webkit-backdrop-filter: none !important;
 }
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay, .org-overlay) {
-  background-color: light-dark(rgba(15,23,42,.32),rgba(0,0,0,.50));
+  background-color: light-dark(rgba(15,23,42,.06),rgba(0,0,0,.16));
 }
 :root[data-theme=dark][data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .9)), 0 24px 58px rgba(0,0,0,.38) !important;
@@ -370,9 +370,9 @@
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
   inset: 6px;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--surface) 42%, transparent);
-  backdrop-filter: blur(22px) saturate(145%);
-  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  background: color-mix(in srgb, var(--surface) 6%, transparent);
+  backdrop-filter: blur(6px) saturate(145%);
+  -webkit-backdrop-filter: blur(6px) saturate(145%);
 }
 :root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   inset: 0;
