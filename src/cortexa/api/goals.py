@@ -26,7 +26,7 @@ from cortexa.runtime.goals import GapType, parse_goal
 from cortexa.runtime.loop import GoalLoop, serialize_messages
 from cortexa.runtime.policy import conversation_modes, resolve_effective_policy
 from cortexa.runtime.shadow import can_read_goal_trace
-from cortexa.runtime.state import GoalState, GoalStatus
+from cortexa.runtime.state import BudgetLimits, GoalState, GoalStatus
 from cortexa.runtime.store import GoalStore, own_conversation
 from cortexa.security.access import require_agent_use
 from cortexa.tools.runtime import should_require_business_tool
@@ -145,6 +145,12 @@ def execution_config():
 
 def public_status(row):
     state = GoalState.model_validate(row.state)
+    retryable_runtime_error = (
+        row.status == GoalStatus.FAILED
+        and state.reason == "runtime_error"
+        and state.current_action is None
+        and all(state.consumed.get(name, 0) == 0 for name in ("llm_calls", "tool_calls", "agent_calls", "web_calls"))
+    )
     return {
         "goal_id": str(row.id),
         "status": row.status,
@@ -161,6 +167,7 @@ def public_status(row):
         "partial": state.partial,
         "budget_failure": {k: v for k, v in (state.budget_failure or {}).items() if k != "agent_id"} or None,
         "message_id": state.result_message_id,
+        "retryable": retryable_runtime_error,
     }
 
 
@@ -187,6 +194,23 @@ async def environment(conv_id, goal_budget=None):
             raise HTTPException(422, "Runtime 预算策略格式或范围不合法") from None
         workspace = await db.get(Workspace, conv.workspace_id)
         return agent, workspace, resolved
+
+
+def preserve_saved_budget(policy, saved_limits):
+    """Keep an existing Goal's allocation while resolving fresh platform/workspace policy.
+
+    `saved_limits` is already normalized and may contain UNLIMITED_BUDGET. It must
+    not be fed back as a new client budget, where it would be rejected as over-ceiling.
+    """
+    current = policy.effective_budget
+    values = current.model_dump()
+    saved = BudgetLimits.model_validate(saved_limits)
+    for name in values:
+        previous = getattr(saved, name)
+        if previous < values[name]:
+            values[name] = previous
+            policy.trace["budget"][name] = {"source": "Existing Goal", "value": previous}
+    return BudgetLimits(**values)
 
 
 def budget_preflight(state, requested_agents):
@@ -286,7 +310,9 @@ async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
 async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeRequest):
     row = await store.get(conv_id, goal_id)
     state = GoalState.model_validate(row.state)
-    agent, workspace, policy = await environment(conv_id, state.limits.model_dump())
+    agent, workspace, policy = await environment(conv_id)
+    state.limits = preserve_saved_budget(policy, state.limits.model_dump())
+    state.policy_trace = policy.trace
     if row.revision != request.revision:
         raise HTTPException(409, "Goal 已更新，请重新读取状态")
     if row.status == GoalStatus.RUNNING:
@@ -302,7 +328,13 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         payload = store.files.read(row.id, row.artifacts["snapshot"])
         await store.checkpoint(row, state, payload)
         return public_status(row)
-    if row.status != GoalStatus.WAITING or state.reason not in {
+    retryable_runtime_error = (
+        row.status == GoalStatus.FAILED
+        and state.reason == "runtime_error"
+        and state.current_action is None
+        and all(state.consumed.get(name, 0) == 0 for name in ("llm_calls", "tool_calls", "agent_calls", "web_calls"))
+    )
+    if not retryable_runtime_error and (row.status != GoalStatus.WAITING or state.reason not in {
         "missing_inputs",
         "clarify_goal",
         "cancelled",
@@ -310,7 +342,7 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         "collaboration_authorized",
         "runtime_validation_error",
         "invalid_reasoning_action",
-    }:
+    }):
         raise HTTPException(409, "此 Goal 不能自动续跑，请检查停止原因")
     if state.current_action and state.current_action.kind == "CAPABILITY" and state.current_action.phase != "completed":
         raise HTTPException(409, "上次外部行动结果未知，禁止自动重试；请先人工核实结果")
@@ -345,7 +377,8 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
     state.budget_failure = None
     payload["force_finalizing"] = False
     state.current_action = None
-    state.limits = policy.effective_budget  # Saved limits/consumption can only tighten, never reset.
+    # Saved limits/consumption can only tighten, never reset.
+    state.limits = preserve_saved_budget(policy, state.limits.model_dump())
     state.policy_trace = policy.trace
     state.collaboration_mode = policy.collaboration_mode
     state.result_message_id = None
@@ -400,8 +433,8 @@ def stream_response(row, state, payload, agent, workspace):
             # Middleware also watches revocation throughout the SSE stream.
             async with store.sessions() as db:
                 await own_conversation(db, row.conversation_id, use_agent=True)
-            _, _, current_policy = await environment(row.conversation_id, state.limits.model_dump())
-            state.limits = current_policy.effective_budget
+            _, _, current_policy = await environment(row.conversation_id)
+            state.limits = preserve_saved_budget(current_policy, state.limits.model_dump())
             state.policy_trace = current_policy.trace
             # Tightening takes effect immediately; a running turn never gains new autonomy.
             state.collaboration_mode = min(
@@ -683,7 +716,7 @@ async def approval_candidates(conv_id: uuid.UUID, goal_id: uuid.UUID):
 
     row = await store.get(conv_id, goal_id)
     state = GoalState.model_validate(row.state)
-    _, _, current_policy = await environment(conv_id, state.limits.model_dump())
+    _, _, current_policy = await environment(conv_id)
     state.collaboration_mode = min(
         Autonomy(state.collaboration_mode), current_policy.collaboration_mode, key=LEVEL.get
     )
@@ -713,7 +746,7 @@ async def authorize_collaboration(conv_id: uuid.UUID, goal_id: uuid.UUID, reques
 
     row = await store.get(conv_id, goal_id)
     state = GoalState.model_validate(row.state)
-    await environment(conv_id, state.limits.model_dump())
+    await environment(conv_id)
     approved, denied = set(map(str, request.approved_agents)), set(map(str, request.denied_agents))
     fingerprint = decision_fingerprint(request.revision, approved, denied)
     if state.last_authorization == fingerprint:

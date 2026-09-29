@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -7,9 +8,23 @@ import pytest
 from fastapi import HTTPException
 
 from cortexa.api import goals
+from cortexa.runtime.state import GoalState, GoalStatus
 from cortexa.security import debug_preferences
 from cortexa.security.access import current_actor
 from cortexa.security.api import DebugPreference, get_my_debug_preference, save_my_debug_preference
+
+
+def test_failed_goal_is_retryable_only_before_any_action():
+    state = GoalState()
+    state.status, state.reason = GoalStatus.FAILED, "runtime_error"
+    row = SimpleNamespace(
+        id=uuid.uuid4(), status="FAILED", revision=2, state=state.model_dump(mode="json"),
+        updated_at=datetime.now(UTC), artifacts={},
+    )
+    assert goals.public_status(row)["retryable"] is True
+    state.consumed["llm_calls"] = 1
+    row.state = state.model_dump(mode="json")
+    assert goals.public_status(row)["retryable"] is False
 
 
 def test_debug_preference_is_private_and_permission_gated(tmp_path, monkeypatch):

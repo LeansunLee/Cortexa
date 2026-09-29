@@ -1385,7 +1385,7 @@ const retryMessage = async () => {
   session.streamError = ''
   if (session.goalMode && session.goal?.goal_id) {
     try { await refreshGoal(activeTabId.value, session) } catch { session.streamError = '目标状态刷新失败'; return }
-    if (session.goal.status !== 'WAITING' || session.goal.reason === 'collaboration_approval_required') return
+    if ((session.goal.status !== 'WAITING' && !session.goal.retryable) || session.goal.reason === 'collaboration_approval_required') return
   }
   if (!session.input.trim()) {
     session.input = session.lastUserMessage

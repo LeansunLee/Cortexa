@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessageChunk
 from test_goal_loop import FakeModel, binding, make_loop, run
 
 from cortexa.api import runtime_policy as runtime_policy_api
-from cortexa.api.goals import budget_preflight
+from cortexa.api.goals import budget_preflight, preserve_saved_budget
 from cortexa.runtime.adapters import CapabilityAdapter
 from cortexa.runtime.agent_executor import allocate_child_limits
 from cortexa.runtime.capabilities import CapabilityDescriptor, CapabilityType
@@ -192,6 +192,18 @@ def test_finalizing_synthesizes_existing_observation_as_partial():
     assert policy_event["limits"]["output_tokens"] == 1000
     assert "finalization_reserve" in policy_event
     assert loop.trace[-1]["detail"]["budget_phase"] == BudgetPhase.FINALIZING
+
+
+def test_re_resolving_saved_unlimited_goal_budget_does_not_treat_it_as_client_input():
+    workspace = {"budget": {"duration": None}, "collaboration": {"max_autonomy": "AUTONOMOUS"}}
+    policy = resolve_effective_policy({}, workspace, agent())
+    saved = policy.effective_budget.model_dump()
+    # Feeding normalized sentinel values back as a fresh Goal budget was rejected
+    # against the 600-second platform ceiling. Fresh policy plus monotonic tightening
+    # preserves the saved allocation without revalidating it as client input.
+    with pytest.raises(ValueError, match="duration exceeds the platform limit"):
+        resolve_effective_policy({}, workspace, agent(), saved)
+    assert preserve_saved_budget(policy, saved).duration == UNLIMITED_BUDGET
 
 
 def test_conserve_hides_optional_tools():
