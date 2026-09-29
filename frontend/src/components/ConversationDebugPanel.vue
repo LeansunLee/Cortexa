@@ -28,6 +28,38 @@
         <span v-else>{{ formatTime(selectedRound.createdAt) }}</span>
       </div>
 
+      <section v-if="executionBranches.length" class="inspector-section branch-section" aria-label="执行分支">
+        <div class="inspector-heading"><span>执行分支</span><small>{{ executionBranches.length }} 个判断</small></div>
+        <div class="branch-list">
+          <article v-for="branch in executionBranches" :key="branch.key" :class="['branch-item', `branch-${branch.status}`]">
+            <span class="branch-marker" aria-hidden="true"></span>
+            <div class="branch-copy">
+              <strong>{{ branch.label }}</strong>
+              <span>{{ branch.value }}</span>
+              <small v-if="branch.note">{{ branch.note }}</small>
+            </div>
+            <span class="branch-state">{{ branch.statusLabel }}</span>
+          </article>
+        </div>
+      </section>
+
+      <section v-if="contextSnapshots.length" class="inspector-section context-section" aria-label="模型与协作上下文">
+        <div class="inspector-heading"><span>上下文快照</span><small>{{ contextSnapshots.length }} 组</small></div>
+        <details v-for="snapshot in contextSnapshots" :key="snapshot.key" class="context-snapshot" :open="snapshot.kind === 'model'">
+          <summary>
+            <span>{{ snapshot.title }}</span>
+            <small>{{ snapshot.caption }}</small>
+          </summary>
+          <div v-if="snapshot.messages?.length" class="context-messages">
+            <article v-for="(message, index) in snapshot.messages" :key="`${snapshot.key}-${index}`" :class="['context-message', `role-${message.role || 'other'}`]">
+              <div><strong>{{ roleLabel(message.role) }}</strong><small>{{ message.name || message.type || `第 ${index + 1} 条` }}</small></div>
+              <pre>{{ contextText(message.content) }}</pre>
+            </article>
+          </div>
+          <pre v-else class="context-raw">{{ formatDetail(snapshot.content) }}</pre>
+        </details>
+      </section>
+
       <section v-if="runtimeInfo" class="runtime-budget-card" aria-label="Runtime Budget 运行预算">
         <div class="runtime-budget-title"><Gauge :size="16" /> Effective Runtime Policy <small>最终运行策略</small></div>
         <p><strong>Policy Source · 策略来源</strong> {{ runtimeInfo.collaborationSource }}</p>
@@ -141,7 +173,91 @@ const runtimeInfo = computed(() => {
     allocations: entries.filter(entry => entry.title === 'Child Budget Allocation' || entry.title === 'Child Budget Result').map(entry => ({ event: entry.title, ...entry.detail })),
   }
 })
+const executionBranches = computed(() => {
+  const entries = selectedRound.value?.entries || []
+  const latest = (stage, predicate = () => true) => entries.findLast(entry => entry.stage === stage && predicate(entry))
+  const branches = []
+  const goal = latest('goal')
+  const route = goal?.detail?.route
+  if (route) branches.push({
+    key: 'route', label: '目标路由', value: route.route || route.proposed_route || '未路由',
+    note: goal.detail.execution === 'LEGACY_UNCHANGED' ? '影子判定；本轮仍按现有对话流程执行' : '',
+    status: route.route === 'direct' ? 'neutral' : 'selected', statusLabel: '已判定',
+  })
+
+  const retrieval = latest('retrieval')
+  if (retrieval) {
+    const d = retrieval.detail || {}
+    branches.push({ key: 'retrieval', label: '检索策略', value: retrieval.summary || '已制定',
+      note: `知识库 ${boolLabel(d.knowledge)} · 记忆 ${boolLabel(d.memory)} · 网页 ${boolLabel(d.web)}`,
+      status: 'selected', statusLabel: '已判定' })
+  }
+  for (const [stage, label] of [['knowledge', '知识库检索'], ['memory', '长期记忆']]) {
+    const decision = latest(stage, e => e.status !== 'running') || latest(stage)
+    if (decision) branches.push({ key: stage, label, value: decision.title, note: decision.summary,
+      status: statusKind(decision.status), statusLabel: statusLabel(decision.status) })
+    else if (retrieval?.detail?.[stage === 'knowledge' ? 'knowledge' : 'memory']) branches.push({
+      key: stage, label, value: '计划检索，尚无结果事件', status: 'pending', statusLabel: '等待中',
+    })
+  }
+
+  const mentions = latest('retrieval')?.detail?.has_collaboration
+  const collabEntries = entries.filter(entry => entry.stage === 'collaboration')
+  if (mentions !== undefined || collabEntries.length) {
+    const targets = [...new Set(collabEntries.map(e => e.detail?.target_agent?.name).filter(Boolean))]
+    const outcome = collabEntries.at(-1)
+    branches.push({ key: 'collaboration', label: 'Agent 协作',
+      value: targets.length ? `涉及 ${targets.join('、')}` : mentions ? '检测到协作意图' : '未触发协作',
+      note: outcome?.summary || (mentions ? '检查协作事件获取匹配与传递详情' : ''),
+      status: collabEntries.length ? statusKind(outcome?.status) : mentions ? 'pending' : 'neutral',
+      statusLabel: collabEntries.length ? statusLabel(outcome?.status) : mentions ? '已识别' : '未触发' })
+  }
+  const toolCalls = entries.filter(entry => entry.stage === 'tool' && entry.title?.startsWith('调用工具'))
+  const capability = latest('capability')
+  if (capability || toolCalls.length) branches.push({
+    key: 'tools', label: '业务工具',
+    value: toolCalls.length ? `调用 ${toolCalls.length} 次工具` : '未调用工具',
+    note: capability?.summary || '', status: toolCalls.length ? 'selected' : 'neutral',
+    statusLabel: toolCalls.length ? '已执行' : '未触发',
+  })
+  return branches
+})
+const contextSnapshots = computed(() => {
+  const entries = selectedRound.value?.entries || []
+  const snapshots = []
+  for (const entry of entries) {
+    const detail = entry.detail || {}
+    if (Array.isArray(detail.messages_sent_to_model)) snapshots.push({
+      key: `model-${entry.seq}`, kind: 'model', title: '主 Agent → 模型',
+      caption: `${detail.messages_sent_to_model.length} 条消息 · ${entry.summary || ''}`,
+      messages: detail.messages_sent_to_model,
+    })
+    if (detail.target_agent && (detail.background_context || detail.dependency_results || detail.task)) {
+      snapshots.push({
+        key: `collab-${entry.seq}`, kind: 'collaboration',
+        title: `${detail.source_agent?.name || '主 Agent'} → ${detail.target_agent.name || '协作 Agent'}`,
+        caption: detail.task || entry.summary || '协作输入',
+        messages: [
+          { role: 'user', name: '任务', content: detail.question || detail.task },
+          { role: 'context', name: '背景上下文', content: detail.background_context },
+          { role: 'context', name: '前置协作结果', content: detail.dependency_results },
+        ].filter(item => item.content != null && item.content !== ''),
+      })
+    }
+    if (detail.conversation_context && entry.title?.includes('Proxy')) snapshots.push({
+      key: `proxy-${entry.seq}`, kind: 'collaboration', title: '对话 → Proxy Agent',
+      caption: `${Array.isArray(detail.conversation_context) ? detail.conversation_context.length : 1} 个上下文片段`,
+      content: { current_task: detail.current_task, conversation_context: detail.conversation_context },
+    })
+  }
+  return snapshots
+})
 const formatCompact = value => Object.entries(value || {}).map(([key, amount]) => `${key}: ${amount}`).join(' · ')
+const boolLabel = value => value ? '启用' : '跳过'
+const statusKind = status => ({ success: 'selected', error: 'error', skipped: 'neutral', empty: 'neutral', running: 'pending', info: 'neutral' }[status] || 'neutral')
+const statusLabel = status => ({ success: '完成', error: '失败', skipped: '跳过', empty: '无结果', running: '进行中', info: '记录' }[status] || '记录')
+const roleLabel = role => ({ system: '系统提示', user: '用户消息', assistant: '模型回复', tool: '工具结果', context: '上下文' }[role] || role || '其他')
+const contextText = value => typeof value === 'string' ? value : formatDetail(value)
 
 watch(() => props.rounds.map(round => `${round.id}:${round.entries.length}:${round.isLive}`).join('|'), () => {
   const live = props.rounds.find(round => round.isLive)
@@ -175,6 +291,32 @@ const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { ho
 .debug-round-select label { display: block; margin-bottom: 5px; color: var(--text3); font-size: 11px; }
 .debug-round-select :deep(.search-select-trigger) { min-height: 34px; padding: 7px 9px; border-radius: 7px; background: var(--surface2); font-size: 12px; }
 .debug-body { flex: 1; min-height: 0; overflow-y: auto; padding: 13px 14px 20px; }
+.inspector-section { margin: 0 0 15px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
+.inspector-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; color: var(--text); font-size: 12px; font-weight: 700; }
+.inspector-heading small { color: var(--text3); font-size: 10px; font-weight: 400; }
+.branch-list { display: grid; gap: 7px; }
+.branch-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+.branch-marker { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--text3); }
+.branch-selected .branch-marker { background: var(--success); }
+.branch-error .branch-marker { background: var(--danger); }
+.branch-pending .branch-marker { background: var(--primary); }
+.branch-copy { display: grid; gap: 3px; min-width: 0; }
+.branch-copy strong { color: var(--text); font-size: 11px; }
+.branch-copy span, .branch-copy small { color: var(--text2); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.branch-copy small { color: var(--text3); }
+.branch-state { color: var(--text3); font-size: 9px; white-space: nowrap; }
+.branch-selected .branch-state { color: var(--success); }
+.branch-error .branch-state { color: var(--danger); }
+.context-snapshot { margin-top: 7px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+.context-snapshot > summary { display: grid; gap: 3px; padding: 9px; cursor: pointer; list-style-position: inside; color: var(--text); font-size: 11px; font-weight: 650; }
+.context-snapshot > summary small { padding-left: 16px; color: var(--text3); font-size: 10px; font-weight: 400; overflow-wrap: anywhere; }
+.context-messages { display: grid; gap: 7px; padding: 0 8px 8px; }
+.context-message { min-width: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.context-message > div { display: flex; justify-content: space-between; gap: 7px; padding: 6px 7px; background: var(--surface2); font-size: 10px; }
+.context-message > div strong { color: var(--primary); }
+.context-message > div small { color: var(--text3); overflow-wrap: anywhere; text-align: right; }
+.context-message pre, .context-raw { max-height: 240px; overflow: auto; margin: 0; padding: 8px; color: var(--text2); font: 10px/1.5 'SFMono-Regular', Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.context-raw { margin: 0 8px 8px; border: 1px solid var(--border); border-radius: 6px; }
 .runtime-budget-card { margin-bottom: 15px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); font-size: 11px; color: var(--text2); }
 .runtime-budget-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); }
 .runtime-budget-title small, .runtime-budget-item small { color: var(--text3); font-size: 10px; font-weight: 400; }
