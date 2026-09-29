@@ -205,6 +205,32 @@ onBeforeUnmount(() => {
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
 }
+:root[data-color-theme=glass][data-glass-finish=clear] .search-select-trigger {
+  background-color: var(--glass-surface-background);
+  background-image: var(--glass-panel-gradient);
+  border-color: var(--glass-edge-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.1)),
+              inset 0 -1px 0 rgba(var(--glass-rgb),calc(var(--glass-edge-alpha) * .4)),
+              0 2px 8px color-mix(in srgb, var(--text) 10%, transparent);
+}
+:root[data-color-theme=glass][data-glass-finish=clear] .search-select-trigger:hover:not(:disabled),
+:root[data-color-theme=glass][data-glass-finish=clear] .search-select-open .search-select-trigger {
+  background-color: var(--glass-surface-background-strong);
+  border-color: var(--primary);
+}
+:root[data-color-theme=glass][data-glass-finish=frosted] .search-select-trigger {
+  background-color: var(--glass-search-background);
+  background-image: var(--glass-surface-gradient);
+  border-color: var(--glass-field-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .75)),
+              0 2px 6px color-mix(in srgb, var(--text) 9%, transparent);
+}
+:root[data-color-theme=glass][data-glass-finish=frosted] .search-select-trigger:hover:not(:disabled),
+:root[data-color-theme=glass][data-glass-finish=frosted] .search-select-open .search-select-trigger {
+  background-color: var(--glass-surface-background-strong);
+  border-color: var(--glass-edge-border);
+}
+:root[data-color-theme=glass] .search-select-chevron { color: var(--navigation-color); }
 :root[data-color-theme=texture] .search-select-trigger,
 :root[data-color-theme=texture] .search-select-menu { background-color: var(--surface); background-image: none; border-color: var(--border); }
 :root[data-color-theme=skeuo] .search-select-trigger, :root[data-color-theme=skeuo] .search-select-menu { background-color: light-dark(#F6EDDE, #402F20); border-color: light-dark(#D8C6AC, #241A10); box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)); }

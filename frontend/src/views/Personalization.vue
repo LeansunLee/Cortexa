@@ -125,13 +125,10 @@
           </div>
         </div>
         <div class="theme-demo-grid" aria-label="常用控件效果预览">
-          <label class="theme-demo-field">
+          <div class="theme-demo-field">
             <span class="theme-demo-field-title">下拉列表</span>
-            <select v-model="previewSelect" aria-label="预览下拉列表">
-              <option value="first">选项一</option>
-              <option value="second">选项二</option>
-            </select>
-          </label>
+            <SearchSelect v-model="previewSelect" :options="previewTabs" :searchable="false" aria-label="预览下拉列表" />
+          </div>
           <label class="theme-demo-field">
             <span class="theme-demo-field-title">文本框</span>
             <input v-model="previewText" class="form-input" type="text" aria-label="预览文本框" placeholder="输入文本" />
@@ -344,7 +341,7 @@ watch(tempTheme, persistTheme)
 .theme-demo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .theme-demo-field { box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; min-width: 0; min-height: 91px; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); color: var(--text); font-size: 12px; }
 .theme-demo-field-title { display: block; padding: 0; color: var(--text2); font-size: 12px; font-weight: 600; line-height: 18px; }
-.theme-demo-field select, .theme-demo-field .form-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; font: inherit; }
+.theme-demo-field :deep(.search-select), .theme-demo-field .form-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; font: inherit; }
 .theme-demo-field .form-input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .theme-demo-choice-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .theme-demo-choice { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; width: fit-content; color: var(--text); cursor: pointer; white-space: nowrap; }
@@ -405,5 +402,9 @@ watch(tempTheme, persistTheme)
   border-color: var(--glass-field-border);
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body .settings .theme-demo-field {
+  background-color: var(--glass-panel-background);
+  background-image: var(--glass-panel-gradient);
 }
 </style>
