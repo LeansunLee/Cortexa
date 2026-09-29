@@ -145,7 +145,48 @@
     padding-bottom: 10px;
   }
 }
-:root body :is(input[type=checkbox], input[type=radio]) { accent-color: var(--primary); }
+:root body input[type=checkbox] { accent-color: var(--primary); }
+:root body input[type=radio] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 0 7px 0 0;
+  padding: 0;
+  border: 1.5px solid color-mix(in srgb, var(--text) 28%, var(--border));
+  border-radius: 50%;
+  background: linear-gradient(145deg, color-mix(in srgb, #fff 16%, var(--surface)), var(--surface2));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 42%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 12%, transparent);
+  vertical-align: -4px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  transition: background-color .16s ease, background-image .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+:root body input[type=radio]::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary-text);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 30%, transparent);
+  transform: scale(0);
+  transition: transform .16s cubic-bezier(.2,.8,.2,1);
+}
+:root body input[type=radio]:checked {
+  border-color: var(--primary);
+  background-color: var(--theme-button-background);
+  background-image: var(--theme-gradient);
+  box-shadow: var(--theme-button-shadow), 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+:root body input[type=radio]:checked::before { transform: scale(1); }
+:root body input[type=radio]:hover:not(:disabled) {
+  border-color: var(--primary);
+  transform: scale(1.04);
+}
+:root body input[type=radio]:checked:hover:not(:disabled) { box-shadow: var(--theme-button-shadow), 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
 :root body input[type=range] { appearance: none; height: 6px; border: 0; border-radius: 8px; background: var(--primary-light); padding: 0; accent-color: var(--primary); }
 :root body input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 8px; background-color: var(--primary-light); background-image: var(--theme-gradient); }
 :root body input[type=range]::-moz-range-track { height: 6px; border-radius: 8px; background-color: var(--primary-light); background-image: var(--theme-gradient); }
@@ -380,6 +421,31 @@
   border-color: var(--primary) !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)), 0 0 0 1px var(--glass-edge-border-soft);
 }
+:root[data-color-theme=glass] body input[type=radio] {
+  border-color: var(--glass-edge-border-soft);
+  background-color: var(--glass-surface-background, var(--surface2));
+  background-image: radial-gradient(circle at 30% 18%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)), transparent 68%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .9)), 0 1px 3px color-mix(in srgb, var(--text) 12%, transparent);
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
+:root[data-color-theme=glass] body input[type=radio]::before {
+  background: var(--primary);
+  box-shadow: 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .7)), 0 1px 3px color-mix(in srgb, var(--text) 28%, transparent);
+}
+:root[data-color-theme=glass] body input[type=radio]:checked {
+  border-color: var(--glass-edge-border);
+  background-color: var(--glass-selection-background, var(--glass-surface-background-strong));
+  background-image: radial-gradient(circle at 28% 18%, rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.2)), transparent 74%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.4)), 0 0 0 1px var(--glass-edge-border-soft), 0 2px 5px color-mix(in srgb, var(--text) 14%, transparent);
+}
+:root[data-color-theme=glass] body input[type=radio]:hover:not(:disabled) {
+  background-color: var(--glass-surface-background-strong);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.2)), 0 0 0 2px var(--glass-edge-border-soft);
+}
+:root[data-color-theme=glass] body input[type=radio]:checked:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.5)), 0 0 0 2px var(--glass-edge-border), 0 2px 6px color-mix(in srgb, var(--text) 18%, transparent);
+}
 :root[data-theme=dark][data-color-theme=glass] body :is(.appearance-options, .theme-group-tabs, .custom-pair-editor, .theme-color-item) {
   color: var(--text);
 }
@@ -470,11 +536,31 @@
   border-color: light-dark(#D8C6AC, #241A10);
   box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5));
 }
+:root[data-color-theme=skeuo] body input[type=radio] {
+  border-color: color-mix(in srgb, var(--skeuo-shadow, #402f20) 55%, var(--border));
+  background: linear-gradient(145deg, var(--surface2), var(--surface));
+  box-shadow: inset 0 2px 3px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5)), 0 1px 1px color-mix(in srgb, var(--skeuo-shadow, #402f20) 24%, transparent);
+}
+:root[data-color-theme=skeuo] body input[type=radio]::before {
+  background: var(--primary);
+  box-shadow: inset 0 1px 0 var(--skeuo-highlight, rgba(255,255,255,.42)), 0 1px 2px var(--skeuo-shadow, rgba(61,42,24,.35));
+}
+:root[data-color-theme=skeuo] body input[type=radio]:checked {
+  border-color: var(--skeuo-shadow, #402f20);
+  background: linear-gradient(145deg, var(--surface), var(--surface2));
+  box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), inset 0 -1px 0 var(--skeuo-highlight, rgba(255,255,255,.5));
+}
+:root[data-color-theme=skeuo] body input[type=radio]:checked::before { background: var(--primary); }
 :root[data-color-theme=skeuo] body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), textarea, select):focus-visible {
   border-color: var(--primary);
   box-shadow: inset 0 2px 4px var(--skeuo-shadow, rgba(61,42,24,.26)), 0 0 0 1px var(--primary);
 }
 :root[data-color-theme=skeuo] body :is(input, textarea, select) { --tw-shadow: none; }
+
+@media (forced-colors: active) {
+  :root body input[type=radio] { appearance: auto; -webkit-appearance: auto; accent-color: auto; }
+  :root body input[type=radio]::before { display: none; }
+}
 
 /* --- Primary buttons (raised emboss, pressed凹) --- */
 :root[data-color-theme=skeuo] body :is(.btn-primary, button.primary, .login-submit, .chat-send, .btn-create, .agent-btn-chat, .mem-edit-save, .validity-dialog .save, .upload-box .choose) {
