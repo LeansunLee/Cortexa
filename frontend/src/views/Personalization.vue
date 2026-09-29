@@ -112,15 +112,59 @@
           <span>{{ tempTheme.value }}</span>
         </label>
       </div>
-      <div class="theme-demo" :style="previewVariables" aria-live="polite">
-        <div class="theme-demo-info">
-          <span class="theme-demo-swatch" :style="swatchStyle(tempTheme)"></span>
-        <div><strong>{{ selectedColor?.name || (tempTheme.mode === 'texture' ? '自定义纹理' : tempTheme.mode === 'glass' ? '自定义玻璃' : tempTheme.mode === 'gradient' ? '自定义渐变' : tempTheme.accent ? '自定义拼色' : '自定义颜色') }}</strong><span class="theme-demo-caption">应用效果预览</span></div>
+      <div class="theme-demo" :style="previewVariables">
+        <div class="theme-demo-top">
+          <div class="theme-demo-info">
+            <span class="theme-demo-swatch" :style="swatchStyle(tempTheme)"></span>
+            <div><strong aria-live="polite">{{ selectedColor?.name || (tempTheme.mode === 'texture' ? '自定义纹理' : tempTheme.mode === 'glass' ? '自定义玻璃' : tempTheme.mode === 'gradient' ? '自定义渐变' : tempTheme.accent ? '自定义拼色' : '自定义颜色') }}</strong><span class="theme-demo-caption">应用效果预览</span></div>
+          </div>
+          <div class="theme-demo-controls">
+            <span class="theme-demo-tag">{{ tempTheme.accent ? '搭配色标签' : '已选中' }}</span>
+            <span class="theme-demo-link">主题文字</span>
+            <span class="theme-demo-button">主要按钮 <Check :size="14" /></span>
+          </div>
         </div>
-        <div class="theme-demo-controls">
-          <span class="theme-demo-tag">{{ tempTheme.accent ? '搭配色标签' : '已选中' }}</span>
-          <span class="theme-demo-link">主题文字</span>
-          <span class="theme-demo-button">主要按钮 <Check :size="14" /></span>
+        <div class="theme-demo-grid" aria-label="常用控件效果预览">
+          <label class="theme-demo-field">
+            <span class="theme-demo-field-title">下拉列表</span>
+            <select v-model="previewSelect" aria-label="预览下拉列表">
+              <option value="first">选项一</option>
+              <option value="second">选项二</option>
+            </select>
+          </label>
+          <label class="theme-demo-field">
+            <span class="theme-demo-field-title">文本框</span>
+            <input v-model="previewText" class="form-input" type="text" aria-label="预览文本框" placeholder="输入文本" />
+          </label>
+          <div class="theme-demo-field">
+            <span class="theme-demo-field-title">复选框</span>
+            <label class="theme-demo-choice"><input v-model="previewChecked" type="checkbox" /> 启用选项</label>
+          </div>
+          <div class="theme-demo-field">
+            <span id="theme-preview-radio-label" class="theme-demo-field-title">单选框</span>
+            <div class="theme-demo-choice-row" role="radiogroup" aria-labelledby="theme-preview-radio-label">
+              <label class="theme-demo-choice"><input v-model="previewRadio" type="radio" value="first" name="theme-preview-radio" /> 选项一</label>
+              <label class="theme-demo-choice"><input v-model="previewRadio" type="radio" value="second" name="theme-preview-radio" /> 选项二</label>
+            </div>
+          </div>
+          <div class="theme-demo-field">
+            <span class="theme-demo-field-title">开关</span>
+            <label class="theme-demo-switch capability-switch">
+              <input v-model="previewSwitch" type="checkbox" role="switch" aria-label="预览开关" />
+              <span class="capability-switch-track" aria-hidden="true"></span>
+              <span>{{ previewSwitch ? '已开启' : '已关闭' }}</span>
+            </label>
+          </div>
+          <div class="theme-demo-field">
+            <span class="theme-demo-field-title">标签页</span>
+            <div class="tabs theme-demo-tabs" role="tablist" aria-label="预览标签页">
+              <button v-for="tab in previewTabs" :id="`theme-preview-tab-${tab.value}`" :key="tab.value" type="button" role="tab"
+                      :class="['tab', { active: previewTab === tab.value }]" :aria-selected="previewTab === tab.value"
+                      :tabindex="previewTab === tab.value ? 0 : -1" aria-controls="theme-preview-panel"
+                      @click="previewTab = tab.value" @keydown="switchPreviewTab($event)">{{ tab.label }}</button>
+            </div>
+            <div id="theme-preview-panel" class="theme-demo-tab-panel" role="tabpanel" :aria-labelledby="`theme-preview-tab-${previewTab}`">{{ previewTab === 'first' ? '选项一的内容' : '选项二的内容' }}</div>
+          </div>
         </div>
       </div>
       <p class="theme-preview-note">{{ tempTheme.mode === 'glass' ? (tempTheme.finish === 'frosted' ? '磨砂玻璃以乳白雾面、细颗粒和柔和漫反射弱化背景细节。' : '液态玻璃保留清晰背景，以锐利亮边和折射高光勾勒轮廓。') : '纹理轻覆于主色按钮。' }} 主题色会从鼠标位置映射到玻璃表面，文字随明暗外观自动调整。</p>
@@ -214,6 +258,21 @@ const openCustomPair = () => {
 const updatePair = (key, event) => { tempTheme.value = { ...tempTheme.value, [key]: event.target.value.toUpperCase() } }
 const swapPair = () => { tempTheme.value = { ...tempTheme.value, value: tempTheme.value.accent, accent: tempTheme.value.value } }
 const previewVariables = computed(() => themeVariables(tempTheme.value))
+const previewSelect = ref('first')
+const previewText = ref('示例文本')
+const previewChecked = ref(true)
+const previewRadio = ref('first')
+const previewSwitch = ref(true)
+const previewTabs = [{ value: 'first', label: '选项一' }, { value: 'second', label: '选项二' }]
+const previewTab = ref('first')
+const switchPreviewTab = event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const index = previewTabs.findIndex(tab => tab.value === previewTab.value)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? previewTabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + previewTabs.length) % previewTabs.length
+  previewTab.value = previewTabs[next].value
+  document.getElementById(`theme-preview-tab-${previewTab.value}`)?.focus()
+}
 
 const persistTheme = () => {
   try {
@@ -273,7 +332,8 @@ watch(tempTheme, persistTheme)
 .pair-color-field { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
 .pair-color-field input { width: 42px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: var(--surface); }
 .pair-color-field span { font-size: 11px; font-variant-numeric: tabular-nums; }
-.theme-demo { margin-top: 20px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.theme-demo { margin-top: 20px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.theme-demo-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .theme-demo-info, .theme-demo-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .theme-demo-swatch { width: 42px; height: 42px; border: 1px solid #00000012; border-radius: 12px; }
 .theme-demo-info strong { font-size: 13px; }
@@ -281,8 +341,28 @@ watch(tempTheme, persistTheme)
 .theme-demo-tag { background: var(--theme-tag-background, var(--accent-light)); color: var(--navigation-color, var(--accent)); padding: 5px 9px; border-radius: 6px; font-size: 12px; }
 .theme-demo-link { color: var(--primary); font-size: 12px; }
 .theme-demo-button { display: inline-flex; align-items: center; gap: 8px; background: var(--primary); color: var(--primary-text, white); border-radius: 8px; padding: 9px 12px; font-size: 12px; }
+.theme-demo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.theme-demo-field { box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; min-width: 0; min-height: 91px; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); color: var(--text); font-size: 12px; }
+.theme-demo-field-title { display: block; padding: 0; color: var(--text2); font-size: 12px; font-weight: 600; line-height: 18px; }
+.theme-demo-field select, .theme-demo-field .form-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; font: inherit; }
+.theme-demo-field .form-input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.theme-demo-choice-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.theme-demo-choice { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; width: fit-content; color: var(--text); cursor: pointer; white-space: nowrap; }
+.theme-demo-choice input { flex: none; margin: 0; cursor: pointer; }
+.theme-demo-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; width: fit-content; min-height: 24px; cursor: pointer; color: var(--text); }
+.theme-demo-switch input { position: absolute; width: 38px; height: 22px; margin: 0; opacity: 0; cursor: pointer; }
+.theme-demo-switch .capability-switch-track { display: block; flex: 0 0 38px; width: 38px; height: 22px; border-radius: 12px; background: var(--border); pointer-events: none; transition: background .15s; }
+.theme-demo-switch .capability-switch-track::after { content: ''; display: block; width: 16px; height: 16px; margin: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.theme-demo-switch input:checked + .capability-switch-track { background: var(--primary); }
+.theme-demo-switch input:checked + .capability-switch-track::after { transform: translateX(16px); }
+.theme-demo-switch input:focus-visible + .capability-switch-track { outline: 2px solid var(--primary); outline-offset: 3px; }
+.theme-demo-tabs { margin: 0; gap: 2px; }
+.theme-demo-tabs .tab { padding: 5px 10px; font-size: 12px; }
+.theme-demo-tab-panel { padding-top: 2px; color: var(--text2); font-size: 11px; }
 .theme-preview-note { margin: 10px 0 0; font-size: 11px; color: var(--text2); }
+@media (max-width: 760px) { .theme-demo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .settings { padding: 0; } .theme-colors { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } .theme-actions { flex-wrap: wrap; } }
+@media (max-width: 440px) { .theme-demo-grid { grid-template-columns: 1fr; } }
 
 .texture-categories { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .glass-glow-control { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:0 0 18px; color:var(--text2); font-size:12px; }
@@ -297,4 +377,33 @@ watch(tempTheme, persistTheme)
 .theme-actions { display:flex; gap:12px; margin-top:12px; align-items:center; }
 .theme-hint { color:var(--text3); font-size:12px; }
 .theme-demo-button { background-color:var(--theme-button-background, var(--primary)); background-image:var(--theme-gradient); border:1px solid var(--theme-button-border, transparent); box-shadow:var(--theme-button-shadow, none); backdrop-filter:var(--theme-backdrop, none); }
+</style>
+<style>
+:root[data-color-theme=glass] body .settings .theme-switchers :is(.theme-group-tabs, .appearance-options) {
+  background-color: color-mix(in srgb, var(--primary) 7%, var(--glass-search-background)) !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border)) !important;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 7%, transparent);
+}
+:root[data-color-theme=glass] body .settings .theme-switchers :is(.theme-group-tab, .appearance-option) {
+  box-sizing: border-box;
+  min-height: 38px;
+  border: 1px solid transparent;
+}
+:root[data-color-theme=glass] body .settings .theme-switchers :is(.theme-group-tab, .appearance-option):hover:not(.active) {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--text);
+}
+:root[data-color-theme=glass] body .settings .theme-switchers :is(.theme-group-tab.active, .appearance-option.active) {
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface)) !important;
+  color: var(--navigation-color) !important;
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border)) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent), 0 1px 5px color-mix(in srgb, var(--primary) 14%, transparent);
+  font-weight: 700;
+}
+:root[data-color-theme=glass] body .settings .theme-demo-field {
+  background-color: var(--glass-search-background);
+  border-color: var(--glass-field-border);
+  backdrop-filter: var(--glass-control-backdrop);
+  -webkit-backdrop-filter: var(--glass-control-backdrop);
+}
 </style>
