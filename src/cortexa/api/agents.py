@@ -27,7 +27,7 @@ from cortexa.api.schemas import (
     AgentPublishRequest,
     AgentPublishResponse,
 )
-from cortexa.db.models import Agent, AgentVersion, AgentRun, Workspace
+from cortexa.db.models import Agent, AgentVersion, AgentRun, Conversation, Workspace
 from cortexa.runtime.policy import platform_config, resolve_effective_policy
 from cortexa.runtime.state import BudgetLimits
 from cortexa.security.access import actor_required, require
@@ -289,6 +289,8 @@ async def delete_agent(
     from cortexa.db.models import Memory
     if await db.scalar(select(Memory.__table__.c.id).where(Memory.__table__.c.agent_id==agent.id).limit(1)):
         raise HTTPException(409,"此 Agent 有长期记忆，请先明确清理其记忆及派生关系")
+    if await db.scalar(select(Conversation.id).where(Conversation.agent_id == agent.id).limit(1)):
+        raise HTTPException(409, "此 Agent 有历史对话，请先处理对话再删除")
     await db.delete(agent)
 
 

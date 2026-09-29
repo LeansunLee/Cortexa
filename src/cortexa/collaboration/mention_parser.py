@@ -61,7 +61,8 @@ def parse_mentions(text: str) -> ParsedMentions:
     """
     # 匹配 @名称，名称可以包含中文、英文、数字、下划线、连字符
     # 名称以 @ 开头，后面跟至少一个非空白字符，直到遇到空白或另一个 @ 或行尾
-    pattern = r'@([^\s@]+)'
+    # An address such as admin@example.com is ordinary text, not an invocation.
+    pattern = r'(?<![\w.+-])@([^\s@]+)'
 
     mentions = []
     cleaned_parts = []
@@ -110,11 +111,11 @@ def build_mention_display_html(name: str, agent_name: str = "") -> str:
 
 # 预定义的 Agent 名称别名映射（用于模糊匹配）
 ALIAS_MAP: dict[str, list[str]] = {
-    "市场部": ["市场", "marketing", "市"],
-    "产品部": ["产品", "product", "产"],
-    "财务部": ["财务", "finance", "财"],
-    "法务部": ["法务", "legal", "法"],
-    "品牌部": ["品牌", "brand", "品"],
+    "市场部": ["市场", "marketing"],
+    "产品部": ["产品", "product"],
+    "财务部": ["财务", "finance"],
+    "法务部": ["法务", "legal"],
+    "品牌部": ["品牌", "brand"],
     "研发部": ["研发", "rd", "开发", "engineering"],
     "人力资源部": ["人力", "hr", "人事"],
     "运营部": ["运营", "operation", "ops"],
@@ -139,22 +140,12 @@ def fuzzy_match_agent(query: str, agent_names: list[str]) -> str | None:
         if name.lower() == query_lower:
             return name
 
-    # 包含匹配（名称包含查询）
-    for name in agent_names:
-        if query_lower in name.lower() or name.lower() in query_lower:
-            return name
-
-    # 别名匹配
+    # Only an exact name or an unambiguous, configured alias can invoke an Agent.
     for canonical, aliases in ALIAS_MAP.items():
         if query_lower in aliases or query_lower == canonical.lower():
-            for name in agent_names:
-                # Check if canonical name matches (e.g. "市场部" in "市场营销部")
-                # or if agent name contains the canonical
-                if canonical.lower() in name.lower() or name.lower() in canonical.lower():
-                    return name
-                # Also check if any alias matches the agent name
-                for alias in aliases:
-                    if alias.lower() in name.lower():
-                        return name
+            stem = canonical.removesuffix("部")
+            matches = [name for name in agent_names if stem.casefold() in name.casefold()]
+            if len(matches) == 1:
+                return matches[0]
 
     return None

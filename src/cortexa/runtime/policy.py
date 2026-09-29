@@ -49,6 +49,8 @@ def resolve_effective_policy(config, workspace_policy=None, agent=None, goal_bud
         validated = BudgetLimits.model_validate(raw)
         for key in validated.model_fields_set:
             value = getattr(validated, key)
+            if source == "Goal" and value > ceilings[key]:
+                raise ValueError(f"{key} exceeds the platform limit")
             if source == "Workspace":
                 values[key] = value if value == UNLIMITED_BUDGET else min(value, ceilings[key])
                 budget_trace[key] = {

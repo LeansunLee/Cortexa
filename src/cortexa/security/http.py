@@ -78,6 +78,21 @@ class SecurityMiddleware:
                 if fresh is None or fresh.signature() != initial:
                     return False
                 fresh.workspace_id = actor.workspace_id
+                if streaming and path.startswith("/api/conversations/"):
+                    parts = path.split("/")
+                    if len(parts) > 3:
+                        try:
+                            conversation_id = uuid.UUID(parts[3])
+                        except ValueError:
+                            return False
+                        async with async_session_factory() as db:
+                            exists = await db.scalar(raw(select(Conversation.id).where(
+                                Conversation.id == conversation_id,
+                                Conversation.owner_user_id == actor.user_id,
+                                Conversation.workspace_id == actor.workspace_id,
+                            )))
+                        if exists is None:
+                            return False
                 if actor.runtime_agent_ids:
                     async with async_session_factory() as db:
                         agents = (

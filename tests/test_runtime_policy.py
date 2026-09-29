@@ -37,6 +37,9 @@ def test_policy_inheritance_dynamic_sources_and_hard_limits():
     assert legacy.effective_budget.output_tokens == 16384
     assert legacy.collaboration_mode == Autonomy.EXPLICIT_ONLY
 
+    with pytest.raises(ValueError, match="llm_calls exceeds the platform limit"):
+        resolve_effective_policy({}, None, a, {"llm_calls": 999})
+
     workspace = {
         "version": 1,
         "budget": {"llm_calls": 4, "agent_calls": 2},
@@ -151,6 +154,14 @@ def test_child_allocation_preserves_parent_finalization_reserve():
     budget.reserve(output_tokens=child.output_tokens, llm_calls=child.llm_calls)
     assert budget.remaining("output_tokens") >= parent.finalization_reserve["output_tokens"]
     assert budget.remaining("llm_calls") >= parent.finalization_reserve["llm_calls"]
+
+
+def test_child_allocation_keeps_two_calls_when_parent_has_room():
+    parent = GoalState()
+    budget = RuntimeBudget(parent)
+    budget.reserve(llm_calls=2)
+    child = allocate_child_limits(budget, parent.limits, remaining_slots=3)
+    assert child is not None and child.llm_calls == 2
 
 
 def test_budget_phases_conserve_then_finalize():

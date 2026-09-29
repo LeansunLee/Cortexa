@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -183,6 +184,12 @@ async def discover(db, source, state, payload, config):
         descriptor.operations = settings(agent).operations
         descriptors.append(descriptor)
     query = payload["goal"]["raw_request"] + "\n" + "\n".join(payload.get("clarifications", []))
+    invitation_requested = bool(re.search(
+        r"(?:邀请|请|找|叫|让|委托|协同|协作).{0,12}(?:同事|智能体|Agent|代理|帮手)|"
+        r"(?:同事|智能体|Agent|代理).{0,8}(?:一起|参与|协作|帮忙)",
+        query, re.I,
+    ))
+    payload["explicit_invitation"] = invitation_requested
     matches = match_capabilities(
         query,
         descriptors,
@@ -191,6 +198,10 @@ async def discover(db, source, state, payload, config):
         operations=tuple(payload["goal"].get("operations", [])),
     )
     selected_ids = {m.capability.id.removeprefix("agent:") for m in matches}
+    if invitation_requested and not selected_ids:
+        # Let the model assess bounded eligible descriptions when the user's
+        # invitation has no lexical overlap with the catalog.
+        selected_ids = {str(a.id) for a in candidates[:top_k]}
     chosen = sorted(explicit + [a for a in candidates if str(a.id) in selected_ids], key=lambda a: str(a.id))
     state.candidate_agents = sorted(str(a.id) for a in chosen if str(a.id) not in fixed)
     return chosen, mode

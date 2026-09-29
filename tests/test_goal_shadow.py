@@ -166,6 +166,9 @@ def stream_fixture(monkeypatch, *, enabled, debug=False, can_operate=False, prox
         async def execute(self, query):
             return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: list(reversed(saved))))
 
+        async def scalar(self, query):
+            return conv.id
+
     class Model:
         async def astream(self, messages):
             calls.append(messages)

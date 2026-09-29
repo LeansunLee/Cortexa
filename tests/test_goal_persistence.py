@@ -164,7 +164,9 @@ async def api_scenarios(monkeypatch, store, conv_id):
     assert row.state["consumed"]["llm_calls"] == 1
     assert store.files.read(row.id, row.artifacts["snapshot"])["final_reply"] == "hello"
     duplicate = await api.create_goal_stream(conv_id, api.GoalRequest(content="你好", idempotency_key="api-hello"))
-    assert duplicate["goal_id"] == str(ident) and len(model.calls) == 1
+    duplicate_events = await collect(duplicate)
+    assert duplicate.media_type == "text/event-stream"
+    assert duplicate_events[-1]["goal_id"] == str(ident) and len(model.calls) == 1
 
     # Parameter gap -> WAITING -> explicit owner/revision resume -> original Goal COMPLETE.
     b = binding()

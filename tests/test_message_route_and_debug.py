@@ -42,9 +42,12 @@ def test_message_route_keeps_greetings_ordinary_and_tasks_in_goal(tmp_path, monk
         async def __aexit__(self, *args):
             pass
 
+        async def scalar(self, *args):
+            return {"collaboration": {"max_autonomy": "AUTONOMOUS"}}
+
     agent = SimpleNamespace(agent_type="llm")
     monkeypatch.setattr(goals.store, "sessions", lambda: Session())
-    conversation = SimpleNamespace(agent_id=uuid.uuid4(), metadata_json={})
+    conversation = SimpleNamespace(agent_id=uuid.uuid4(), workspace_id=uuid.uuid4(), metadata_json={})
     monkeypatch.setattr(goals, "own_conversation", AsyncMock(return_value=conversation))
     monkeypatch.setattr(goals, "require_agent_use", AsyncMock(return_value=agent))
     config = tmp_path / "config.yaml"
@@ -61,10 +64,12 @@ def test_message_route_keeps_greetings_ordinary_and_tasks_in_goal(tmp_path, monk
     assert asyncio.run(route("帮我做一份10月销售策略"))["use_goal"] is True
     assert asyncio.run(route("请分析附件", has_attachments=True))["use_goal"] is False
     assert asyncio.run(route("杭州呢"))["use_goal"] is False
+    assert asyncio.run(route("不要整理这些文件了"))["use_goal"] is False
     for mode in ("ASK_BEFORE_COLLABORATION", "AUTONOMOUS"):
         conversation.metadata_json = {"collaboration_mode": mode}
         assert asyncio.run(route("杭州呢"))["use_goal"] is True
         assert asyncio.run(route("你好"))["use_goal"] is False
+        assert asyncio.run(route("不要整理这些文件了"))["use_goal"] is False
         assert asyncio.run(route("请分析附件", has_attachments=True))["use_goal"] is False
     agent.agent_type = "proxy"
     assert asyncio.run(route("请分析销售数据"))["use_goal"] is False

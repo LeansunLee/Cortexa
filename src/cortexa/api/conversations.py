@@ -18,7 +18,7 @@ import yaml
 from cortexa.agents.usage import UsageTotals
 from contextlib import aclosing
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File as FastAPIFile
 from pathlib import Path
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -420,7 +420,7 @@ async def create_message(
                 error_msg = ConversationMessage(
                     conversation_id=conv_id,
                     role="assistant",
-                    content=f"抱歉，处理请求时出错：{str(e)}",
+                    content="抱歉，处理请求时出错，请稍后重试。",
                 )
                 db.add(error_msg)
 
@@ -822,9 +822,12 @@ async def update_conversation(
 @usage_action("regenerate")
 async def regenerate_message(
     conv_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ConversationMessage:
     """Regenerate the last assistant message."""
+    if (await request.body()).strip() not in {b"", b"{}"}:
+        raise HTTPException(422, "重新生成不接受请求参数")
     conv = await db.get(Conversation, conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -1511,7 +1514,11 @@ async def create_message_stream(
                             if payload.collaboration_drafts is not None else fuzzy_match_agent(mention.name, list(agent_name_map.keys())))
 
                         if not matched_name:
-                            yield f"data: {json.dumps({'type': 'collab_status', 'status': 'agent_not_found', 'target_name': mention.name, 'message': f'未找到名为 \"{mention.name}\" 的智能体'})}\n\n"
+                            if mention.name.casefold() == agent.name.casefold():
+                                message = "不能邀请当前 Agent 自身协作"
+                            else:
+                                message = f'未找到名为 "{mention.name}" 的智能体'
+                            yield f"data: {json.dumps({'type': 'collab_status', 'status': 'agent_not_found', 'target_name': mention.name, 'message': message}, ensure_ascii=False)}\n\n"
                             continue
 
                         target_info = (next(a for a in agents_list if a["id"] == mention.name)
@@ -2099,6 +2106,13 @@ async def create_message_stream(
                     content=full_reply,
                     metadata_json=meta,
                 )
+                # A parallel delete must not leave a reply in an inaccessible conversation.
+                current_conversation = await db.scalar(
+                    select(Conversation.id).where(Conversation.id == conv_id).with_for_update()
+                )
+                if current_conversation is None:
+                    yield f"data: {json.dumps({'type': 'error', 'error': '对话已删除，回复已停止'}, ensure_ascii=False)}\n\n"
+                    return
                 db.add(assistant_msg)
                 await db.flush()
                 await db.commit()
@@ -2106,7 +2120,7 @@ async def create_message_stream(
                 from cortexa.memory.integration import register_extraction
                 await register_extraction(db,conv_id,user_msg.id)
 
-                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
 
             except asyncio.CancelledError:
@@ -2114,13 +2128,14 @@ async def create_message_stream(
                     import anyio
                     with anyio.CancelScope(shield=True):
                         async with async_session_factory() as save_db:
-                            save_db.add(ConversationMessage(
+                            if await save_db.get(Conversation, conv_id) is not None:
+                                save_db.add(ConversationMessage(
                                 conversation_id=conv_id,
                                 role="assistant",
                                 content=full_reply,
                                 metadata_json={"stopped": True, "steps": process_steps, **({"debug_trace": debug_trace} if debug_trace else {})},
-                            ))
-                            await save_db.commit()
+                                ))
+                                await save_db.commit()
                 raise
             except Exception as e:
                 print(f"[STREAM] Error: {e}", flush=True)
@@ -2128,7 +2143,8 @@ async def create_message_stream(
                     await db.rollback()
                 except Exception:
                     pass
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                error = e.detail if isinstance(e, HTTPException) else "对话处理失败，请稍后重试"
+                yield f"data: {json.dumps({'type': 'error', 'error': error}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

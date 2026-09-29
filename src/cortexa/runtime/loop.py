@@ -250,7 +250,8 @@ class GoalLoop:
                 selected = selected.bind(
                     max_tokens=min(
                         4096,
-                        remaining_output if phase == BudgetPhase.FINALIZING else max(1, planning_output // 4),
+                        remaining_output,
+                        remaining_output if phase == BudgetPhase.FINALIZING else max(256, planning_output),
                     )
                 )
                 response = None
@@ -349,7 +350,19 @@ class GoalLoop:
                 if not calls:
                     if not required_satisfied and phase != BudgetPhase.FINALIZING:
                         raise RuntimeHalt("required_capability_not_used")
+                    if not round_text.strip() and phase != BudgetPhase.FINALIZING and (
+                        (response.response_metadata or {}).get("finish_reason") in {"length", "max_tokens"}
+                    ):
+                        self.state.partial = True
+                        self.payload["force_finalizing"] = True
+                        self.record("Empty planning response stopped for finalization")
+                        self.payload["messages"] = serialize_messages(messages)
+                        await self.save()
+                        continue
                     if not round_text.strip():
+                        if self.state.limits.output_tokens <= 1000:
+                            self.state.partial = True
+                            raise RuntimeHalt("model_empty", status=GoalStatus.BLOCKED)
                         raise RuntimeHalt("model_empty", status=GoalStatus.FAILED)
                     if (response.response_metadata or {}).get("finish_reason") in {"length", "max_tokens"}:
                         raise RuntimeHalt("model_output_incomplete")

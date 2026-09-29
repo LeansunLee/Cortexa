@@ -12,7 +12,7 @@ import anyio
 import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, messages_from_dict
+from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select, text
 from sqlalchemy.exc import ProgrammingError
@@ -59,12 +59,26 @@ class GoalRequest(BaseModel):
     budget: dict | None = None
     participants: list[ParticipantRequest] = Field(default_factory=list, max_length=5)
 
+    @field_validator("content")
+    @classmethod
+    def reject_nul(cls, value):
+        if "\x00" in value:
+            raise ValueError("消息不能包含 NUL 字符")
+        return value
+
 
 class RouteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(min_length=1, max_length=64000)
     participant_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5)
     has_attachments: bool = False
+
+    @field_validator("content")
+    @classmethod
+    def reject_nul(cls, value):
+        if "\x00" in value:
+            raise ValueError("消息不能包含 NUL 字符")
+        return value
 
 
 @router.post("/{conv_id}/message-route")
@@ -73,6 +87,7 @@ async def message_route(conv_id: uuid.UUID, request: RouteRequest):
     async with store.sessions() as db:
         conv = await own_conversation(db, conv_id, use_agent=True)
         agent = await require_agent_use(db, conv.agent_id)
+        workspace_policy = await db.scalar(select(Workspace.runtime_policy).where(Workspace.id == conv.workspace_id))
     try:
         features = (yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}).get("features", {})
     except (OSError, yaml.YAMLError):
@@ -85,17 +100,20 @@ async def message_route(conv_id: uuid.UUID, request: RouteRequest):
     text = goal.objective.strip()
     if re.fullmatch(r"(?:你好|您好|嗨|在吗|谢谢|早上好|晚上好|hello|hi)[!！。？?\s]*", text, re.I):
         return {"use_goal": False}
+    affirmative = re.sub(r"(?:^|[，,；;。\n])\s*(?:请)?(?:不要|不用|无需|禁止|别)[^，,；;。\n]*", "", text)
+    if not affirmative.strip() and not goal.explicit_agents:
+        return {"use_goal": False}
+    effective_mode = conversation_mode_options(conv, agent, workspace_policy, execution_config())["collaboration_mode"]
     if (
         features.get("goal_collaboration_enabled") is True
-        and (getattr(conv, "metadata_json", None) or {}).get("collaboration_mode", "EXPLICIT_ONLY")
-        != Autonomy.EXPLICIT_ONLY
+        and effective_mode != Autonomy.EXPLICIT_ONLY
     ):
         return {"use_goal": True}
     explicit_task = bool(goal.explicit_agents or goal.field_sources.get("labelled_objective") or goal.success_criteria)
     task_language = bool(
         re.search(
             r"研究|制定|规划|生成|撰写|制作|执行|完成|分析|对比|比较|调查|整理|汇总|总结|创建|协作|一起|方案|策略|计划|调研|起草|设计|安排",
-            text,
+            affirmative,
         )
     )
     return {"use_goal": explicit_task or task_language}
@@ -106,6 +124,13 @@ class ResumeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(min_length=1, max_length=16000)
     revision: int = Field(ge=1)
+
+    @field_validator("content")
+    @classmethod
+    def reject_nul(cls, value):
+        if "\x00" in value:
+            raise ValueError("消息不能包含 NUL 字符")
+        return value
 
 
 def execution_config():
@@ -134,6 +159,7 @@ def public_status(row):
         "limits": state.limits.model_dump(),
         "budget_phase": state.budget_phase,
         "partial": state.partial,
+        "budget_failure": {k: v for k, v in (state.budget_failure or {}).items() if k != "agent_id"} or None,
         "message_id": state.result_message_id,
     }
 
@@ -238,8 +264,20 @@ async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
     payload["collaboration_runtime"] = enabled
     row, created = await store.create(conv_id, request.idempotency_key, request.content, state, payload)
     if not created:
-        # Never execute a second time, even when the original stream is still active.
-        return public_status(row)
+        # Preserve the endpoint's SSE contract without executing a second time.
+        async def replay():
+            def event(value):
+                return "data: " + json.dumps(value, ensure_ascii=False) + "\n\n"
+            status = public_status(row)
+            yield event({"type": "goal_status", **status})
+            if row.status == GoalStatus.RUNNING:
+                yield event({"type": "error", "error": "目标正在执行，请读取最新状态", "goal_id": str(row.id)})
+            else:
+                snapshot = store.files.read(row.id, row.artifacts["snapshot"])
+                yield event({"type": "done", "id": status["message_id"],
+                             "content": snapshot.get("final_reply", ""), **status})
+        return StreamingResponse(replay(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     payload["goal_id"] = str(row.id)
     return stream_response(row, state, payload, agent, workspace)
 
@@ -329,6 +367,10 @@ HALT_MESSAGES = {
     "context_budget_exceeded": "当前上下文超过预算，已停止执行。请缩小任务范围。",
     "invalid_reasoning_action": "模型返回了不完整的工具调用；该批调用尚未执行。请继续重试。",
     "runtime_validation_error": "运行时参数校验失败；已保留已完成的协作结果。请在此对话中补充说明并继续。",
+    "model_empty": "模型未返回可用内容，目标已停止。请重试或调整模型输出预算。",
+    "model_output_incomplete": "模型回复未完成，目标已停止。请重试或提高输出预算。",
+    "collaboration_denied": "所请求的协作 Agent 已被拒绝，本目标已停止。请新建目标调整参与者。",
+    "child_budget_unavailable": "当前剩余预算不足以完成协作并汇总结果，目标已停止。",
 }
 
 
@@ -337,10 +379,9 @@ def budget_notice(state):
     if not failure:
         return None
     role = "子运行" if failure["runtime"] == "CHILD" else "主运行"
-    return (
-        f"{role}的 {failure['resource']} 预算已耗尽：当前 {failure['current']} / 上限 {failure['limit']}，"
-        f"运行状态 {failure['phase']}，Agent {failure['agent_id'] or '未知'}。"
-    )
+    if failure["current"] < failure["limit"]:
+        return f"{role}的 {failure['resource']} 可用预算不足，已为最终回复预留额度。"
+    return f"{role}的 {failure['resource']} 预算已耗尽，目标已停止。"
 
 
 def stream_response(row, state, payload, agent, workspace):
@@ -429,6 +470,12 @@ def stream_response(row, state, payload, agent, workspace):
                         bindings.extend(
                             await prepare_agent_bindings(agent, state, payload, loop, store, row, execution_config)
                         )
+                        if payload.get("explicit_invitation") and bindings:
+                            payload["messages"] = serialize_messages([
+                                *messages_from_dict(payload["messages"]),
+                                SystemMessage(content="用户明确要求邀请协作者。请根据可用 Agent 的描述决定是否调用；"
+                                              "如无合适参与者，最终回复中说明未邀请及原因。"),
+                            ])
                         payload["collaboration_runtime"] = True
                     required = [t.name for t in business] if should_require_business_tool(query, business) else []
                     await loop.save()
@@ -438,6 +485,8 @@ def stream_response(row, state, payload, agent, workspace):
                     async for value in loop.run(model, bindings, required_names=required):
                         yield event(value)
             reply = loop.reply or payload.get("final_reply", "")
+            if state.status == GoalStatus.COMPLETE and payload.get("explicit_invitation") and not state.used_agents:
+                reply += ("\n\n" if reply else "") + "本次未邀请协作 Agent；当前未找到适合此任务的参与者。"
             if state.status != GoalStatus.COMPLETE:
                 notice = (
                     (payload.get("waiting_message") if state.reason in {"missing_inputs", "invalid_reasoning_action"} else None)
@@ -481,6 +530,7 @@ def stream_response(row, state, payload, agent, workspace):
                         if loop:
                             loop.budget.sync()
                         state.status, state.reason, state.next_action = GoalStatus.WAITING, "cancelled", "ASK_USER"
+                        state.pending_agents = []
                         if state.current_action and state.current_action.phase == "started":
                             state.current_action.phase = "unknown"
                         payload["final_reply"] = loop.reply if loop else ""
@@ -522,6 +572,7 @@ def stream_response(row, state, payload, agent, workspace):
                         (GoalStatus.WAITING, "runtime_validation_error", "ASK_USER")
                         if recoverable_validation else (GoalStatus.FAILED, "runtime_error", "FAIL")
                     )
+                    state.pending_agents = []
                     if isinstance(error, TimeoutError):
                         state.status, state.reason = GoalStatus.BLOCKED, "budget_exhausted:duration"
                         if loop:
@@ -536,12 +587,13 @@ def stream_response(row, state, payload, agent, workspace):
                             )
                     if loop:
                         loop.budget.sync()
-                    notice = HALT_MESSAGES["runtime_validation_error"] if recoverable_validation else None
+                    notice = (HALT_MESSAGES["runtime_validation_error"] if recoverable_validation
+                              else budget_notice(state) if isinstance(error, TimeoutError) else None)
                     reply = (
                         (loop.reply + "\n\n" if loop and loop.reply else "") + notice
                         if notice else (loop.reply if loop and loop.reply else None)
                     )
-                    if notice:
+                    if reply:
                         payload["final_reply"] = reply
                     message = await store.checkpoint(
                         row,
@@ -550,7 +602,7 @@ def stream_response(row, state, payload, agent, workspace):
                         reply=reply,
                         trace=loop.trace if loop else [],
                     )
-                    if recoverable_validation and message:
+                    if (recoverable_validation or isinstance(error, TimeoutError)) and message:
                         yield event({
                             "type": "done", "id": str(message.id), "content": message.content,
                             "sources": payload.get("sources", []),
@@ -642,6 +694,8 @@ async def approval_candidates(conv_id: uuid.UUID, goal_id: uuid.UUID):
         mode, _, enabled = await policy_for(db, source, execution_config(), state)
     if not enabled or mode == Autonomy.EXPLICIT_ONLY:
         return []
+    if row.status != GoalStatus.WAITING or state.reason != "collaboration_approval_required":
+        return []
     return [
         {"id": str(a.id), "name": a.name, "description": (a.description or "")[:600], "avatar": a.avatar}
         for a in agents
@@ -686,6 +740,10 @@ async def authorize_collaboration(conv_id: uuid.UUID, goal_id: uuid.UUID, reques
     messages.append(
         HumanMessage(content="本次目标的协作选择已保存。仅允许已授权的参与者；未选择者已拒绝，不得再次请求。")
     )
+    messages.append(SystemMessage(
+        content="以下协作者已被用户明确拒绝。不要再要求用户提供其 Agent 标识，"
+                "也不要将拒绝解释为缺少标识。继续完成无需协作的部分，并明确说明未完成的协作部分。"
+    ))
     snapshot["messages"] = serialize_messages(messages)
     await store.checkpoint(row, state, snapshot)
     return public_status(row)

@@ -58,6 +58,8 @@ def allocate_child_limits(parent_budget, target_limits, remaining_slots):
             limits[key] = min(limits[key], available - reserve_for_others)
         else:
             limits[key] = min(limits[key], available // max(1, remaining_slots))
+        if key == "llm_calls" and available >= 2 and limits[key] < 2 and target_limits.llm_calls >= 2:
+            limits[key] = 2
     limits["agent_calls"] = 0
     limits["max_collaborators"] = 0
     if limits["duration"] < 1 or limits["max_steps"] < 1 or limits["llm_calls"] < 1 or limits["output_tokens"] < 1:
@@ -328,11 +330,8 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                             "本次尚未执行工具。"
                         )
                     elif failure:
-                        output = (
-                            f"目标 Agent {fresh.name} 的 {failure['resource']} 预算已耗尽："
-                            f"当前 {failure['current']} / 上限 {failure['limit']}，"
-                            f"状态 {failure['phase']}，Child Runtime。"
-                        )
+                        status_text = "预算已耗尽" if failure["current"] >= failure["limit"] else "可用预算不足"
+                        output = f"目标 Agent {fresh.name} 的 {failure['resource']} {status_text}，未能完成协作。"
                     else:
                         output = {
                             "budget_exhausted:output_tokens": "目标 Agent 的共享输出预算已耗尽",

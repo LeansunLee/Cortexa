@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from cortexa.collaboration.drafts import CollaborationDraft
 from cortexa.runtime.collaboration import CollaborationSettings
 
@@ -316,9 +316,17 @@ class ConversationListOut(BaseModel):
 
 
 class ConversationMessageCreate(BaseModel):
+    model_config = {"str_strip_whitespace": True}
     collaboration_drafts: list[CollaborationDraft] | None = Field(default=None, max_length=3)
-    content: str
+    content: str = Field(min_length=1, max_length=64000)
     attachments: list[dict] | None = None
+
+    @field_validator("content")
+    @classmethod
+    def reject_nul(cls, content: str) -> str:
+        if "\x00" in content:
+            raise ValueError("消息不能包含 NUL 字符")
+        return content
 
 
 class ConversationMessageOut(BaseModel):

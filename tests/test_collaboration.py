@@ -65,11 +65,23 @@ class TestFuzzyMatch:
         names = ["市场部", "产品部", "财务部"]
         assert fuzzy_match_agent("技术部", names) is None
 
+    def test_short_prefix_never_invokes_agent(self):
+        from cortexa.collaboration.mention_parser import fuzzy_match_agent
+        assert fuzzy_match_agent("bug", ["bugtest-代理"]) is None
+        assert fuzzy_match_agent("bugtes", ["bugtest-代理"]) is None
+
     def test_alias_match(self):
         from cortexa.collaboration.mention_parser import fuzzy_match_agent
         names = ["市场营销部", "产品研发部"]
         result = fuzzy_match_agent("marketing", names)
         assert result == "市场营销部"
+
+
+def test_email_address_is_not_an_agent_mention():
+    from cortexa.collaboration.mention_parser import parse_mentions
+    assert not parse_mentions("请发到 admin@bugtest-文案.com").has_mentions
+    assert not parse_mentions("xxx@test.com").has_mentions
+    assert parse_mentions("请 @市场部 查看 admin@test.com").mention_names == ["市场部"]
 
 
 class TestCollaborationSchemas:

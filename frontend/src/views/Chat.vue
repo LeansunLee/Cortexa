@@ -403,6 +403,7 @@
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
+import { inlineFormat } from '../utils/messageFormatting'
 import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
@@ -1519,9 +1520,6 @@ const formatDuration = (ms) => {
 const formatMessage = (content) => {
   if (!content) return ''
 
-  // Escape HTML
-  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
   // Work on RAW content for block detection (before HTML escaping)
   const allLines = content.split('\n')
   const merged = []
@@ -1640,14 +1638,6 @@ const renderBlock = (lines) => {
   }
   return html
 }
-
-const inlineFormat = (text) => {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="hl">$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-}
-
 
 const renderTable = (lines) => {
   const parseRow = (line) => {

@@ -26,6 +26,7 @@ dependencies = [
     "pillow>=11,<13",
     "jsonschema>=4.23,<5",
     "psycopg[binary]>=3.2,<4",
+    "cryptography>=50.0.1",
 ]
 
 [project.scripts]

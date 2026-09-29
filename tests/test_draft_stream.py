@@ -40,6 +40,7 @@ def test_edited_tasks_dependency_results_and_snapshot_persist(monkeypatch, first
         async def rollback(self): pass
         async def execute(self, query):
             return SimpleNamespace(scalar=lambda: 0, scalars=lambda: SimpleNamespace(all=lambda: list(reversed(saved))))
+        async def scalar(self, query): return conv.id
 
     async def handoff(**kwargs):
         value = kwargs['handoff']

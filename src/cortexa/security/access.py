@@ -47,12 +47,23 @@ class Actor:
         )
 
     def signature(self):
+        memberships = tuple(
+            (
+                str(workspace_id),
+                str(member["id"]),
+                tuple(sorted(member["permissions"])),
+                tuple(sorted(map(str, member["role_ids"]))),
+                member["all_agents"],
+                tuple(sorted(map(str, member["agent_ids"]))),
+            )
+            for workspace_id, member in sorted(self.memberships.items(), key=lambda item: str(item[0]))
+        )
         return (
             self.version,
             self.must_change,
             self.superadmin,
             sorted(self.system_permissions),
-            repr(self.memberships),
+            memberships,
         )
 
 
