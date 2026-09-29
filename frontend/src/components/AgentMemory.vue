@@ -31,19 +31,19 @@
     <MemoryDialog v-if="form" :title="form.mode==='create'?'补充记忆':form.mode==='supersede'?'事实发生变化':'纠正记忆'" :busy="busy" :error="error" @close="form=null">
       <form :id="memoryFormId" @submit.prevent="submitForm">
       <p v-if="form.mode!=='create'" class="hint">{{ form.mode==='correct'?'原记忆保留，记录纠正依据；正确内容留空可仅撤回错误记忆。':'原记忆保留，请填写变化后的内容及生效时间，系统会记录替代关系。' }}</p>
-      <label>{{ form.mode==='create'?'记忆内容':'正确内容' }}<textarea v-model="form.content" rows="3" maxlength="2000" :required="form.mode!=='correct'" /></label>
+      <label>{{ form.mode==='create'?'记忆内容':'正确内容' }} <LlmContextHint text="保存后，仅在相关记忆被召回时作为参考资料提供给对话模型；不会每轮固定注入。" /><textarea v-model="form.content" rows="3" maxlength="2000" :required="form.mode!=='correct'" /></label>
       <div v-if="form.mode==='create'" class="fields">
-        <label>分类<SearchSelect v-model="form.type" :options="categoryOptions" aria-label="分类" /></label>
+        <label>分类 <LlmContextHint text="相关记忆被召回时，分类会用于参考资料的栏目和类型标签，帮助模型区分事实、事件与关注事项。" /><SearchSelect v-model="form.type" :options="categoryOptions" aria-label="分类" /></label>
         <label>业务类型<SearchSelect v-model="form.memory_kind" :options="[{value:'',label:'未知'},...kindOptions]" aria-label="业务类型" /></label>
-        <label>关于谁或什么<input v-model="form.subject_name" maxlength="255" /></label>
+        <label>关于谁或什么 <LlmContextHint text="相关记忆被召回时，对象名称会与正文一起提供给对话模型，说明这条记忆关于谁或什么。" /><input v-model="form.subject_name" maxlength="255" /></label>
         <label>重要性<input v-model.number="form.importance" type="number" min="0" max="1" step="0.1" /></label>
       </div>
       <p v-if="form.type==='focus'" class="hint">仅提高 Agent 后续相关场景的关注权重，不会创建监控、提醒或后台任务。</p>
       <label v-if="form.mode!=='create'">原因<textarea v-model="form.reason" required rows="2" maxlength="1000" /></label>
       <details><summary>时间信息（未知请留空）</summary><div class="fields">
-        <label v-if="form.mode==='create'">发生时间<input v-model="form.occurred_at" type="datetime-local" /></label>
-        <label>有效开始<input v-model="form.valid_from" type="datetime-local" :required="form.mode==='supersede'" /></label>
-        <label>有效结束（不含）<input v-model="form.valid_to" type="datetime-local" /></label>
+        <label v-if="form.mode==='create'">发生时间 <LlmContextHint text="相关记忆被召回时，发生时间会与记忆正文一起提供给对话模型。" /><input v-model="form.occurred_at" type="datetime-local" /></label>
+        <label>有效开始 <LlmContextHint text="相关记忆被召回时，有效开始时间会与正文一起提供给对话模型；同时用于判断记忆是否仍适用。" /><input v-model="form.valid_from" type="datetime-local" :required="form.mode==='supersede'" /></label>
+        <label>有效结束（不含） <LlmContextHint text="相关记忆被召回时，有效结束时间会与正文一起提供给对话模型；同时用于判断记忆是否仍适用。" /><input v-model="form.valid_to" type="datetime-local" /></label>
         <label v-if="form.mode==='create'">策略过期<input v-model="form.expires_at" type="datetime-local" /></label>
       </div></details>
       </form>
@@ -103,6 +103,7 @@
 <script setup>
 import { computed, ref, reactive, onMounted, useId } from 'vue'
 import SearchSelect from './SearchSelect.vue'
+import LlmContextHint from './LlmContextHint.vue'
 import MemoryDialog from './MemoryDialog.vue'
 import MemoryFieldHelp from './MemoryFieldHelp.vue'
 import { RouterLink } from 'vue-router'

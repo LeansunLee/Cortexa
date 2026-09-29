@@ -90,6 +90,7 @@
 
         <!-- 中间编辑区 -->
         <div class="editor-content">
+          <p class="llm-context-legend"><LlmContextHint text="此标识表示字段内容会在相应场景进入平台 LLM 的上下文。悬浮或聚焦各标识可查看具体用途。" /> 标记的字段会在相应场景提供给 LLM</p>
           <!-- 基础信息 -->
           <div v-if="currentSection === 'basic'" class="section">
             <h3>基础信息</h3>
@@ -141,7 +142,7 @@
               </div>
             </div>
             <div class="form-group">
-              <label>名称 *</label>
+              <label>名称 * <LlmContextHint :text="editingAgent.agent_type === 'proxy' ? '作为协作候选的名称提供给主 Agent 模型；Proxy 自身由外部系统执行。' : '写入本 Agent 的系统提示词，定义模型当前身份；参与协作时也作为候选名称提供给主 Agent。'" /></label>
               <input v-model="editingAgent.name" placeholder="例如：资深产品经理" />
             </div>
             <div class="form-group">
@@ -164,7 +165,7 @@
               LLM 智能体由本平台调用模型，使用工作空间规则及人格、角色、职责等提示词，并可使用本地知识库和数据能力。
             </div>
             <div class="form-group">
-              <label>描述</label>
+              <label>描述 <LlmContextHint text="用于匹配协作候选；成为候选后，描述会作为能力说明提供给发起协作的主 Agent 模型。不会加入本 Agent 自己的系统提示词。" /></label>
               <textarea v-model="editingAgent.description" rows="3" placeholder="智能体的功能描述"></textarea>
             </div>
             <div class="form-group">
@@ -182,7 +183,7 @@
           <div v-if="currentSection === 'personality' && editingAgent.agent_type !== 'proxy'" class="section">
             <h3>人格特征</h3>
             <div class="form-group">
-              <label>Personality</label>
+              <label>Personality <LlmContextHint text="作为「人格特征」写入本 Agent 的系统提示词，影响回答的语气与行为风格。" /></label>
               <textarea v-model="editingAgent.personality" rows="5" 
                 placeholder="描述智能体的性格特征，例如：&#10;- 严谨认真&#10;- 理性分析&#10;- 主动沟通&#10;- 专业高效"></textarea>
               <div class="preset-chips">
@@ -196,11 +197,11 @@
           <div v-if="currentSection === 'role' && editingAgent.agent_type !== 'proxy'" class="section">
             <h3>角色与职责</h3>
             <div class="form-group">
-              <label>角色名称</label>
+              <label>角色名称 <LlmContextHint text="作为「角色」写入本 Agent 的系统提示词，帮助模型理解当前扮演的业务角色。" /></label>
               <input v-model="editingAgent.role" placeholder="例如：产品经理" />
             </div>
             <div class="form-group">
-              <label>职责描述</label>
+              <label>职责描述 <LlmContextHint text="作为「职责」写入本 Agent 的系统提示词，指导模型处理哪些任务；此字段不参与协作候选的词法匹配。" /></label>
               <textarea v-model="editingAgent.responsibilities" rows="5" 
                 placeholder="描述智能体的主要职责"></textarea>
             </div>
@@ -222,7 +223,7 @@
           <div v-if="currentSection === 'boundary' && editingAgent.agent_type !== 'proxy'" class="section">
             <h3>工作边界</h3>
             <div class="form-group">
-              <label>边界定义</label>
+              <label>边界定义 <LlmContextHint text="作为「工作边界」写入本 Agent 的系统提示词，告诉模型可以做什么及哪些操作需谨慎。" /></label>
               <textarea v-model="editingAgent.boundaries" rows="5" 
                 placeholder="明确智能体可以做什么，不可以做什么"></textarea>
             </div>
@@ -247,6 +248,7 @@
               <label>Behavior</label>
               <textarea v-model="editingAgent.behavior" rows="5" 
                 placeholder="描述智能体的工作流程和方式"></textarea>
+              <small class="field-usage-note">当前运行链路尚未把此字段加入对话模型上下文。</small>
             </div>
             <div class="form-group">
               <label>预设工作方式（点击自动填入）</label>
@@ -301,12 +303,12 @@
                 </div>
                 <div v-if="proxyPromptResolution.enabled" class="prompt-resolution-body">
                   <div class="form-group">
-                    <label>整理要求</label>
+                    <label>整理要求 <LlmContextHint text="开启自动整理后，作为平台整理模型的系统指令，指导它把允许的协作上下文整理成发送给外部 Proxy 的请求。" /></label>
                     <textarea v-model="proxyCfg.supplemental_prompt" rows="5" placeholder="例如：整理成可直接执行的 DMS 查询请求；保留明确的人名、事项和时间，不要编造信息。"></textarea>
                     <div class="field-mapping-hint">这段文字用于指导平台整理请求，不会连同完整上下文直接发送给外部 Agent。</div>
                   </div>
                   <div class="form-group compact-group">
-                    <label>整理时可以参考</label>
+                    <label>整理时可以参考 <LlmContextHint text="勾选的来源内容会按需提供给平台整理模型，帮助它生成发送给外部 Proxy 的请求；当前任务始终提供。" /></label>
                     <div class="simple-source-options">
                       <label v-for="source in promptSourceOptions" :key="source.value">
                         <input type="checkbox" :checked="proxyPromptResolution.allowed_sources.includes(source.value)" @change="togglePromptSource(source.value, $event.target.checked)" />
@@ -371,7 +373,7 @@
           <div v-if="currentSection === 'schema'" class="section">
             <h3>输入输出 Schema</h3>
             <div class="form-group">
-              <label>Input Schema (JSON) <button class="btn-link" @click="formatInputSchema"><Edit :size="14" /> 格式化</button></label>
+              <label>Input Schema (JSON) <LlmContextHint :text="editingAgent.agent_type === 'proxy' ? '目标协作时输入契约会作为能力说明提供给主 Agent 模型；启用结构化参数解析后，未解析字段的 Schema 会提供给平台解析模型。' : '本 Agent 作为协作候选时，输入契约会作为工具说明提供给主 Agent 模型，帮助它构造委托参数。'" /> <button class="btn-link" @click="formatInputSchema"><Edit :size="14" /> 格式化</button></label>
               <div class="cm-editor-wrap">
                 <Codemirror v-model="inputSchemaStr" :extensions="cmExtensions" :style="{ height: '220px' }" />
               </div>
@@ -389,9 +391,9 @@
                 <div v-if="schemaFields.length" class="resolution-fields">
                   <div v-for="field in schemaFields" :key="field.name" class="resolution-field">
                     <div class="resolution-field-title"><code>{{ field.name }}</code><span v-if="field.required" class="required-badge">必填</span></div>
-                    <label>业务含义<input type="text" :value="field.description" @input="updateFieldDescription(field.name, $event.target.value)" placeholder="说明该字段在业务中的含义" /></label>
-                    <label class="resolution-required"><input type="checkbox" :checked="field.required" @change="toggleSchemaRequired(field.name, $event.target.checked)" /> 必填字段</label>
-                    <label>解析模式
+                    <label>业务含义 <LlmContextHint text="写入 Input Schema 的字段描述；该字段需要模型解析时，会随契约提供给平台解析模型。" /><input type="text" :value="field.description" @input="updateFieldDescription(field.name, $event.target.value)" placeholder="说明该字段在业务中的含义" /></label>
+                    <label class="resolution-required"><input type="checkbox" :checked="field.required" @change="toggleSchemaRequired(field.name, $event.target.checked)" /> 必填字段 <LlmContextHint text="该字段需要模型解析时，是否必填会作为契约信息提供给平台解析模型。" /></label>
+                    <label>解析模式 <LlmContextHint text="该字段需要模型解析时，解析模型会按这里选择的严格提取或语义推断方式处理。" />
                       <SearchSelect
                         :model-value="fieldResolution(field.name).resolutionMode"
                         :options="resolutionModeOptions"
@@ -400,11 +402,11 @@
                         @change="value => updateFieldResolution(field.name, 'resolutionMode', value)"
                       />
                     </label>
-                    <div class="resolution-source-label">允许来源</div>
+                    <div class="resolution-source-label">允许来源 <LlmContextHint text="该字段需要模型解析时，允许来源列表和对应上下文会提供给平台解析模型；未勾选的来源不会提供。" /></div>
                     <div class="resolution-sources">
                       <label v-for="source in resolutionSources" :key="source.value"><input type="checkbox" :checked="fieldResolution(field.name).allowedSources.includes(source.value)" @change="toggleFieldSource(field.name, source.value, $event.target.checked)" />{{ source.label }}</label>
                     </div>
-                    <label>解析说明<textarea rows="2" :value="fieldResolution(field.name).resolutionHint" @input="updateFieldResolution(field.name, 'resolutionHint', $event.target.value)" placeholder="例如：将“本月”转换为 YYYY-MM"></textarea></label>
+                    <label>解析说明 <LlmContextHint text="该字段需要模型解析时，作为字段契约的一部分提供给平台解析模型，指导它如何提取或推断值。" /><textarea rows="2" :value="fieldResolution(field.name).resolutionHint" @input="updateFieldResolution(field.name, 'resolutionHint', $event.target.value)" placeholder="例如：将“本月”转换为 YYYY-MM"></textarea></label>
                   </div>
                 </div>
                 <div v-else class="empty-hint">请先在 Input Schema 的 properties 中定义字段。</div>
@@ -415,6 +417,7 @@
               <div class="cm-editor-wrap">
                 <Codemirror v-model="outputSchemaStr" :extensions="cmExtensions" :style="{ height: '220px' }" />
               </div>
+              <small class="field-usage-note">当前用于结果格式校验，不会作为系统提示词注入对话模型。</small>
             </div>
           </div>
 
@@ -478,7 +481,7 @@
               </div>
             </div>
             <div class="form-group">
-              <label>System Prompt（可选，会自动从配置生成）</label>
+              <label>System Prompt（可选，会自动从配置生成） <LlmContextHint text="作为「补充说明」附加到本 Agent 的系统提示词中；工作空间规则、人格、角色、职责与边界会分别自动组装。" /></label>
               <textarea v-model="editingAgent.system_prompt" rows="5"></textarea>
             </div>
           </div>
@@ -535,12 +538,12 @@
         <div v-if="editingAgent.agent_type === 'proxy' && (proxyPromptResolution.enabled || proxyResolution.enabled)" class="editor-test">
           <div v-if="editingAgent.agent_type === 'proxy' && (proxyPromptResolution.enabled || proxyResolution.enabled)" class="resolver-test">
             <h3><AppIcon name="Compass" /> {{ proxyPromptResolution.enabled ? '上下文整理测试' : '结构化解析测试' }}</h3>
-            <div class="form-group"><label>示例任务</label><textarea v-model="resolutionTestTask" rows="3" placeholder="例如：查询刚才提到的区域本月销量"></textarea></div>
-            <div class="form-group"><label>示例对话</label><textarea v-model="resolutionTestContext" rows="5" placeholder="例如：用户：最近重点关注杭州区域。&#10;助手：好的，后续查询以杭州为主。"></textarea></div>
+            <div class="form-group"><label>示例任务 <LlmContextHint text="仅点击「预览发送内容」时，作为当前任务提供给平台整理或解析模型；不会保存为 Agent 配置。" /></label><textarea v-model="resolutionTestTask" rows="3" placeholder="例如：查询刚才提到的区域本月销量"></textarea></div>
+            <div class="form-group"><label>示例对话 <LlmContextHint text="仅预览时、且允许参考对话来源时，作为测试上下文提供给平台整理或解析模型；不会保存为 Agent 配置。" /></label><textarea v-model="resolutionTestContext" rows="5" placeholder="例如：用户：最近重点关注杭州区域。&#10;助手：好的，后续查询以杭州为主。"></textarea></div>
             <details class="resolver-advanced">
               <summary>高级测试数据</summary>
-              <label>前序 Agent 输出（JSON）<textarea v-model="resolutionTestPrevious" class="mono" rows="4"></textarea></label>
-              <label>系统值（JSON）<textarea v-model="resolutionTestSystem" class="mono" rows="4"></textarea></label>
+              <label>前序 Agent 输出（JSON） <LlmContextHint text="仅预览时、且允许参考前序 Agent 输出时，作为测试来源提供给平台整理或解析模型。" /><textarea v-model="resolutionTestPrevious" class="mono" rows="4"></textarea></label>
+              <label>系统值（JSON） <LlmContextHint text="仅预览结构化参数解析且允许参考系统值时，作为测试来源提供给平台解析模型。" /><textarea v-model="resolutionTestSystem" class="mono" rows="4"></textarea></label>
             </details>
             <div v-if="resolutionTestError" class="test-json-error"><AlertTriangle :size="14" /> {{ resolutionTestError }}</div>
             <button class="btn btn-ghost resolver-test-button" v-if="can('agent.update')" @click="runResolutionTest" :disabled="resolvingInput || !resolutionTestTask.trim()">{{ resolvingInput ? '整理中...' : '预览发送内容' }}</button>
@@ -569,6 +572,7 @@ import { avatarUrl } from '../utils/avatar'
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { can } from '../auth'
 import AgentResources from '../components/AgentResources.vue'
+import LlmContextHint from '../components/LlmContextHint.vue'
 import {
   Bot, Link, Settings, Database, BookOpen, FileText, Folder, Upload, Trash2,
   Download, Copy, Search, Filter, RefreshCw, Save, Edit, Check, X, AlertTriangle,
@@ -1568,6 +1572,9 @@ onMounted(() => {
 
 /* Main Content */
 .editor-content { flex: 1; min-width: 0; overflow-y: auto; padding: 28px 32px; background: var(--bg); }
+.llm-context-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0 0 18px; color: var(--text3); font-size: 12px; }
+.llm-context-legend :deep(.llm-context-hint) { margin-left: 0; }
+.field-usage-note { display: block; margin-top: 6px; color: var(--text3); font-size: 12px; line-height: 1.5; }
 .section { width: 100%; min-width: 0; max-width: none; }
 .section h3 {
   font-size: 18px; line-height: 26px; font-weight: 650; color: var(--text); margin: 0 0 16px;
