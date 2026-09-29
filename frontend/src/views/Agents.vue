@@ -142,8 +142,8 @@
               </div>
             </div>
             <div class="form-group">
-              <label>名称 * <LlmContextHint :text="editingAgent.agent_type === 'proxy' ? '作为协作候选的名称提供给主 Agent 模型；Proxy 自身由外部系统执行。' : '写入本 Agent 的系统提示词，定义模型当前身份；参与协作时也作为候选名称提供给主 Agent。'" collaboration-text="作为候选身份提供给发起协作的 Agent，帮助其识别并选择协作者。" /></label>
-              <input v-model="editingAgent.name" placeholder="例如：资深产品经理" />
+              <label>Agent 名称 * <LlmContextHint :text="editingAgent.agent_type === 'proxy' ? '作为协作候选的名称提供给主 Agent 模型；Proxy 自身由外部系统执行。' : '写入本 Agent 的系统提示词，定义模型当前身份；参与协作时也作为候选名称提供给主 Agent。'" collaboration-text="作为候选身份提供给发起协作的 Agent，帮助其识别并选择协作者。" /></label>
+              <input v-model="editingAgent.name" placeholder="例如：Peter、产品经理" />
             </div>
             <div class="form-group">
               <label>智能体类型</label>
@@ -165,8 +165,8 @@
               LLM 智能体由本平台调用模型，使用工作空间规则及人格、角色、职责等提示词，并可使用本地知识库和数据能力。
             </div>
             <div class="form-group">
-              <label>描述 <LlmContextHint text="用于匹配协作候选；成为候选后，描述会作为能力说明提供给发起协作的主 Agent 模型。不会加入本 Agent 自己的系统提示词。" collaboration-text="参与协作候选匹配，并作为能力说明供发起协作的 Agent 选择是否委托任务。" /></label>
-              <textarea v-model="editingAgent.description" rows="3" placeholder="智能体的功能描述"></textarea>
+              <label>能力简介（供协同发现） <LlmContextHint text="用于匹配协作候选；成为候选后，作为能力说明提供给发起协作的主 Agent 模型。不会加入本 Agent 自己的系统提示词。" collaboration-text="其他 Agent 根据这段简介发现并判断是否邀请本 Agent。" /></label>
+              <textarea v-model="editingAgent.description" rows="3" placeholder="例如：擅长研究市场与竞品，可协助制定销售计划"></textarea>
             </div>
             <div class="form-group">
               <label>标签</label>
@@ -196,17 +196,19 @@
           <!-- 职责 -->
           <div v-if="currentSection === 'role' && editingAgent.agent_type !== 'proxy'" class="section">
             <h3>角色与职责</h3>
+            <p class="section-desc">这里定义 Agent 自己如何执行任务；基础信息中的能力简介用于协同发现。</p>
             <div class="form-group">
-              <label>角色名称 <LlmContextHint text="作为「角色」写入本 Agent 的系统提示词，帮助模型理解当前扮演的业务角色。" /></label>
-              <input v-model="editingAgent.role" placeholder="例如：产品经理" />
+              <label>业务角色（可选） <LlmContextHint text="作为「角色」写入本 Agent 的系统提示词，帮助模型理解当前扮演的业务身份。" collaboration-text="在 @ 协作候选列表中展示，也可按此角色名称搜索 Agent。" /></label>
+              <input v-model="editingAgent.role" placeholder="例如：名称为 Peter 时填写「产品经理」" />
+              <small class="field-usage-note">仅在名称未说明业务身份时填写；与 Agent 名称相同可留空。</small>
             </div>
             <div class="form-group">
-              <label>职责描述 <LlmContextHint text="作为「职责」写入本 Agent 的系统提示词，指导模型处理哪些任务；此字段不参与协作候选的词法匹配。" /></label>
+              <label>执行职责 <LlmContextHint text="作为「职责」写入本 Agent 的系统提示词，指导模型处理任务；此字段不参与协作候选的词法匹配。" /></label>
               <textarea v-model="editingAgent.responsibilities" rows="5" 
-                placeholder="描述智能体的主要职责"></textarea>
+                placeholder="写具体任务和执行要求，例如：分析销售数据、识别风险、输出行动建议"></textarea>
             </div>
             <div class="form-group">
-              <label>预设角色（点击自动填入）</label>
+              <label>角色与职责模板（点击填入）</label>
               <div class="role-presets">
                 <div v-for="rp in rolePresets" :key="rp.role" class="role-preset-card" @click="applyRolePreset(rp)">
                   <div class="role-preset-icon"><component :is="iconComponents[rp.icon]" :size="18" /></div>
@@ -927,7 +929,7 @@ const appendPersonality = (trait) => {
 
 const applyRolePreset = (rp) => {
   if (!editingAgent.value) return
-  editingAgent.value.role = rp.role
+  editingAgent.value.role = editingAgent.value.name?.trim().toLocaleLowerCase() === rp.role.toLocaleLowerCase() ? '' : rp.role
   editingAgent.value.responsibilities = rp.responsibilities
   showToast('已填入「' + rp.role + '」预设内容')
 }
