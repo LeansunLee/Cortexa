@@ -57,7 +57,6 @@
         <span>边缘泛光强度</span>
         <input type="range" min="0" max="100" step="1" :value="glassGlow" aria-label="边缘泛光强度" @input="selectGlassGlow(Number($event.target.value))" />
         <output>{{ glassGlow }}%</output>
-        <small>0% 保留轻微亮边，100% 约等于原 50%。</small>
       </label>
       <div id="theme-color-panel" class="theme-colors" role="tabpanel" :aria-labelledby="`theme-tab-${activeThemeGroup}`">
         <button v-for="color in visibleThemeColors" :key="color.value + (color.accent || '') + (color.texture || '')" type="button"
