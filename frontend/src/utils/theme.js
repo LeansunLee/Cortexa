@@ -164,13 +164,13 @@ export function themeVariables(color) {
   const reflection = reflectionRgb.join(',')
   const glassInk = hex(glassRgb)
   const glassGlow = hex(glassRgb.map(value => value + (255 - value) * 0.62))
-  const glassControlBackdrop = glass ? frosted ? 'blur(28px) saturate(108%) contrast(101%) brightness(1.02)' : 'blur(12px) saturate(140%) contrast(104%)' : 'none'
-  const glassSurfaceBackdrop = glass ? frosted ? 'blur(34px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(16px) saturate(145%) contrast(104%)' : 'none'
-  const glassMenuBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(22px) saturate(150%) contrast(105%)' : 'none'
-  const glassSurfaceBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 92 : 64}%, transparent)` : 'var(--surface)'
+  const glassControlBackdrop = glass ? frosted ? 'blur(28px) saturate(108%) contrast(101%) brightness(1.02)' : 'blur(8px) saturate(145%) contrast(104%)' : 'none'
+  const glassSurfaceBackdrop = glass ? frosted ? 'blur(34px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(10px) saturate(150%) contrast(104%)' : 'none'
+  const glassMenuBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(12px) saturate(155%) contrast(105%)' : 'none'
+  const glassSurfaceBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 92 : 52}%, transparent)` : 'var(--surface)'
   const glassSurfaceBackgroundStrong = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 96 : 78}%, transparent)` : 'var(--surface)'
-  const glassPanelBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 94 : 64}%, transparent)` : 'var(--surface)'
-  const glassMenuBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 96 : 74}%, transparent)` : 'var(--surface)'
+  const glassPanelBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 94 : 52}%, transparent)` : 'var(--surface)'
+  const glassMenuBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 96 : 60}%, transparent)` : 'var(--surface)'
   const glassSearchBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 98 : 90}%, transparent)` : 'var(--surface2)'
   const liquidRefractionGradient = [
     'radial-gradient(120px 56px at 0% 0%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .7)) 0%, transparent 100%)',
@@ -217,8 +217,8 @@ export function themeVariables(color) {
     '--glass-popover-gradient': glassPopoverGradient,
     '--glass-selection-background': glass ? frosted ? 'color-mix(in srgb, var(--surface) 78%, var(--primary-light))' : 'color-mix(in srgb, var(--surface) 58%, var(--primary-light))' : 'var(--primary-light)',
     '--glass-edge-shadow': glass ? frosted ? 'inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.16)), inset 0 -1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)), inset 0 0 18px rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)), 0 18px 42px rgba(15,23,42,.16)' : 'inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.20)), inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .52)), inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .44)), 0 12px 32px rgba(15,23,42,.16)' : 'none',
-    '--glass-opacity': glass ? frosted ? '0.92' : '0.72' : '1',
-    '--glass-blur': glass ? frosted ? '34px' : '18px' : '0px',
+    '--glass-opacity': glass ? frosted ? '0.92' : '0.58' : '1',
+    '--glass-blur': glass ? frosted ? '34px' : '10px' : '0px',
     '--glass-border': glass ? 'var(--glass-edge-border-soft)' : 'var(--border)',
     '--glass-highlight': glass ? 'var(--glass-panel-gradient)' : 'none',
     '--glass-shadow': glass ? 'var(--glass-edge-shadow)' : 'none',

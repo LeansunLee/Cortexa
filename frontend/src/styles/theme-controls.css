@@ -341,8 +341,8 @@
     inset 0 0 10px rgba(255,255,255,calc(var(--glass-edge-alpha) * .08));
 }
 
-/* Clear-glass dialogs use one tint and backdrop blur across the whole surface. */
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+/* The former even, softly blurred dialog surface belongs to frosted glass. */
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   position: relative;
   background-color: color-mix(in srgb, var(--surface) 10%, transparent) !important;
   background-image: none !important;
@@ -351,15 +351,57 @@
   backdrop-filter: blur(6px) saturate(145%) !important;
   -webkit-backdrop-filter: blur(6px) saturate(145%) !important;
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay, .org-overlay) {
+:root[data-color-theme=glass] body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay, .org-overlay) {
   background-color: light-dark(rgba(15,23,42,.06),rgba(0,0,0,.16));
 }
-:root[data-theme=dark][data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-theme=dark][data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
   box-shadow: 0 24px 58px rgba(0,0,0,.38) !important;
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before,
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before,
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
   content: none;
+}
+
+/* Liquid glass keeps the backdrop legible; only a two-pixel rim bends and lights it. */
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+  position: relative;
+  background-color: color-mix(in srgb, var(--surface) 4%, transparent) !important;
+  background-image: none !important;
+  border-color: rgba(255,255,255,calc(var(--glass-edge-alpha) * .65)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.35)),
+    inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .45)),
+    0 20px 54px rgba(15,23,42,.20) !important;
+  backdrop-filter: blur(2px) saturate(160%) contrast(105%) !important;
+  -webkit-backdrop-filter: blur(2px) saturate(160%) contrast(105%) !important;
+}
+:root[data-theme=dark][data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.35)),
+    inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .45)),
+    0 24px 58px rgba(0,0,0,.38) !important;
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
+  content: none;
+}
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(180px 64px at 8% 0%, rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.15)), transparent 82%),
+    radial-gradient(150px 88px at 98% 100%, rgba(var(--glass-rgb),calc(var(--glass-edge-alpha) * .75)), transparent 84%),
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .35)), transparent 18%);
+  backdrop-filter: blur(.5px) saturate(180%) brightness(1.04);
+  -webkit-backdrop-filter: blur(.5px) saturate(180%) brightness(1.04);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 :root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, .tooltip, [role=menu]) {
   isolation: isolate;
