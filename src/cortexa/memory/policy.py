@@ -138,6 +138,18 @@ def relevance(query_terms, mem):
     return len(set(query_terms) & words) / len(set(query_terms))
 
 
+# Explicit "请记住" facts must survive verbose natural questions: lexical
+# overlap shrinks as the query grows (1 hit in 8 query terms = 0.125), so the
+# generic threshold would silently hide memories the user explicitly stored.
+EXPLICIT_RELEVANCE_FLOOR = 0.1
+
+
+def relevance_threshold(cfg, mem):
+    if getattr(mem, "source_mode", None) == "explicit":
+        return min(cfg.relevance_threshold, EXPLICIT_RELEVANCE_FLOOR)
+    return cfg.relevance_threshold
+
+
 def token_estimate(text):
     # Deliberately conservative for Chinese and identifiers; no exact-token claim.
     return len(text) + 16

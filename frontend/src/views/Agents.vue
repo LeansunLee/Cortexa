@@ -420,7 +420,7 @@
                       <span>{{ field.label }} <small>{{ field.zh }}</small></span>
                     </label>
                     <input v-model.number="runtimeBudgetDraft[field.key]" type="number" step="1" :min="field.min" :max="runtimeWorkspaceBudget[field.key] === UNLIMITED_BUDGET ? undefined : runtimeWorkspaceBudget[field.key]" :disabled="!runtimeBudgetSelected[field.key] || !can('agent.update')" :aria-label="field.label" />
-                    <small>Workspace Limit · 工作空间上限 {{ runtimeWorkspaceBudget[field.key] === UNLIMITED_BUDGET ? '不限' : runtimeWorkspaceBudget[field.key] }}</small>
+                    <small>Workspace Limit · 工作空间上限 {{ runtimeWorkspaceBudget[field.key] === UNLIMITED_BUDGET ? '不限' : runtimeWorkspaceBudget[field.key] }} · 建议不超过 {{ field.suggest }}</small>
                   </div>
                 </div>
                 <div class="agent-budget-actions">
@@ -581,19 +581,19 @@ const runtimeBudgetDraft = ref({})
 const runtimeBudgetSelected = ref({})
 const UNLIMITED_BUDGET = 1000000000000000
 const runtimeBudgetFields = [
-  { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', min: 1 },
-  { key: 'llm_calls', label: 'Max LLM Calls', zh: '模型调用次数', min: 0 },
-  { key: 'tool_calls', label: 'Max Tool Calls', zh: '工具调用次数', min: 0 },
-  { key: 'tool_iterations', label: 'Max Tool Iterations', zh: '工具执行轮次', min: 0 },
-  { key: 'web_calls', label: 'Max Web Calls', zh: '网页调用次数', min: 0 },
-  { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', min: 0 },
-  { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', min: 0 },
-  { key: 'context_tokens', label: 'Max Context Tokens', zh: '上下文词元', min: 256 },
-  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出词元', min: 0 },
-  { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', min: 1 },
-  { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', min: 0 },
-  { key: 'max_failures', label: 'Max Failures', zh: '失败次数', min: 1 },
-  { key: 'max_collaborators', label: 'Max Collaborators', zh: '协作 Agent 数量', min: 0 },
+  { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', min: 1, suggest: 600 },
+  { key: 'llm_calls', label: 'Max LLM Calls', zh: '模型调用次数', min: 0, suggest: 20 },
+  { key: 'tool_calls', label: 'Max Tool Calls', zh: '工具调用次数', min: 0, suggest: 30 },
+  { key: 'tool_iterations', label: 'Max Tool Iterations', zh: '工具执行轮次', min: 0, suggest: 8 },
+  { key: 'web_calls', label: 'Max Web Calls', zh: '网页调用次数', min: 0, suggest: 8 },
+  { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', min: 0, suggest: 8 },
+  { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', min: 0, suggest: 2 },
+  { key: 'context_tokens', label: 'Max Context Tokens', zh: '上下文词元', min: 256, suggest: 128000 },
+  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出词元', min: 0, suggest: 32768 },
+  { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', min: 1, suggest: 64 },
+  { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', min: 0, suggest: 3 },
+  { key: 'max_failures', label: 'Max Failures', zh: '失败次数', min: 1, suggest: 5 },
+  { key: 'max_collaborators', label: 'Max Collaborators', zh: '协作 Agent 数量', min: 0, suggest: 3 },
 ]
 const autonomyOptions = [
   { value: 'INHERIT_WORKSPACE', label: '♧ Inherit Workspace · 继承工作空间' },

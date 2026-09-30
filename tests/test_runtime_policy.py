@@ -77,7 +77,7 @@ def test_workspace_can_raise_defaults_within_platform_ceiling():
     assert resolved.effective_budget.llm_calls == 10
     assert resolved.candidate_limit == 5
     assert resolved.trace["budget"]["agent_calls"]["source"] == "Workspace"
-    assert platform_hard_limits()["agent_calls"] == 5
+    assert platform_hard_limits()["agent_calls"] == 15
     assert (
         resolve_effective_policy(
             {}, workspace, agent(quality_policy={"runtime": {"budget": {"llm_calls": 4}}})
@@ -98,7 +98,7 @@ def test_workspace_unlimited_field_removes_application_budget_ceiling():
     assert resolved.effective_budget.output_tokens == UNLIMITED_BUDGET
     assert resolved.effective_budget.llm_calls == UNLIMITED_BUDGET
     assert resolved.effective_budget.duration == 180
-    assert platform_hard_limits()["output_tokens"] == 32768
+    assert platform_hard_limits()["output_tokens"] == 65536
     state = GoalState(limits=resolved.effective_budget)
     budget = RuntimeBudget(state)
     budget.reserve(llm_calls=100, output_tokens=200000)
@@ -129,7 +129,7 @@ def test_workspace_policy_api_saves_unlimited_and_reports_finite_overage(monkeyp
     ))
     assert result["budget"]["output_tokens"] is None
     assert result["effective_budget"]["output_tokens"] == UNLIMITED_BUDGET
-    with pytest.raises(HTTPException, match="output_tokens 超过平台上限 32768"):
+    with pytest.raises(HTTPException, match="output_tokens 超过平台上限 65536"):
         asyncio.run(runtime_policy_api.put_policy(
             uuid.uuid4(), runtime_policy_api.BudgetPolicyUpdate(budget={"output_tokens": 163840}), db
         ))

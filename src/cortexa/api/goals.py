@@ -405,7 +405,7 @@ HALT_MESSAGES = {
     "action_result_unknown": "上次行动的结果尚未确认，已停止自动执行。请先核实结果，避免重复调用。",
     "required_capability_not_used": "尚未取得所需业务数据，本轮不能提供可靠的数据结论。",
     "context_budget_exceeded": "当前上下文超过预算，已停止执行。请缩小任务范围。",
-    "invalid_reasoning_action": "模型返回了不完整的工具调用；该批调用尚未执行。请继续重试。",
+    "invalid_reasoning_action": "模型多次返回不完整的工具调用，本轮仍未执行。请重试；若反复出现，请更换模型或简化目标后重新发起。",
     "runtime_validation_error": "运行时参数校验失败；已保留已完成的协作结果。请在此对话中补充说明并继续。",
     "model_empty": "模型未返回可用内容，目标已停止。请重试或调整模型输出预算。",
     "model_output_incomplete": "模型回复未完成，目标已停止。请重试或提高输出预算。",

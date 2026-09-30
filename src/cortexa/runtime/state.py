@@ -25,10 +25,10 @@ class BudgetPhase(StrEnum):
 
 UNLIMITED_BUDGET = 1_000_000_000_000_000
 BUDGET_BOUNDED_MAX = {
-    "duration": 600, "llm_calls": 12, "tool_calls": 20, "tool_iterations": 5,
-    "web_calls": 3, "agent_calls": 5, "max_collaborators": 5, "agent_depth": 2,
-    "context_tokens": 128000, "output_tokens": 32768, "max_steps": 64,
-    "max_replans": 3, "max_failures": 5,
+    "duration": 1800, "llm_calls": 40, "tool_calls": 60, "tool_iterations": 12,
+    "web_calls": 10, "agent_calls": 15, "max_collaborators": 5, "agent_depth": 3,
+    "context_tokens": 200000, "output_tokens": 65536, "max_steps": 128,
+    "max_replans": 6, "max_failures": 8,
 }
 
 
@@ -38,14 +38,14 @@ class BudgetLimits(BaseModel):
     llm_calls: int = Field(default=6, ge=0, le=UNLIMITED_BUDGET)
     tool_calls: int = Field(default=10, ge=0, le=UNLIMITED_BUDGET)
     tool_iterations: int = Field(default=5, ge=0, le=UNLIMITED_BUDGET)
-    web_calls: int = Field(default=3, ge=0, le=UNLIMITED_BUDGET)
+    web_calls: int = Field(default=10, ge=0, le=UNLIMITED_BUDGET)
     agent_calls: int = Field(default=3, ge=0, le=UNLIMITED_BUDGET)
     max_collaborators: int = Field(default=3, ge=0, le=UNLIMITED_BUDGET)
     agent_depth: int = Field(default=1, ge=0, le=UNLIMITED_BUDGET)
     context_tokens: int = Field(default=32000, ge=256, le=UNLIMITED_BUDGET)
     output_tokens: int = Field(default=16384, ge=0, le=UNLIMITED_BUDGET)
     max_steps: int = Field(default=24, ge=1, le=UNLIMITED_BUDGET)
-    max_replans: int = Field(default=1, ge=0, le=UNLIMITED_BUDGET)
+    max_replans: int = Field(default=3, ge=0, le=UNLIMITED_BUDGET)
     max_failures: int = Field(default=2, ge=1, le=UNLIMITED_BUDGET)
 
     @model_validator(mode="before")
@@ -176,9 +176,13 @@ class RuntimeBudget:
     def phase(self) -> BudgetPhase:
         self.sync()
         watched = ("duration", "llm_calls", "output_tokens", "max_steps")
+        # Depleted capability budgets (web_calls) must not kill a run that already
+        # holds usable observations: they force a wrap-up instead of a halt, and
+        # only core budgets can reach EXHAUSTED.
+        finalize_watch = watched + ("web_calls",)
         if any(self.remaining(name) <= 0 for name in watched):
             phase = BudgetPhase.EXHAUSTED
-        elif any(self.remaining(name, protect_finalization=True) <= 0 for name in watched):
+        elif any(self.remaining(name, protect_finalization=True) <= 0 for name in finalize_watch):
             phase = BudgetPhase.FINALIZING
         elif any(
             self.remaining(name, protect_finalization=True) <= max(1, getattr(self.state.limits, name) // 4)

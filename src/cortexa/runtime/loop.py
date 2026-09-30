@@ -20,6 +20,7 @@ from langchain_core.messages import (
     messages_to_dict,
 )
 from pydantic import ValidationError
+from pydantic_core import PydanticUndefined
 
 from cortexa.agents.usage import UsageTotals
 from cortexa.runtime.adapters import CapabilityAdapter
@@ -99,6 +100,38 @@ def empty_tool_call_placeholder(call):
         and not call.get("id")
         and call.get("args") == {}
     )
+
+
+def repair_tool_args(schema, args, error):
+    """Deterministically repair invalid tool arguments, or return None.
+
+    A field the model sent with an out-of-range/null value falls back to its
+    schema default by removal; unknown extra fields are dropped. Missing or
+    type-invalid required fields without a default are not repairable and must
+    still reach the user.
+    """
+    fields = getattr(schema, "model_fields", None)
+    if fields is None or not isinstance(args, dict):
+        return None
+    repaired, dropped = dict(args), []
+    for item in error.errors():
+        loc = item.get("loc") or ()
+        if not loc or not isinstance(loc[0], str):
+            return None
+        name = loc[0]
+        if name in repaired:
+            info = fields.get(name)
+            if info is None:
+                if item.get("type") != "extra_forbidden":
+                    return None
+            elif info.default is PydanticUndefined and info.default_factory is None:
+                return None
+            repaired.pop(name, None)
+        elif fields.get(name) is not None:
+            return None
+        if name not in dropped:
+            dropped.append(name)
+    return (repaired, dropped) if dropped else None
 
 
 class GoalLoop:
@@ -344,7 +377,20 @@ class GoalLoop:
                         self.payload["messages"] = serialize_messages(messages)
                         await self.save()
                         continue
-                    self.payload["waiting_message"] = "模型返回了不完整的工具调用；本轮未执行该批操作。请继续重试。"
+                    if valid_observations:
+                        # Retry responsibility sits with the model, not the user:
+                        # synthesize from the collected evidence instead of
+                        # parking the Goal on an instruction the user cannot act on.
+                        self.state.partial = True
+                        self.payload["force_finalizing"] = True
+                        self.record("Invalid tool call batch stopped for finalization", count=len(calls))
+                        self.payload["messages"] = serialize_messages(messages)
+                        await self.save()
+                        continue
+                    self.payload["waiting_message"] = (
+                        "模型多次返回不完整的工具调用，本轮仍未执行。请重试；"
+                        "若反复出现，请更换模型或简化目标后重新发起。"
+                    )
                     raise RuntimeHalt("invalid_reasoning_action", status=GoalStatus.WAITING, next_action="ASK_USER")
                 messages.append(response)
                 if not calls:
@@ -368,7 +414,20 @@ class GoalLoop:
                         raise RuntimeHalt("model_output_incomplete")
                     # A failed capability must not silently turn into a successful Goal.
                     if self.payload.get("unresolved_failures") and phase != BudgetPhase.FINALIZING:
-                        raise RuntimeHalt("unresolved_capability_failure")
+                        if not valid_observations:
+                            raise RuntimeHalt("unresolved_capability_failure")
+                        # Collected results stay usable: wrap up and declare the
+                        # failure (same semantics as a depleted web budget) instead
+                        # of discarding every successful source.
+                        self.state.partial = True
+                        self.payload["force_finalizing"] = True
+                        self.record(
+                            "Capability failure downgraded to declared wrap-up",
+                            failures=self.payload["unresolved_failures"],
+                        )
+                        self.payload["messages"] = serialize_messages(messages)
+                        await self.save()
+                        continue
                     if phase == BudgetPhase.FINALIZING and (
                         not required_satisfied or self.payload.get("unresolved_failures")
                     ):
@@ -416,10 +475,28 @@ class GoalLoop:
                                 or cap.availability != "available"
                             ):
                                 raise RuntimeHalt("capability_unavailable")
+                            validated = None
+                            validation_error = None
                             try:
                                 validated = binding.tool.args_schema.model_validate(call["args"])
                             except ValidationError as error:
-                                fields = sorted({str(e["loc"][0]) for e in error.errors() if e["loc"]})
+                                validation_error = error
+                                repair = repair_tool_args(binding.tool.args_schema, call["args"], error)
+                                if repair is not None:
+                                    repaired, repaired_fields = repair
+                                    try:
+                                        validated = binding.tool.args_schema.model_validate(repaired)
+                                    except ValidationError:
+                                        validated = None
+                                    if validated is not None:
+                                        # Deterministic local correction; the defaults
+                                        # answer for the fields the model got wrong.
+                                        self.record(
+                                            "Invalid tool arguments fell back to schema defaults",
+                                            fields=repaired_fields,
+                                        )
+                            if validated is None:
+                                fields = sorted({str(e["loc"][0]) for e in validation_error.errors() if e["loc"]})
                                 result_text = "请补充或修正工具参数：" + "、".join(fields)
                                 self.payload["waiting_message"] = result_text
                                 await self.begin(Action(kind="CAPABILITY", capability_id=cap.id))
@@ -443,7 +520,7 @@ class GoalLoop:
                                 )
                                 raise RuntimeHalt(
                                     "missing_inputs", status=GoalStatus.WAITING, next_action="ASK_USER"
-                                ) from error
+                                ) from validation_error
                             args = validated.model_dump(exclude_unset=True)
                             fingerprint = hashlib.sha256(
                                 json.dumps(

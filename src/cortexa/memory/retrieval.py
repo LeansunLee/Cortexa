@@ -9,7 +9,7 @@ from cortexa.db.models import Memory
 from cortexa.security.access import actor_required
 from .models import MemoryRelation
 from .access import agent_access
-from .policy import config, filter_reason, relevance, terms, time_window, token_estimate, now, POLICY_VERSION
+from .policy import config, filter_reason, relevance, relevance_threshold, terms, time_window, token_estimate, now, POLICY_VERSION
 
 last_trace = ContextVar("memory_retrieval_trace", default=None)
 
@@ -172,7 +172,8 @@ async def retrieve(db, agent_id, query, *, top_k=None, at=None):
         ):
             reason = "different_user_subject"
         rel = relevance(words, m)
-        if rel < cfg.relevance_threshold:
+        threshold = relevance_threshold(cfg, m)
+        if rel < threshold:
             reason = reason or "relevance"
         c = min(m.confidence, 0.5) if (m.metadata_json or {}).get("legacy_uncalibrated") else m.confidence
         subject = (
@@ -200,6 +201,7 @@ async def retrieve(db, agent_id, query, *, top_k=None, at=None):
             "confidence": c,
             "importance": m.importance,
             "relevance": round(rel, 3),
+            "threshold": round(threshold, 3),
             "focus_boost": boost,
             "final_score": round(score, 3),
             "conflict": m.has_conflict,

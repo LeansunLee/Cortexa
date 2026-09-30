@@ -6,19 +6,25 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessageChunk, messages_from_dict
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cortexa.runtime.adapters import CapabilityAdapter
 from cortexa.runtime.artifacts import ArtifactStore
 from cortexa.runtime.capabilities import CapabilityDescriptor, CapabilityType
-from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages
+from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, repair_tool_args, serialize_messages
 from cortexa.runtime.projection import model_result_text
-from cortexa.runtime.state import GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
+from cortexa.runtime.state import BudgetPhase, GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
 
 
 class Args(BaseModel):
     model_config = ConfigDict(extra="forbid")
     city: str
+
+
+class SearchArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    city: str
+    max_results: int = Field(default=5, ge=1, le=5)
 
 
 class FakeModel:
@@ -61,7 +67,7 @@ def make_loop(limits=None, state=None, payload=None):
     return loop, saves, authorized
 
 
-def binding(raw=None, invoke=None, kind=CapabilityType.DATA):
+def binding(raw=None, invoke=None, kind=CapabilityType.DATA, schema=None):
     adapter = CapabilityAdapter(
         CapabilityDescriptor(
             id="cap",
@@ -81,7 +87,7 @@ def binding(raw=None, invoke=None, kind=CapabilityType.DATA):
         return InvocationResult(adapter.observe(raw, action_id), str(raw), raw)
 
     fn = AsyncMock(side_effect=call)
-    return Binding(SimpleNamespace(name="query", description="查询", args_schema=Args), adapter, fn)
+    return Binding(SimpleNamespace(name="query", description="查询", args_schema=schema or Args), adapter, fn)
 
 
 def run(loop, model, bindings=(), required_names=()):
@@ -137,10 +143,11 @@ def test_repeated_partial_actions_wait_without_running_tools():
         {"id": "valid", "name": "query", "args": {"city": "杭州"}},
         {"id": None, "name": "other_action", "args": {}},
     ])
-    model = FakeModel([[malformed], [malformed]])
+    model = FakeModel([[malformed], [malformed], [malformed], [malformed]])
     run(loop, model, [tool])
     assert loop.state.status == GoalStatus.WAITING
     assert loop.state.reason == "invalid_reasoning_action"
+    assert loop.state.consumed["max_replans"] == 3
     assert tool.invoke.await_count == 0
 
 
@@ -148,10 +155,11 @@ def test_only_empty_provider_calls_are_retried_without_executing():
     loop, _, _ = make_loop()
     tool = binding()
     ghost = AIMessageChunk(content="", tool_calls=[{"id": None, "name": "", "args": {}}])
-    model = FakeModel([[ghost], [ghost]])
+    model = FakeModel([[ghost], [ghost], [ghost], [ghost]])
     run(loop, model, [tool])
     assert loop.state.status == GoalStatus.WAITING
     assert loop.state.reason == "invalid_reasoning_action"
+    assert loop.state.consumed["max_replans"] == 3
     assert tool.invoke.await_count == 0
 
 
@@ -284,7 +292,7 @@ def test_budget_hierarchy_and_atomic_reservation():
     with pytest.raises(ValidationError):
         effective_limits({"llm_calls": True})
     with pytest.raises(ValueError):
-        effective_limits({"agent_calls": 6})
+        effective_limits({"agent_calls": 16})
 
 
 def test_not_ready_waits_without_invocation_and_batch_protocol_is_complete():
@@ -455,3 +463,146 @@ def test_artifact_keeps_decimal_and_date_type_information(tmp_path):
     result = files.read(goal_id, ref)
     assert result["price"] == {"$runtime_type": "Decimal", "value": "123.000000000000000001"}
     assert result["date"] == {"$runtime_type": "date", "value": "2026-09-23"}
+
+
+def test_web_budget_depletion_forces_wrapup_instead_of_halt():
+    state = GoalState(limits=effective_limits({"web_calls": 2}))
+    budget = RuntimeBudget(state)
+    budget.reserve(web_calls=1)
+    assert budget.phase() == BudgetPhase.NORMAL
+    budget.reserve(web_calls=1)
+    assert budget.phase() == BudgetPhase.FINALIZING
+    assert state.budget_phase == BudgetPhase.FINALIZING
+
+
+def test_web_budget_exhausted_goal_synthesizes_from_existing_observations():
+    loop, _, _ = make_loop({"web_calls": 1})
+    web = binding({"results": ["金吉拉500 来源", "CU525 来源"]}, kind=CapabilityType.WEB)
+    model = FakeModel([[tool_call()], [AIMessageChunk(content="基于已获取来源给出对比。")]])
+    events = run(loop, model, [web])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert loop.state.reason is None and loop.state.budget_failure is None
+    assert web.invoke.await_count == 1 and loop.state.consumed["web_calls"] == 1
+    finalize_note = model.calls[-1][-1]
+    assert finalize_note.type == "system" and finalize_note.content.startswith("预算进入收尾阶段")
+    assert [e["content"] for e in events if e["type"] == "token"] == ["基于已获取来源给出对比。"]
+
+
+def test_web_budget_overflow_call_in_batch_is_skipped_not_fatal():
+    loop, _, _ = make_loop({"web_calls": 1})
+    web = binding({"results": ["来源A"]}, kind=CapabilityType.WEB)
+    calls = [
+        AIMessageChunk(content="", tool_calls=[
+            {"id": "a", "name": "query", "args": {"city": "A"}},
+            {"id": "b", "name": "query", "args": {"city": "B"}},
+        ])
+    ]
+    model = FakeModel([calls, [AIMessageChunk(content="基于现有来源总结。")]])
+    run(loop, model, [web])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert web.invoke.await_count == 1
+    assert loop.state.partial is True
+    assert loop.state.consumed["web_calls"] == 1
+    tool_messages = [m for m in messages_from_dict(loop.payload["messages"]) if m.type == "tool"]
+    assert "预算已进入收尾阶段" in tool_messages[-1].content
+
+
+def test_repair_tool_args_falls_back_to_defaults_and_drops_extras():
+    with pytest.raises(ValidationError) as error:
+        SearchArgs.model_validate({"city": "杭州", "max_results": None})
+    assert repair_tool_args(SearchArgs, {"city": "杭州", "max_results": None}, error.value) == (
+        {"city": "杭州"},
+        ["max_results"],
+    )
+    with pytest.raises(ValidationError) as error:
+        SearchArgs.model_validate({"city": "杭州", "max_results": 50})
+    assert repair_tool_args(SearchArgs, {"city": "杭州", "max_results": 50}, error.value) == (
+        {"city": "杭州"},
+        ["max_results"],
+    )
+    with pytest.raises(ValidationError) as error:
+        SearchArgs.model_validate({"city": "杭州", "bogus": 1})
+    assert repair_tool_args(SearchArgs, {"city": "杭州", "bogus": 1}, error.value) == (
+        {"city": "杭州"},
+        ["bogus"],
+    )
+    with pytest.raises(ValidationError) as error:
+        SearchArgs.model_validate({"max_results": 2})
+    assert repair_tool_args(SearchArgs, {"max_results": 2}, error.value) is None
+    with pytest.raises(ValidationError) as error:
+        Args.model_validate({"city": None})
+    assert repair_tool_args(Args, {"city": None}, error.value) is None
+
+
+def test_invalid_optional_tool_args_fall_back_to_defaults_and_execute():
+    loop, _, _ = make_loop()
+    web = binding({"results": ["来源1"]}, kind=CapabilityType.WEB, schema=SearchArgs)
+    calls = AIMessageChunk(content="", tool_calls=[
+        {"id": "a", "name": "query", "args": {"city": "杭州", "max_results": None}},
+    ])
+    model = FakeModel([[calls], [AIMessageChunk(content="搜索完成。")]])
+    run(loop, model, [web])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert loop.state.reason is None
+    assert web.invoke.await_count == 1
+    assert web.invoke.await_args.args[0] == {"city": "杭州"}
+
+
+def test_capability_failure_with_usable_results_wraps_up_instead_of_discarding():
+    loop, _, _ = make_loop()
+    adapter = CapabilityAdapter(
+        CapabilityDescriptor(
+            id="cap", workspace_id="ws", type=CapabilityType.WEB, name="query",
+            availability="available", risk_level="low", requires_confirmation=False,
+        )
+    )
+    seen = {"n": 0}
+
+    async def flaky(args, action_id):
+        seen["n"] += 1
+        raw = {"results": ["来源1", "来源2"]} if seen["n"] == 1 else {"error": "failed"}
+        return InvocationResult(adapter.observe(raw, action_id), str(raw), raw)
+
+    web = Binding(
+        SimpleNamespace(name="query", description="搜索", args_schema=Args), adapter, AsyncMock(side_effect=flaky)
+    )
+    batch = AIMessageChunk(content="", tool_calls=[
+        {"id": "a", "name": "query", "args": {"city": "A"}},
+        {"id": "b", "name": "query", "args": {"city": "B"}},
+    ])
+    model = FakeModel([[batch], [AIMessageChunk(content="先总结")], [AIMessageChunk(content="部分结论：来源1、来源2；第二次搜索失败。")]])
+    events = run(loop, model, [web])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert loop.state.partial is True
+    assert web.invoke.await_count == 2
+    assert [e["content"] for e in events if e["type"] == "token"] == ["部分结论：来源1、来源2；第二次搜索失败。"]
+    finalize_note = model.calls[-1][-1]
+    assert finalize_note.type == "system" and "明确说明缺失或未完成的部分" in finalize_note.content
+
+
+def test_capability_failure_without_usable_results_still_blocks():
+    loop, _, _ = make_loop()
+    model = FakeModel([[tool_call()], [AIMessageChunk(content="我总结一下")]])
+    run(loop, model, [binding({"error": "failed"})])
+    assert loop.state.status == GoalStatus.BLOCKED
+    assert loop.state.reason == "unresolved_capability_failure"
+
+
+def test_invalid_batches_after_retry_budget_finalize_from_collected_results():
+    loop, _, _ = make_loop()
+    loop.payload["observations"] = [
+        {"status": "SUCCESS", "summary": "已收集 14 条来源", "facts": [], "evidence": [], "metadata": {}}
+    ]
+    web = binding(kind=CapabilityType.WEB)
+    malformed = AIMessageChunk(content="", tool_calls=[{"id": None, "name": "query", "args": {}}])
+    model = FakeModel(
+        [[malformed], [malformed], [malformed], [malformed], [AIMessageChunk(content="基于已收集来源收尾。")]]
+    )
+    events = run(loop, model, [web])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert loop.state.partial is True
+    assert loop.state.consumed["max_replans"] == 3
+    assert web.invoke.await_count == 0
+    assert [e["content"] for e in events if e["type"] == "token"] == ["基于已收集来源收尾。"]
+    finalize_note = model.calls[-1][-1]
+    assert finalize_note.type == "system" and finalize_note.content.startswith("预算进入收尾阶段")

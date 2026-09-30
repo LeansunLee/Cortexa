@@ -46,6 +46,7 @@
                 <input :id="`budget-${field.key}`" v-model.number="runtimeBudget[field.key]" type="number" :min="field.min" :max="runtimeLimits[field.key]" :disabled="runtimeUnlimited[field.key]" :aria-invalid="Boolean(runtimeErrors[field.key])" :aria-describedby="runtimeErrors[field.key] ? `budget-error-${field.key}` : undefined" :data-budget-key="field.key" step="1" />
                 <label class="budget-unlimited"><input v-model="runtimeUnlimited[field.key]" type="checkbox" :aria-label="`${field.zh}不限`" />不限</label>
               </div>
+              <small v-if="!runtimeUnlimited[field.key] && field.suggest" class="budget-hint">建议不超过 {{ field.suggest }}{{ field.suggestNote ? `（${field.suggestNote}）` : '' }}</small>
               <small v-if="runtimeErrors[field.key]" :id="`budget-error-${field.key}`" class="budget-error">{{ runtimeErrors[field.key] }}</small>
             </div>
           </div>
@@ -98,19 +99,19 @@ const collaborationOptions = [
   { value: 'AUTONOMOUS', label: '主动 · 由 Agent 自行决策' },
 ]
 const budgetFields = [
-  { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', icon: Clock3, min: 1 },
-  { key: 'llm_calls', label: 'Max LLM Calls', zh: '模型调用次数', icon: BrainCircuit, min: 0 },
-  { key: 'tool_calls', label: 'Max Tool Calls', zh: '工具调用次数', icon: Wrench, min: 0 },
-  { key: 'tool_iterations', label: 'Max Tool Iterations', zh: '工具执行轮次', icon: Repeat2, min: 0 },
-  { key: 'web_calls', label: 'Max Web Calls', zh: '网页搜索次数', icon: Globe2, min: 0 },
-  { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', icon: UsersRound, min: 0 },
-  { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', icon: Network, min: 0 },
-  { key: 'context_tokens', label: 'Max Context Tokens', zh: '单次上下文额度', icon: Layers3, min: 256 },
-  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出额度', icon: MessagesSquare, min: 0 },
-  { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', icon: ListChecks, min: 1 },
-  { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', icon: RefreshCw, min: 0 },
-  { key: 'max_failures', label: 'Max Failures', zh: '失败次数', icon: ShieldAlert, min: 1 },
-  { key: 'max_collaborators', label: 'Max Collaborators', zh: '参与协作的 Agent 数量', icon: UsersRound, min: 0 },
+  { key: 'duration', label: 'Max Duration', zh: '最长执行时间（秒）', icon: Clock3, min: 1, suggest: 600, suggestNote: '常规任务 180 足够' },
+  { key: 'llm_calls', label: 'Max LLM Calls', zh: '模型调用次数', icon: BrainCircuit, min: 0, suggest: 20 },
+  { key: 'tool_calls', label: 'Max Tool Calls', zh: '工具调用次数', icon: Wrench, min: 0, suggest: 30 },
+  { key: 'tool_iterations', label: 'Max Tool Iterations', zh: '工具执行轮次', icon: Repeat2, min: 0, suggest: 8 },
+  { key: 'web_calls', label: 'Max Web Calls', zh: '网页搜索次数', icon: Globe2, min: 0, suggest: 8, suggestNote: '深度对比类可到 10' },
+  { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', icon: UsersRound, min: 0, suggest: 8 },
+  { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', icon: Network, min: 0, suggest: 2, suggestNote: '每层开销成倍放大' },
+  { key: 'context_tokens', label: 'Max Context Tokens', zh: '单次上下文额度', icon: Layers3, min: 256, suggest: 128000, suggestNote: '不超过模型上下文窗口' },
+  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出额度', icon: MessagesSquare, min: 0, suggest: 32768 },
+  { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', icon: ListChecks, min: 1, suggest: 64 },
+  { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', icon: RefreshCw, min: 0, suggest: 3 },
+  { key: 'max_failures', label: 'Max Failures', zh: '失败次数', icon: ShieldAlert, min: 1, suggest: 5 },
+  { key: 'max_collaborators', label: 'Max Collaborators', zh: '参与协作的 Agent 数量', icon: UsersRound, min: 0, suggest: 3, suggestNote: '每增加一名成本显著上升' },
 ]
 
 onMounted(() => {
@@ -225,6 +226,7 @@ async function save() {
 .budget-unlimited { display: inline-flex; align-items: center; gap: 5px; flex: none; cursor: pointer; white-space: nowrap; font-size: 12px; }
 .budget-unlimited input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }
 .budget-field .budget-error { color: var(--danger); font-size: 12px; }
+.budget-field .budget-hint { color: var(--text3); font-size: 12px; }
 .budget-control > input[type=number] { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface2); color: var(--text); font-size: 14px; }
 .runtime-card .form-group { margin-top: 6px; }
 .runtime-card .runtime-collaboration-field :deep(.search-select-trigger) { min-height: 40px; font-size: 14px; }
