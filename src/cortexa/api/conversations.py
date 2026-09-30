@@ -357,7 +357,7 @@ async def create_message(
                         model_with_tools = model.bind_tools(data_tools)
                         required_business_tools = business_tools if should_require_business_tool(payload.content, business_tools) else []
                         first_model = bind_tools_for_first_response(model, data_tools, required_business_tools)
-                        response = first_model.invoke(llm_messages)
+                        response = await first_model.ainvoke(llm_messages)
                         if required_business_tools and not called_required_tool(response, required_business_tools):
                             reply_content = DATA_QUERY_GROUNDING_FAILURE
                             response = None
@@ -397,11 +397,11 @@ async def create_message(
                                 ))
                             llm_messages.append(response)
                             llm_messages.extend(tool_messages)
-                            response = model_with_tools.invoke(llm_messages)
+                            response = await model_with_tools.ainvoke(llm_messages)
                         if response is not None:
                             reply_content = response.content if hasattr(response, 'content') else str(response)
                     else:
-                        response = model.invoke(llm_messages)
+                        response = await model.ainvoke(llm_messages)
                         reply_content = response.content if hasattr(response, 'content') else str(response)
 
                 # Build metadata with sources

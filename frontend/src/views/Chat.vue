@@ -1878,7 +1878,7 @@ onBeforeUnmount(() => {
 }
 .btn-cancel:hover { background: var(--surface2); }
 .btn-create {
-  padding: 6px 14px; background: var(--primary); color: #fff; border: none;
+  padding: 6px 14px; background: var(--primary); color: var(--primary-text); border: none;
   border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer;
 }
 .btn-create:hover { background: var(--primary-hover); }
@@ -2070,7 +2070,7 @@ onBeforeUnmount(() => {
 .status-thinking .status-icon { animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .status-done .status-text { color: var(--text3); }
-.status-done .status-icon svg { color: #86EFAC; }
+.status-done .status-icon svg { color: var(--success); }
 
 /* ===== Stream Cursor ===== */
 .stream-cursor::after {
@@ -2091,10 +2091,10 @@ onBeforeUnmount(() => {
 .msg-error-text { display: flex; align-items: center; gap: 6px; }
 .btn-retry-sm {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; background: #DC2626; color: #fff; border: none;
+  padding: 4px 10px; background: var(--danger); color: var(--surface); border: none;
   border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;
 }
-.btn-retry-sm:hover { background: #B91C1C; }
+.btn-retry-sm:hover { background: color-mix(in srgb, var(--danger) 85%, var(--text)); }
 
 /* ===== Input Area ===== */
 .chat-input-area {
@@ -2117,7 +2117,7 @@ onBeforeUnmount(() => {
 .chat-input::placeholder { color: var(--text3); }
 .chat-send {
   width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-  background: var(--primary); color: #fff; border: none; border-radius: 10px;
+  background: var(--primary); color: var(--primary-text); border: none; border-radius: 10px;
   cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
 .chat-send:hover { background: var(--primary-hover); }
@@ -2127,8 +2127,8 @@ onBeforeUnmount(() => {
 }
 .send-loading {
   width: 16px; height: 16px;
-  border: 2px solid rgba(255,255,255,0.4);
-  border-top-color: #fff;
+  border: 2px solid color-mix(in srgb, var(--primary-text) 40%, transparent);
+  border-top-color: var(--primary-text);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
   display: inline-block;
@@ -2190,7 +2190,7 @@ onBeforeUnmount(() => {
 
 /* ===== Shared Buttons ===== */
 .btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
-.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary { background: var(--primary); color: var(--primary-text); }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--surface2); }
@@ -2201,7 +2201,7 @@ onBeforeUnmount(() => {
 .chat-messages::-webkit-scrollbar, .conv-list::-webkit-scrollbar { width: 5px; }
 .chat-messages::-webkit-scrollbar-track, .conv-list::-webkit-scrollbar-track { background: transparent; }
 .chat-messages::-webkit-scrollbar-thumb, .conv-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.chat-messages::-webkit-scrollbar-thumb:hover, .conv-list::-webkit-scrollbar-thumb:hover { background: #A1A1AA; }
+.chat-messages::-webkit-scrollbar-thumb:hover, .conv-list::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
 /* Markdown Tables */
 .msg-content-assistant :deep(.tbl-wrap) {

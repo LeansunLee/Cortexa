@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from cortexa.collaboration.drafts import CollaborationDraft
 from cortexa.runtime.collaboration import CollaborationSettings
 
@@ -244,8 +244,45 @@ class ToolOut(BaseModel):
 
 # -- Workflow --------------------------------------------------------------
 class WorkflowCreate(BaseModel):
-    name: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+
+
+class WorkflowUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    status: Literal["draft", "active", "disabled"] | None = None
+
+
+class WorkflowNodeCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=255)
+    agent_id: uuid.UUID
+
+
+class WorkflowNodeOut(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    agent_id: uuid.UUID | None
+    name: str
+    type: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class WorkflowEdgeCreate(BaseModel):
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+
+
+class WorkflowEdgeOut(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    model_config = {"from_attributes": True}
 
 
 class WorkflowOut(BaseModel):
@@ -261,17 +298,48 @@ class WorkflowOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class WorkflowDetailOut(WorkflowOut):
+    nodes: list[WorkflowNodeOut] = Field(default_factory=list)
+    edges: list[WorkflowEdgeOut] = Field(default_factory=list)
+
+
+class WorkflowRunCreate(BaseModel):
+    input_data: dict[str, Any] = Field(default_factory=dict)
+
+
 # -- Task ------------------------------------------------------------------
 class TaskCreate(BaseModel):
-    name: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    agent_id: uuid.UUID | None = None
+    agent_id: uuid.UUID
     input_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    input_data: dict[str, Any] | None = None
+
+
+class TaskRunOut(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    workflow_id: uuid.UUID | None
+    status: str
+    input_data: dict[str, Any]
+    output_data: dict[str, Any]
+    error_message: str | None
+    started_at: datetime
+    completed_at: datetime | None
+    model_config = {"from_attributes": True}
 
 
 class TaskOut(BaseModel):
     id: uuid.UUID
     workspace_id: uuid.UUID
+    agent_id: uuid.UUID | None
     name: str
     description: str | None
     status: str
@@ -535,6 +603,11 @@ class DataQueryOut(BaseModel):
     source: str | None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ManualDataQueryOut(DataQueryOut):
+    # Result rows are returned to the caller only; audit records retain a summary.
+    data: list[dict[str, Any]] | None = None
 
 
 # -- Update Schemas ----------------------------------------------------------

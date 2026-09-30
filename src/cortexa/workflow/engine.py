@@ -1,294 +1,133 @@
-"""Workflow execution engine using LangGraph."""
+"""Execute persisted tasks and sequential workflows using published Agents."""
 
 from __future__ import annotations
-from cortexa.usage.context import usage_action, annotate_usage
 
+import asyncio
 import json
-import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cortexa.db.models import (
-    Agent,
-    AgentRun,
-    AgentVersion,
-    Task,
-    TaskRun,
-    Workflow,
-    WorkflowEdge,
-    WorkflowNode,
-)
+from cortexa.api.agents import _build_system_prompt
 from cortexa.config.llm_providers import create_llm
+from cortexa.db.models import AgentRun, AgentVersion, Task, TaskRun, WorkflowEdge, WorkflowNode
+from cortexa.security.access import actor_required, require_agent_use
+from cortexa.usage.context import annotate_usage, usage_action
+
+
+def ordered_nodes(nodes: list[WorkflowNode], edges: list[WorkflowEdge]) -> list[WorkflowNode]:
+    """Validate and order the currently supported single-path Agent workflow."""
+    by_id = {node.id: node for node in nodes}
+    if not by_id or any(node.type != "agent" or not node.agent_id for node in nodes):
+        raise ValueError("工作流至少需要一个已绑定 Agent 的步骤")
+    outgoing: dict[uuid.UUID, list[uuid.UUID]] = {node_id: [] for node_id in by_id}
+    incoming = {node_id: 0 for node_id in by_id}
+    seen: set[tuple[uuid.UUID, uuid.UUID]] = set()
+    for edge in edges:
+        pair = (edge.source_node_id, edge.target_node_id)
+        if pair[0] not in by_id or pair[1] not in by_id or pair[0] == pair[1] or pair in seen:
+            raise ValueError("工作流连接无效或重复")
+        seen.add(pair)
+        outgoing[pair[0]].append(pair[1])
+        incoming[pair[1]] += 1
+    if len(nodes) > 1 and len(edges) != len(nodes) - 1:
+        raise ValueError("请将所有步骤按执行顺序连接")
+    ready = [node_id for node_id, count in incoming.items() if count == 0]
+    root_count = len(ready)
+    result = []
+    while ready:
+        node_id = ready.pop(0)
+        result.append(by_id[node_id])
+        for target in outgoing[node_id]:
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                ready.append(target)
+    if len(result) != len(nodes) or root_count != 1:
+        raise ValueError("工作流步骤必须组成一条无循环的执行路径")
+    if any(len(targets) > 1 for targets in outgoing.values()) or any(sum(edge.target_node_id == node_id for edge in edges) > 1 for node_id in by_id):
+        raise ValueError("当前仅支持顺序连接的工作流")
+    return result
 
 
 @usage_action("workflow_execute", source="workflow")
-async def execute_workflow(
-    db: AsyncSession,
-    task_id: str,
-    input_data: dict[str, Any],
-) -> TaskRun:
-    """Execute a workflow for a given task."""
-    # Load task
-    task = await db.get(Task, task_id)
-    if not task:
-        raise ValueError(f"Task {task_id} not found")
-
-    workflow = await db.get(Workflow, task.workflow_id)
-    if not workflow:
-        raise ValueError(f"Workflow {task.workflow_id} not found")
-
-    # Create task run
+async def run_task(db: AsyncSession, task: Task, steps: list[tuple[str, uuid.UUID]], workflow_id: uuid.UUID | None = None) -> TaskRun:
+    """Persist real model results and explicit failures; never fabricate a success."""
+    actor = actor_required()
+    task.status = "running"
     run = TaskRun(
-        id=str(uuid.uuid4()),
-        task_id=task_id,
-        run_number=1,
+        task_id=task.id,
+        workflow_id=workflow_id,
+        owner_user_id=actor.user_id,
         status="running",
-        context=input_data.copy(),
-        started_at=datetime.now(timezone.utc),
+        input_data=dict(task.input_data or {}),
+        output_data={},
     )
     db.add(run)
-    await db.flush()
-
-    # Update task status
-    task.status = "running"
-    await db.flush()
-
-    try:
-        # Get workflow nodes and edges
-        result = await db.execute(
-            select(WorkflowNode).where(WorkflowNode.workflow_id == workflow.id)
-        )
-        nodes = {str(n.id): n for n in result.scalars().all()}
-
-        result = await db.execute(
-            select(WorkflowEdge).where(WorkflowEdge.workflow_id == workflow.id)
-        )
-        edges = result.scalars().all()
-
-        # Find start node
-        start_node = None
-        for node in nodes.values():
-            if node.node_type == "start":
-                start_node = node
-                break
-
-        if not start_node:
-            raise ValueError("No start node found in workflow")
-
-        # Build adjacency list (node_id -> list of edges from that node)
-        adjacency: dict[str, list[WorkflowEdge]] = {}
-        for edge in edges:
-            src = str(edge.source_node_id)
-            adjacency.setdefault(src, []).append(edge)
-
-        # Execute nodes in topological order using BFS
-        context = input_data.copy()
-        visited = set()
-        queue = [str(start_node.id)]
-
-        while queue:
-            node_id = queue.pop(0)
-            if node_id in visited:
-                continue
-            visited.add(node_id)
-
-            node = nodes.get(node_id)
-            if not node:
-                continue
-
-            # Execute node based on type
-            if node.node_type == "agent" and node.agent_version_id:
-                agent_version = await db.get(AgentVersion, node.agent_version_id)
-                if agent_version:
-                    # Create agent run
-                    agent_run = AgentRun(
-                        id=str(uuid.uuid4()),
-                        task_run_id=run.id,
-                        agent_version_id=node.agent_version_id,
-                        workflow_node_id=node.id,
-                        status="running",
-                        input_data=context.copy(),
-                        started_at=datetime.now(timezone.utc),
-                    )
-                    db.add(agent_run)
-                    await db.flush()
-
-                    try:
-                        # Execute agent using LLM
-                        output = await _execute_agent(db, agent_version, context)
-
-                        # Update agent run
-                        agent_run.status = "completed"
-                        agent_run.output_data = output
-                        agent_run.completed_at = datetime.now(timezone.utc)
-                        agent_run.duration_ms = int(
-                            (agent_run.completed_at - agent_run.started_at).total_seconds() * 1000
-                        )
-
-                        # Update context with agent output
-                        context.update(output)
-
-                    except Exception as e:
-                        agent_run.status = "failed"
-                        agent_run.error_message = str(e)
-                        agent_run.completed_at = datetime.now(timezone.utc)
-                        raise
-
-            # Find next nodes
-            for edge in adjacency.get(node_id, []):
-                target_id = str(edge.target_node_id)
-                if target_id not in visited:
-                    # Apply field mappings if any
-                    if edge.field_mappings:
-                        mapped_context = {}
-                        for src_field, tgt_field in edge.field_mappings.items():
-                            if src_field in context:
-                                mapped_context[tgt_field] = context[src_field]
-                        # Merge mapped context
-                        context.update(mapped_context)
-                    queue.append(target_id)
-
-        # Complete task run
-        run.status = "completed"
-        run.context = context
-        run.completed_at = datetime.now(timezone.utc)
-        run.artifact = context  # Store final context as artifact
-
-        task.status = "completed"
-
-    except Exception as e:
-        run.status = "failed"
-        run.error_message = str(e)
-        run.completed_at = datetime.now(timezone.utc)
-        task.status = "failed"
-        raise
-
     await db.commit()
-    return run
-
-
-@usage_action("workflow_agent")
-async def _execute_agent(
-    db: AsyncSession,
-    agent_version: AgentVersion,
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """Execute a single agent using LLM."""
-    snapshot = agent_version.snapshot
-
-    # Build system prompt
-    system_parts = []
-    if snapshot.get("system_prompt"):
-        system_parts.append(snapshot["system_prompt"])
-    if snapshot.get("personality"):
-        system_parts.append(f"你的性格是: {snapshot['personality']}")
-    if snapshot.get("role"):
-        system_parts.append(f"你的角色是: {snapshot['role']}")
-    if snapshot.get("boundaries"):
-        system_parts.append(f"工作边界: {snapshot['boundaries']}")
-
-    system_prompt = "\n".join(system_parts) if system_parts else "你是一个AI助手。"
-
-    # Build user message from context
-    user_parts = []
-    for key, value in context.items():
-        if isinstance(value, str):
-            user_parts.append(f"{key}: {value}")
-        elif isinstance(value, dict):
-            user_parts.append(f"{key}: {json.dumps(value, ensure_ascii=False, indent=2)}")
-        else:
-            user_parts.append(f"{key}: {str(value)}")
-
-    user_message = "\n\n".join(user_parts) if user_parts else "请执行你的任务。"
-
-    # Get model name from snapshot or default
-    model_name = snapshot.get("model") or "gpt-4o-mini"
-
+    await db.refresh(run)
+    context: dict = {"input": dict(task.input_data or {}), "steps": {}}
+    current_agent_run_id = None
     try:
-        # Get LLM model
-        annotate_usage(agent_id=agent_version.agent_id, agent_name=snapshot.get("name"))
-        model = create_llm()
-
-        # Invoke LLM
-        from langchain_core.messages import HumanMessage, SystemMessage
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message),
-        ]
-
-        response = await model.ainvoke(messages)
-        output_text = response.content
-
-        # Try to parse as JSON, fallback to string
-        try:
-            # Clean control characters
-            cleaned_text = ''.join(c for c in output_text if c.isprintable() or c in '\n\r\t')
-            output = json.loads(cleaned_text)
-        except (json.JSONDecodeError, ValueError):
-            # Extract output fields based on agent's output schema
-            output_schema = snapshot.get("output_schema", {})
-            if output_schema and output_schema.get("properties"):
-                fields = list(output_schema["properties"].keys())
-                if len(fields) == 1:
-                    output = {fields[0]: output_text}
-                else:
-                    output = {"result": output_text}
-            else:
-                output = {"result": output_text}
-
-        return output
-
-    except Exception as e:
-        # If LLM fails, return a mock response for demo purposes
-        output_schema = snapshot.get("output_schema", {})
-        if output_schema and output_schema.get("properties"):
-            fields = list(output_schema["properties"].keys())
-            return {fields[0]: f"[模拟回复] {user_message[:200]}"}
-        return {"result": f"[模拟回复] LLM调用失败: {str(e)}"}
-
-
-async def get_run_trace(
-    db: AsyncSession,
-    run_id: str,
-) -> dict[str, Any]:
-    """Get detailed run trace including all agent runs."""
-    run = await db.get(TaskRun, run_id)
-    if not run:
-        raise ValueError(f"Run {run_id} not found")
-
-    # Get all agent runs
-    result = await db.execute(
-        select(AgentRun).where(AgentRun.task_run_id == run_id)
-    )
-    agent_runs = result.scalars().all()
-
-    return {
-        "run": {
-            "id": str(run.id),
-            "status": run.status,
-            "context": run.context,
-            "started_at": run.started_at.isoformat() if run.started_at else None,
-            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-            "error_message": run.error_message,
-            "artifact": run.artifact,
-        },
-        "agent_runs": [
-            {
-                "id": str(ar.id),
-                "status": ar.status,
-                "input_data": ar.input_data,
-                "output_data": ar.output_data,
-                "tool_calls": ar.tool_calls,
-                "token_usage": ar.token_usage,
-                "started_at": ar.started_at.isoformat() if ar.started_at else None,
-                "completed_at": ar.completed_at.isoformat() if ar.completed_at else None,
-                "duration_ms": ar.duration_ms,
-                "error_message": ar.error_message,
-            }
-            for ar in agent_runs
-        ],
-    }
+        for step_name, agent_id in steps:
+            agent = await require_agent_use(db, agent_id)
+            version = await db.scalar(
+                select(AgentVersion)
+                .where(AgentVersion.agent_id == agent.id, AgentVersion.is_published.is_(True))
+                .order_by(AgentVersion.version_number.desc())
+                .limit(1)
+            )
+            if not version:
+                raise ValueError(f"步骤 {step_name} 的 Agent 尚无已发布版本")
+            agent_run = AgentRun(
+                agent_id=agent.id,
+                agent_version_id=version.id,
+                owner_user_id=actor.user_id,
+                input_data=context.copy(),
+                status="running",
+            )
+            db.add(agent_run)
+            await db.commit()
+            await db.refresh(agent_run)
+            current_agent_run_id = agent_run.id
+            annotate_usage(agent_id=agent.id, agent_name=agent.name)
+            prompt = f"任务：{task.name}\n{task.description or ''}\n当前输入与已完成步骤：\n{json.dumps(context, ensure_ascii=False, default=str)}"
+            response = await asyncio.wait_for(
+                create_llm(agent.model).ainvoke(
+                    [SystemMessage(content=_build_system_prompt(agent)), HumanMessage(content=prompt)]
+                ),
+                timeout=120,
+            )
+            output = response.content if isinstance(response.content, str) else str(response.content)
+            agent_run.output_data = {"result": output}
+            agent_run.status = "completed"
+            agent_run.completed_at = datetime.now(timezone.utc)
+            agent_run.duration_ms = int((agent_run.completed_at - agent_run.created_at).total_seconds() * 1000)
+            context["steps"][step_name] = output
+            run.output_data = dict(context)
+            await db.commit()
+            current_agent_run_id = None
+        run.status = task.status = "completed"
+        task.output_data = dict(context)
+        run.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+    except Exception as error:
+        await db.rollback()
+        task = await db.get(Task, task.id)
+        run = await db.get(TaskRun, run.id)
+        message = f"运行失败：{type(error).__name__}"
+        if current_agent_run_id:
+            agent_run = await db.get(AgentRun, current_agent_run_id)
+            if agent_run:
+                agent_run.status = "failed"
+                agent_run.error_message = message
+                agent_run.completed_at = datetime.now(timezone.utc)
+        task.status = run.status = "failed"
+        run.error_message = message
+        run.output_data = dict(context)
+        run.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+    await db.refresh(run)
+    return run

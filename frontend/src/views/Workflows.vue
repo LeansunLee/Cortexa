@@ -1,208 +1,87 @@
 <template>
-  <div class="workflows-page page-wrap">
-    <PageHeader><button class="btn btn-primary" @click="showCreateModal = true">+ 创建工作流</button>
-    </PageHeader>
-
-    <div v-if="workflows.length > 0" class="workflows-list">
-      <div v-for="wf in workflows" :key="wf.id" class="workflow-card">
-        <div class="wf-header">
-          <span class="wf-icon"><AppIcon name="RefreshCw" /></span>
-          <div class="wf-info">
-            <div class="wf-name">{{ wf.name }}</div>
-            <div class="wf-desc">{{ wf.description || '暂无描述' }}</div>
-          </div>
+  <div class="workflows-page">
+    <PageHeader><button class="btn btn-primary" @click="showCreate = true">创建工作流</button></PageHeader>
+    <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+    <p v-if="notice" class="feedback" role="status">{{ notice }}</p>
+    <div v-if="!workflows.length" class="empty">暂无工作流。创建后添加 Agent 步骤并发布，即可运行。</div>
+    <div v-else class="workflow-list">
+      <article v-for="wf in workflows" :key="wf.id" class="workflow-card">
+        <div class="card-heading"><div><h2>{{ wf.name }}</h2><p>{{ wf.description || '暂无描述' }}</p></div><span class="status">{{ statusLabel(wf.status) }}</span></div>
+        <p class="steps">{{ wf.nodes?.length ? ordered(wf).map(node => node.name).join(' → ') : '尚未添加步骤' }}</p>
+        <div class="actions">
+          <button class="btn btn-ghost" @click="open(wf)">编辑步骤</button>
+          <button v-if="wf.status !== 'active'" class="btn btn-primary" @click="changeStatus(wf, 'active')">发布</button>
+          <button v-else class="btn btn-ghost" @click="changeStatus(wf, 'disabled')">禁用</button>
+          <button class="btn btn-ghost" :disabled="wf.status !== 'active'" @click="open(wf, true)">运行</button>
+          <button class="btn btn-danger" @click="remove(wf)">删除</button>
         </div>
-        <div class="wf-pipeline">
-          <span v-for="(step, i) in (wf.steps || ['研究员', '写作者'])" :key="i" class="pipeline-step">
-            {{ step }}
-            <span v-if="i < (wf.steps || []).length - 1" class="pipeline-arrow"> → </span>
-          </span>
-        </div>
-        <div class="wf-actions">
-          <button class="btn btn-ghost btn-sm" @click="deleteWorkflow(wf.id)">删除</button>
-        </div>
-      </div>
-    </div>
-    <div v-else class="empty-state">
-      <div class="empty-icon"><AppIcon name="RefreshCw" /></div>
-      <p>暂无工作流，点击上方按钮创建</p>
+      </article>
     </div>
 
-    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-      <div class="modal-box">
-        <div class="modal-header">
-          <h3>创建工作流</h3>
-          <button class="modal-close" @click="showCreateModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>名称</label>
-            <input v-model="form.name" placeholder="例如：内容创作流程" />
-          </div>
-          <div class="form-group">
-            <label>描述</label>
-            <textarea v-model="form.description" rows="3" placeholder="工作流的用途描述"></textarea>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="showCreateModal = false">取消</button>
-          <button class="btn btn-primary" @click="createWorkflow">创建</button>
-        </div>
-      </div>
-    </div>
+    <section v-if="selected" class="editor" aria-label="工作流编辑">
+      <div class="card-heading"><h2>{{ selected.name }}</h2><button class="btn btn-ghost" @click="selected = null">关闭</button></div>
+      <div class="fields"><label>名称<input v-model="editName" maxlength="255" /></label><label>描述<input v-model="editDescription" /></label><button class="btn btn-ghost" @click="saveInfo">保存信息</button></div>
+      <h3>执行步骤</h3>
+      <p class="hint">目前支持顺序执行已发布的 Agent。每步会收到任务输入和前面步骤的输出。</p>
+      <ol class="node-list"><li v-for="(node, index) in ordered(selected)" :key="node.id"><span>{{ node.name }}</span><button class="btn btn-danger" @click="removeNode(node)">移除</button><button v-if="index < selected.nodes.length - 1" class="btn btn-ghost" @click="toggleEdge(node, ordered(selected)[index + 1])">{{ edgeBetween(node, ordered(selected)[index + 1]) ? '断开下一步' : '连接下一步' }}</button></li></ol>
+      <div class="fields"><label>步骤名称<input v-model="nodeName" placeholder="例如：研究" /></label><label>执行 Agent<SearchSelect v-model="nodeAgentId" :options="agents.map(a => ({ value: a.id, label: a.name }))" placeholder="选择已发布的 Agent" /></label><button class="btn btn-primary" :disabled="!nodeName.trim() || !nodeAgentId" @click="addStep">添加步骤</button></div>
+      <div class="run-panel"><h3>运行工作流</h3><textarea v-model="runInput" rows="3" placeholder="输入要完成的任务" /><button class="btn btn-primary" :disabled="selected.status !== 'active' || running || !runInput.trim()" @click="run">{{ running ? '运行中…' : '运行' }}</button><p v-if="selected.status !== 'active'" class="hint">连接步骤并发布后可以运行。</p><pre v-if="runResult">{{ runResult }}</pre></div>
+    </section>
 
+    <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false"><div class="modal" role="dialog" aria-modal="true" aria-label="创建工作流"><h2>创建工作流</h2><label>名称<input v-model="form.name" maxlength="255" /></label><label>描述<textarea v-model="form.description" rows="2" /></label><div class="actions"><button class="btn btn-ghost" @click="showCreate = false">取消</button><button class="btn btn-primary" :disabled="!form.name.trim()" @click="create">创建</button></div></div></div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { workflowApi } from '../api'
-
-const workflows = ref([])
-const showCreateModal = ref(false)
-const form = ref({ name: '', description: '' })
-
-const currentWorkspace = () => localStorage.getItem('currentWorkspace')
-
-const showToast = (message, type = 'success') => {
-  window.dispatchEvent(new CustomEvent('toast', { detail: { message, type } }))
-}
-
-const loadWorkflows = async () => {
-  const ws = currentWorkspace()
-  if (!ws) return
-  try {
-    const { data } = await workflowApi.list(ws)
-    workflows.value = data
-  } catch (e) {
-    console.error(e)
+import { ref, onMounted, onUnmounted } from 'vue'
+import api, { workflowApi } from '../api'
+const workflows = ref([]), agents = ref([]), selected = ref(null)
+const showCreate = ref(false), form = ref({ name: '', description: '' })
+const editName = ref(''), editDescription = ref(''), nodeName = ref(''), nodeAgentId = ref('')
+const runInput = ref(''), runResult = ref(''), running = ref(false), error = ref(''), notice = ref('')
+const detail = e => typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message || '操作失败'
+const statusLabel = value => ({ draft: '草稿', active: '已发布', disabled: '已禁用' })[value] || value
+function ordered(wf) {
+  const nodes = wf.nodes || [], edges = wf.edges || []
+  const targets = new Set(edges.map(edge => edge.target_node_id))
+  const next = new Map(edges.map(edge => [edge.source_node_id, edge.target_node_id]))
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  const result = [], seen = new Set()
+  for (const start of [...nodes.filter(node => !targets.has(node.id)), ...nodes]) {
+    let cursor = start.id
+    while (byId.has(cursor) && !seen.has(cursor)) { result.push(byId.get(cursor)); seen.add(cursor); cursor = next.get(cursor) }
   }
+  return result
 }
-
-const createWorkflow = async () => {
-  const ws = currentWorkspace()
-  if (!ws) { alert('请先选择工作空间'); return }
-  if (!form.value.name) { alert('请输入名称'); return }
+async function load() {
   try {
-    await workflowApi.create(ws, form.value)
-    showCreateModal.value = false
-    form.value = { name: '', description: '' }
-    await loadWorkflows()
-    showToast('工作流创建成功')
-  } catch (e) {
-    alert('创建失败: ' + (e.response?.data?.detail || e.message))
-  }
+    workflows.value = (await workflowApi.list()).data
+    agents.value = (await api.get('/auth/agents')).data
+    if (selected.value) selected.value = workflows.value.find(w => w.id === selected.value.id) || null
+  } catch (e) { error.value = detail(e) }
 }
-
-const deleteWorkflow = async (id) => {
-  const ws = currentWorkspace()
-  if (!ws) return
-  if (!confirm('确定删除此工作流吗？')) return
-  try {
-    await workflowApi.delete(ws, id)
-    await loadWorkflows()
-    showToast('工作流已删除')
-  } catch (e) {
-    alert('删除失败')
-  }
+function open(wf, focusRun = false) { selected.value = wf; editName.value = wf.name; editDescription.value = wf.description || ''; runResult.value = ''; if (focusRun) requestAnimationFrame(() => document.querySelector('.run-panel')?.scrollIntoView({ behavior: 'smooth' })) }
+async function create() {
+  error.value = ''
+  try { const { data } = await workflowApi.create({ name: form.value.name.trim(), description: form.value.description }); showCreate.value = false; form.value = { name: '', description: '' }; await load(); open(workflows.value.find(w => w.id === data.id) || data) }
+  catch (e) { error.value = detail(e) }
 }
-
-onMounted(() => {
-  loadWorkflows()
-  window.addEventListener('workspace-changed', loadWorkflows)
-})
+async function saveInfo() { try { await workflowApi.update(selected.value.id, { name: editName.value.trim(), description: editDescription.value }); await load(); notice.value = '工作流信息已保存' } catch (e) { error.value = detail(e) } }
+async function changeStatus(wf, status) { error.value = ''; try { await workflowApi.update(wf.id, { status }); await load(); notice.value = status === 'active' ? '工作流已发布' : '工作流已禁用' } catch (e) { error.value = detail(e) } }
+async function addStep() {
+  error.value = ''
+  try { const previous = ordered(selected.value).at(-1); const { data } = await workflowApi.addNode(selected.value.id, { name: nodeName.value.trim(), agent_id: nodeAgentId.value }); if (previous) await workflowApi.addEdge(selected.value.id, previous.id, data.id); nodeName.value = ''; nodeAgentId.value = ''; await load() }
+  catch (e) { await load(); error.value = detail(e) }
+}
+async function removeNode(node) { if (!confirm(`移除步骤“${node.name}”？`)) return; try { await workflowApi.deleteNode(selected.value.id, node.id); await load() } catch (e) { error.value = detail(e) } }
+function edgeBetween(a, b) { return selected.value.edges.find(edge => edge.source_node_id === a.id && edge.target_node_id === b.id) }
+async function toggleEdge(a, b) { try { const edge = edgeBetween(a, b); if (edge) await workflowApi.deleteEdge(selected.value.id, edge.id); else await workflowApi.addEdge(selected.value.id, a.id, b.id); await load() } catch (e) { error.value = detail(e) } }
+async function run() { running.value = true; error.value = ''; runResult.value = ''; try { const { data } = await workflowApi.run(selected.value.id, { prompt: runInput.value.trim() }); runResult.value = data.status === 'completed' ? JSON.stringify(data.output_data, null, 2) : data.error_message || '运行失败'; await load() } catch (e) { error.value = detail(e) } finally { running.value = false } }
+async function remove(wf) { if (!confirm(`删除工作流“${wf.name}”？`)) return; try { await workflowApi.delete(wf.id); if (selected.value?.id === wf.id) selected.value = null; await load() } catch (e) { error.value = detail(e) } }
+onMounted(() => { load(); window.addEventListener('workspace-changed', load) })
+onUnmounted(() => window.removeEventListener('workspace-changed', load))
 </script>
 
 <style scoped>
-.page-header {
-  display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px;
-}
-.page-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
-.subtitle { font-size: 14px; color: var(--text2); }
-
-.workflows-list { display: flex; flex-direction: column; gap: 16px; }
-.workflow-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 20px; transition: all 0.2s;
-}
-.workflow-card:hover { border-color: var(--primary); }
-.wf-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.wf-icon { font-size: 32px; }
-.wf-name { font-weight: 600; font-size: 15px; }
-.wf-desc { font-size: 13px; color: var(--text2); }
-.wf-pipeline {
-  display: flex; align-items: center; gap: 4px;
-  padding: 12px 16px; background: var(--surface2); border-radius: var(--radius-sm);
-  margin-bottom: 12px; font-size: 13px;
-}
-.pipeline-step { color: var(--text); }
-.pipeline-arrow { color: var(--text3); margin: 0 4px; }
-.wf-actions { display: flex; justify-content: flex-end; }
-
-.empty-state { text-align: center; padding: 80px 20px; color: var(--text3); }
-.empty-icon { font-size: 48px; margin-bottom: 16px; }
-
-.modal-overlay {
-  display: flex; align-items: center; justify-content: center;
-  position: fixed; inset: 0;
-  background: var(--overlay); z-index: 9999;
-}
-.modal-box {
-  background: var(--surface-dialog); border-radius: var(--radius);
-  width: 480px; max-width: 90vw; box-shadow: var(--shadow-dialog);
-}
-.modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px; border-bottom: 1px solid var(--border);
-}
-.modal-header h3 { font-size: 16px; font-weight: 600; }
-.modal-close { background: none; border: none; font-size: 24px; color: var(--text3); cursor: pointer; }
-.modal-body { padding: 24px; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border); }
-
-.btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 10px 20px; border: none; border-radius: var(--radius-sm);
-  font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-primary { background: var(--primary); color: var(--primary-text); }
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
-.btn-ghost:hover { background: var(--surface2); }
-.btn-sm { padding: 7px 14px; font-size: 13px; }
-
-.form-group { margin-bottom: 16px; }
-.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.form-group input, .form-group textarea {
-  width: 100%; padding: 10px 14px;
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text); font-size: 14px;
-}
-.form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
-
-.toast {
-  position: fixed; bottom: 24px; right: 24px;
-  padding: 12px 20px; background: var(--text); color: var(--primary-text);
-  border-radius: var(--radius-sm); font-size: 14px; z-index: 10000;
-}
-.toast-success { background: var(--success); }
-
-/* Theme Variables */
-.page-wrap { }
-.page-wrap h1 { font-size: 24px; font-weight: 700; margin: 0; }
-.page-wrap .subtitle { color: var(--text3); margin: 4px 0 24px; font-size: 14px; }
-.page-wrap .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
-.page-wrap .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.page-wrap .card-title { font-size: 16px; font-weight: 600; }
-.page-wrap .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition); }
-.page-wrap .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.page-wrap .btn-primary { background: var(--primary); color: #fff; }
-.page-wrap .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
-.page-wrap .btn-ghost { background: transparent; color: var(--text2); }
-.page-wrap .btn-ghost:hover { background: var(--surface2); }
-.page-wrap .btn-danger { background: transparent; color: var(--danger); }
-.page-wrap .btn-danger:hover { background: var(--danger-bg); }
-.page-wrap .btn-sm { padding: 5px 12px; font-size: 13px; }
-.page-wrap .empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
-
+.workflow-list { display:grid; gap:14px; }.workflow-card,.editor { padding:20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }.workflow-card h2,.editor h2 { margin:0; font-size:17px; }.workflow-card p { margin:5px 0; color:var(--text2); }.card-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }.status { color:var(--text2); font-size:12px; }.steps { padding:12px; background:var(--surface2); border-radius:var(--radius-sm); }.actions,.fields { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin-top:14px; }.fields label,.modal label { display:grid; gap:6px; min-width:180px; flex:1; color:var(--text2); font-size:13px; }.fields input,.modal input,.modal textarea,.run-panel textarea { width:100%; box-sizing:border-box; padding:9px 11px; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; }.editor { margin-top:20px; }.editor h3 { margin:22px 0 6px; font-size:15px; }.hint { color:var(--text2); font-size:13px; }.node-list { padding-left:26px; }.node-list li { margin:8px 0; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); }.node-list li span { display:inline-block; min-width:140px; }.node-list button { margin-left:8px; }.run-panel { border-top:1px solid var(--border); margin-top:24px; }.run-panel textarea { display:block; margin:12px 0; }.run-panel pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; background:var(--surface2); border-radius:var(--radius-sm); }.feedback,.empty { padding:12px; background:var(--surface2); border-radius:var(--radius-sm); color:var(--text2); }.error { color:var(--danger); }.btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; background:var(--surface2); color:var(--text); font:inherit; font-size:13px; }.btn:disabled { opacity:.5; cursor:not-allowed; }.btn-primary { color:var(--primary-text); border-color:var(--primary); background:var(--primary); }.btn-ghost { background:transparent; }.btn-danger { color:var(--danger); }.modal-overlay { position:fixed; inset:0; display:grid; place-items:center; z-index:1000; background:var(--overlay); }.modal { width:min(480px,90vw); padding:24px; border-radius:var(--radius); background:var(--surface-dialog); box-shadow:var(--shadow-dialog); }.modal h2 { margin:0 0 16px; }.modal label { margin:10px 0; }
 </style>

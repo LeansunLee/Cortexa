@@ -195,6 +195,7 @@ async def get_agent_resources(agent_id: uuid.UUID, db: AsyncSession = Depends(ge
     return await resource_summary(agent, db)
 
 
+@router.patch("/{agent_id}", response_model=AgentOut)
 @router.put("/{agent_id}", response_model=AgentOut)
 async def update_agent(
     agent_id: uuid.UUID,
@@ -235,7 +236,13 @@ async def update_agent(
     requested_status = update_data.pop("status", None)
     if requested_status and requested_status not in (agent.status, "draft", "inactive", "archived"):
         raise HTTPException(422, "请通过发布操作启用 Agent")
-    changed = any(getattr(agent, field) != value for field, value in update_data.items())
+    # Resource bindings are live operational settings, including on published Agents.
+    # The dedicated agent-operations endpoints already apply them without unpublishing.
+    changed = any(
+        getattr(agent, field) != value
+        for field, value in update_data.items()
+        if field not in {"knowledge_base_ids", "tool_ids"}
+    )
     for field, value in update_data.items():
         setattr(agent, field, value)
     validate_goal_proxy(agent)

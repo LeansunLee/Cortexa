@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from sqlalchemy import select
 from cortexa.db.models import ConversationMessage
@@ -26,8 +27,32 @@ Owner 始终为当前 Agent；信息会被其所有授权使用者使用。用�
 Subject 与 claim_key 必须来自来源；同一事项使用稳定 claim_key（例如华东区域负责人），不能只按人员分组。
 时间未知用null；明确日期转换为带时区ISO时间，不把保存时间当事实发生时间。决策通常semantic/decision。
 用户长期偏好绑定其真实User ID。Focus只保存相关场景关注方向，不创建监控、提醒、Work或后台任务。
-高风险/冲突不选择自己偏好的一方。不值得记住时返回[]。
+高风险/冲突不选择自己偏好的一方。用户明确说“请记住/记住”并给出长期事实或偏好时，应提取该事实，source_mode为explicit；“来源是数据”不代表忽略用户的保存意图。不值得记住时返回[]。
 """
+
+
+def explicit_memory_candidate(message: str, source_id: str, source_revision: str, user_id: str, username: str) -> dict | None:
+    """Retain a directly stated memory when a model silently returns no candidates."""
+    match = re.match(r"^\s*(?:请|麻烦你|帮我|以后请)?(?:记住|记下|保存到记忆|以后记得)[：:，,\s]*(.+)$", message, re.S)
+    if not match:
+        return None
+    content = match.group(1).strip(" 。.!！\n")
+    if not 3 <= len(content) <= 500 or re.search(r"密码|口令|密钥|api[_ -]?key|secret|token|银行卡|身份证号|今天|明天|后天|这次|本轮", content, re.I):
+        return None
+    user_fact = content.startswith(("我", "本人"))
+    preference = user_fact and bool(re.search(r"喜欢|偏好|习惯|希望|以后", content))
+    candidate = Candidate(
+        content=content,
+        type="semantic",
+        memory_kind="preference" if preference else "fact",
+        source_mode="explicit",
+        importance=0.8,
+        confidence=0.8,
+        subject_type="user" if user_fact else None,
+        subject_id=user_id if user_fact else None,
+        subject_name=username if user_fact else None,
+    )
+    return {**candidate.model_dump(mode="json"), "source_message_id": source_id, "_source_revision": source_revision}
 
 
 @usage_action("memory_extract", background=True)
@@ -73,9 +98,13 @@ async def extract_memories(agent, conversation_id, current_message, recent_messa
             30,
         )
         raw = answer.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        values = json.loads(raw)
-        if not isinstance(values, list):
-            return []
+        try:
+            values = json.loads(raw)
+        except json.JSONDecodeError:
+            values = None
+        valid_array = isinstance(values, list)
+        if not valid_array:
+            values = []
         allowed = {str(m.id): m for m in rows}
         results = []
         for value in values[: config(agent).extract_limit]:
@@ -91,6 +120,16 @@ async def extract_memories(agent, conversation_id, current_message, recent_messa
                 results.append(data)
             except ValueError:
                 logger.info("Memory candidate rejected by schema")
+        if not results:
+            current_source = next((m for m in rows if m.content == current_message), None)
+            if current_source:
+                direct = explicit_memory_candidate(
+                    current_message, str(current_source.id), digest(current_source.content), str(a.user_id), a.username
+                )
+                if direct:
+                    results.append(direct)
+        if not results and not valid_array:
+            raise ValueError("Memory extraction returned invalid JSON")
         return results
     except Exception as error:
         # No raw LLM response or private source text in application logs.

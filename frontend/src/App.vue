@@ -40,6 +40,8 @@
           <Database :size="18" />
           <span class="nav-text">数据源</span>
         </router-link>
+        <router-link v-if="can('workflows.manage')" to="/workflows" class="nav-item" title="工作流" aria-label="工作流"><Workflow :size="18" /><span class="nav-text">工作流</span></router-link>
+        <router-link v-if="can('tasks.manage')" to="/tasks" class="nav-item" title="任务" aria-label="任务"><ClipboardList :size="18" /><span class="nav-text">任务</span></router-link>
       </nav>
       <div class="sidebar-footer">
         <router-link v-if="canAdmin()" to="/access" class="nav-item" title="用户与权限" aria-label="用户与权限">
@@ -125,7 +127,7 @@ const pageTitles = {
   '/': '首页', '/works': '工作', '/chat': '对话', '/meetings': '会议',
   '/my-agents': '我的 Agent', '/workspaces': '工作空间', '/agents': '智能体',
   '/knowledge': '空间知识库', '/data-sources': '数据源', '/settings': '系统配置',
-  '/personalization': '个性化设置', '/access': '用户与权限', '/workflows': '工作流',
+  '/personalization': '个性化设置', '/access': '用户与权限', '/workflows': '工作流', '/tasks': '任务',
 }
 const isIdentityPage = () => ['/login', '/change-password'].includes(route.path)
 function openCurrentTab() {

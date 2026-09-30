@@ -34,7 +34,7 @@ defineProps({
 .collaboration-context-hint {
   position: relative; display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 5px; border: 1px solid var(--info, #2563eb);
-  border-radius: 5px; color: var(--info, #2563eb); background: var(--info-light, #eff6ff);
+  border-radius: 5px; color: var(--info); background: var(--info-bg);
   font-size: 10px; font-weight: 700; line-height: 1.2; white-space: nowrap; cursor: help;
 }
 .collaboration-context-hint:focus-visible { outline: 2px solid var(--info, #2563eb); outline-offset: 2px; }

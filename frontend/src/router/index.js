@@ -41,6 +41,12 @@ const routes = [
     component: () => import('../views/Workflows.vue')
   },
   {
+    path: '/tasks',
+    name: 'Tasks',
+    meta: { permission: 'tasks.manage' },
+    component: () => import('../views/Tasks.vue')
+  },
+  {
     path: '/meetings',
     name: 'Meetings',
     meta: { permission: 'meeting.use' },

@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 import traceback
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 
 from cortexa.db.encryption import decrypt_dict
 
 
-def _build_connection_url(ds_type: str, config: dict, credential_data: dict | None) -> str:
+def _build_connection_url(ds_type: str, config: dict, credential_data: dict | None) -> URL:
     """Build async connection URL from config + credential."""
     host = config.get("host", "localhost")
     port = config.get("port", 5432 if ds_type == "postgres" else 3306)
@@ -22,9 +24,9 @@ def _build_connection_url(ds_type: str, config: dict, credential_data: dict | No
     password = credential_data.get("password", "") if credential_data else ""
 
     if ds_type == "postgres":
-        return f"postgresql+asyncpg://{username}:{password}@{host}:{port}/{database}"
+        return URL.create("postgresql+asyncpg", username=username, password=password, host=host, port=int(port), database=database)
     elif ds_type == "mysql":
-        return f"mysql+aiomysql://{username}:{password}@{host}:{port}/{database}"
+        return URL.create("mysql+aiomysql", username=username, password=password, host=host, port=int(port), database=database)
     else:
         raise ValueError(f"Unsupported data source type: {ds_type}")
 
@@ -45,6 +47,19 @@ async def test_connection(ds_type: str, config: dict, encrypted_credential: str 
         async with engine.connect() as conn:
             result = await conn.execute(text("SELECT 1"))
             result.scalar()
+        if ds_type == "postgres" and credential_data and credential_data.get("password"):
+            # A local PostgreSQL trust rule can accept any password. In that case
+            # the connection works, but the supplied credential has not been tested.
+            invalid = {**credential_data, "password": secrets.token_urlsafe(32)}
+            probe = create_async_engine(_build_connection_url(ds_type, config, invalid), pool_size=1)
+            try:
+                async with probe.connect():
+                    return {"success": False, "message": "数据库未校验密码，无法验证此凭证；请调整数据库认证规则"}
+            except Exception as error:
+                if "password authentication failed" not in str(error).lower() and "invalidpassword" not in type(error).__name__.lower():
+                    return {"success": False, "message": "无法确认数据库是否校验密码，凭证测试未通过"}
+            finally:
+                await probe.dispose()
         return {"success": True, "message": "连接成功"}
     except Exception as e:
         return {"success": False, "message": f"连接失败: {e}"}

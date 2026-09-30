@@ -207,10 +207,11 @@ async def create_agent_knowledge_base(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     agent = await _agent(agent_id, db)
+    from cortexa.api.knowledge import _unique_kb_name
     knowledge_base = KnowledgeBase(
         workspace_id=agent.workspace_id,
         agent_id=agent.id,
-        name=payload.name.strip(),
+        name=await _unique_kb_name(db, agent.workspace_id, agent.id, payload.name),
         description=payload.description,
         type=payload.type,
         status="active",

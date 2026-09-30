@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse as _BaseFileResponse
@@ -35,6 +37,17 @@ from fastapi.middleware.cors import CORSMiddleware
 ROOT = Path(__file__).resolve().parents[3]
 from cortexa.security.http import SecurityMiddleware, authorize_request
 app = FastAPI(title="Cortexa", version="0.1.0", dependencies=[Depends(authorize_request)])
+
+
+@app.exception_handler(RequestValidationError)
+async def localized_memory_validation(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/memories") or ("/memories" in request.url.path and request.url.path.startswith("/api/agent-operations/")):
+        for error in exc.errors():
+            empty_content = error.get("type") == "missing" or error.get("input") is None or isinstance(error.get("input"), str) and not error["input"].strip()
+            if "content" in error.get("loc", ()) and empty_content:
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "记忆内容不能为空"}, status_code=422)
+    return await request_validation_exception_handler(request, exc)
 
 from cortexa.usage.context import UsageMiddleware
 app.add_middleware(UsageMiddleware)
@@ -618,6 +631,8 @@ DIST_DIR = Path(__file__).parent / "static" / "dist"
 async def serve_vue(request: Request, full_path: str):
     """Serve Vue SPA for all non-API routes"""
     from fastapi.responses import FileResponse
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(404, "API endpoint not found")
     # Check if it's a static file in dist
     file_path = DIST_DIR / full_path
     if full_path and file_path.resolve().is_relative_to(DIST_DIR.resolve()) and file_path.exists() and file_path.is_file():

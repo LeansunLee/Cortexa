@@ -280,10 +280,17 @@
           </div>
           <div class="card-actions">
             <span :class="['status-badge', 'status-' + cap.status]">{{ cap.status === 'active' ? '启用' : '禁用' }}</span>
+            <button class="btn btn-ghost btn-sm" @click="openQueryTest(cap)">测试查询</button>
             <button class="btn btn-ghost btn-sm" @click="toggleCapability(cap)">{{ cap.status === 'active' ? '禁用' : '启用' }}</button>
             <button class="btn btn-ghost btn-sm" @click="editCapability(cap)"><Edit :size="14" /> 编辑</button>
             <button class="btn btn-danger btn-sm" @click="deleteCapability(cap.id)">删除</button>
           </div>
+        </div>
+        <div v-if="testingCap?.id === cap.id" class="query-preview">
+          <label>查询参数（JSON）<textarea v-model="queryParams" rows="3" class="mono" /></label>
+          <button class="btn btn-primary btn-sm" :disabled="queryBusy" @click="testCapability">{{ queryBusy ? '查询中…' : '执行查询' }}</button>
+          <p v-if="queryError" class="error-msg" role="alert">{{ queryError }}</p>
+          <div v-if="queryResult"><p>返回 {{ queryResult.row_count }} 行，以下显示前 50 行。</p><pre>{{ JSON.stringify((queryResult.data || []).slice(0, 50), null, 2) }}</pre></div>
         </div>
       </div>
 
@@ -456,6 +463,7 @@ const sources = ref([])
 const credentials = ref([])
 const capabilities = ref([])
 const queries = ref([])
+const testingCap = ref(null), queryParams = ref('{}'), queryResult = ref(null), queryError = ref(''), queryBusy = ref(false)
 
 const showCreateSource = ref(false)
 const showCreateCred = ref(false)
@@ -638,6 +646,20 @@ const editCapability = (cap) => {
   }
 }
 
+function openQueryTest(cap) { testingCap.value = testingCap.value?.id === cap.id ? null : cap; queryParams.value = '{}'; queryResult.value = null; queryError.value = '' }
+async function testCapability() {
+  queryBusy.value = true; queryError.value = ''; queryResult.value = null
+  try {
+    const params = JSON.parse(queryParams.value || '{}')
+    if (!params || Array.isArray(params) || typeof params !== 'object') throw new Error('查询参数必须是 JSON 对象')
+    const { data } = await dataApi.executeQuery({ data_capability_id: testingCap.value.id, params, source: 'manual' })
+    if (data.status !== 'success') throw new Error(data.error_message || '查询失败')
+    queryResult.value = { row_count: data.output_result?.row_count ?? 0, data: data.data || [] }
+    await loadQueries()
+  } catch (e) { queryError.value = typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message || '查询失败' }
+  finally { queryBusy.value = false }
+}
+
 const saveCapability = async () => {
   try {
     validateSqlSchema(editingCap.value)
@@ -817,6 +839,11 @@ onMounted(() => { loadSources(); loadCredentials(); loadCapabilities(); loadQuer
 .data-sources-page .card-actions>button,.data-sources-page .card-actions>.status-badge{flex:0 0 auto;white-space:nowrap}
 .data-sources-page .card-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px}
 .data-sources-page .card-actions svg{flex-shrink:0}
+.data-sources-page .query-preview{margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
+.data-sources-page .query-preview label{display:grid;gap:6px;color:var(--text2);font-size:13px}
+.data-sources-page .query-preview textarea{width:100%;box-sizing:border-box;padding:9px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-xs)}
+.data-sources-page .query-preview button{margin-top:10px}
+.data-sources-page .query-preview pre{max-height:340px;overflow:auto;padding:10px;background:var(--surface);color:var(--text);border-radius:var(--radius-xs);font-size:12px}
 .data-sources-page .card-actions .btn-ghost{color:var(--text2);border-color:var(--border)}
 @media(max-width:640px){.data-sources-page .data-tabs{gap:4px}.data-sources-page .data-tab-button{padding-inline:12px}.data-sources-page .card-actions{width:100%}}
 </style>

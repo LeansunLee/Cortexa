@@ -1421,7 +1421,7 @@ onMounted(() => {
 .agent-btn-chat {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 6px 14px; height: 32px;
-  background: var(--primary); color: #fff; border: none;
+  background: var(--primary); color: var(--primary-text); border: none;
   border-radius: 8px; font-size: 12px; font-weight: 600;
   cursor: pointer; transition: all 0.15s;
 }
@@ -1468,9 +1468,9 @@ onMounted(() => {
 .editor-title { display: flex; align-items: center; gap: 10px; }
 .editor-title h2 { font-size: 18px; font-weight: 600; margin: 0; color: var(--text); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; }
-.status-dot.draft { background: #F59E0B; }
-.status-dot.active { background: #10B981; }
-.status-dot.disabled { background: #9CA3AF; }
+.status-dot.draft { background: var(--warning); }
+.status-dot.active { background: var(--success); }
+.status-dot.disabled { background: var(--text3); }
 .status-text { font-size: 13px; color: var(--text3); }
 .editor-actions { display: flex; gap: 10px; }
 
@@ -1481,7 +1481,7 @@ onMounted(() => {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary { background: var(--primary); color: var(--primary-text); }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
 .btn-outline { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .btn-outline:hover:not(:disabled) { background: var(--surface2); border-color: var(--text3); }
@@ -1859,7 +1859,7 @@ onMounted(() => {
 .memory-edit-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
 .memory-edit-actions { display: flex; gap: 6px; margin-top: 6px; }
 .mem-edit-save {
-  padding: 4px 14px; background: var(--primary); color: #fff; border: none;
+  padding: 4px 14px; background: var(--primary); color: var(--primary-text); border: none;
   border-radius: 6px; font-size: 12px; cursor: pointer;
 }
 .mem-edit-save:hover { opacity: 0.9; }

@@ -16,7 +16,7 @@ from cortexa.api.schemas import (
     DataSchemaOut,
     DataCapabilityCreate, DataCapabilityStatusUpdate, DataCapabilityOut,
     AgentDataBindingCreate, AgentDataBindingOut,
-    DataQueryCreate, DataQueryOut,
+    DataQueryCreate, DataQueryOut, ManualDataQueryOut,
 )
 from cortexa.db.models import (
     DataSource, DataCredential, DataSchema, DataCapability,
@@ -407,7 +407,7 @@ async def delete_binding_by_agent_cap(
 # Execute Query (Manual Test)
 # =========================================================================
 
-@router.post("/query", response_model=DataQueryOut, status_code=201)
+@router.post("/query", response_model=ManualDataQueryOut, status_code=201)
 async def execute_data_query(
     payload: DataQueryCreate,
     db: AsyncSession = Depends(get_db),
@@ -446,6 +446,7 @@ async def execute_data_query(
         params=payload.params,
         row_limit=cap.row_limit,
         timeout_seconds=cap.timeout_seconds,
+        read_only=True,
     )
 
     # Create audit record
@@ -465,7 +466,7 @@ async def execute_data_query(
     await db.flush()
     await db.refresh(audit)
 
-    return audit
+    return {**DataQueryOut.model_validate(audit).model_dump(), "data": query_result.get("data")}
 
 
 # =========================================================================

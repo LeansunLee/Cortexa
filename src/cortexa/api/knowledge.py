@@ -17,7 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from fastapi import File as FastAPIFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.background import BackgroundTask
@@ -66,6 +66,24 @@ async def knowledge_scope(request: Request, db: AsyncSession = Depends(get_db),
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"], dependencies=[Depends(knowledge_scope)])
+
+
+async def _unique_kb_name(db: AsyncSession, workspace_id: uuid.UUID, agent_id: uuid.UUID | None, name: str, exclude_id: uuid.UUID | None = None) -> str:
+    name = name.strip()
+    if not name or any(c in name for c in '/\\') or any(ord(c) < 32 for c in name):
+        raise HTTPException(400, "名称不能为空或包含路径分隔符、控制字符")
+    if len(name) > 255:
+        raise HTTPException(400, "名称不能超过 255 个字符")
+    query = select(KnowledgeBase.id).where(
+        KnowledgeBase.workspace_id == workspace_id,
+        func.lower(func.trim(KnowledgeBase.name)) == name.lower(),
+    )
+    query = query.where(KnowledgeBase.agent_id == agent_id) if agent_id else query.where(KnowledgeBase.agent_id.is_(None))
+    if exclude_id:
+        query = query.where(KnowledgeBase.id != exclude_id)
+    if await db.scalar(query.limit(1)):
+        raise HTTPException(409, "当前范围已存在同名知识库")
+    return name
 
 
 @router.get("", response_model=list[KnowledgeBaseOut])
@@ -403,7 +421,7 @@ async def create_knowledge_base(
     kb = KnowledgeBase(
         workspace_id=uuid.UUID(workspace_id),
         agent_id=agent_uuid,
-        name=payload.name,
+        name=await _unique_kb_name(db, uuid.UUID(workspace_id), agent_uuid, payload.name),
         description=payload.description,
         type=payload.type,
     )
@@ -443,10 +461,7 @@ async def rename_knowledge_base(kb_id: uuid.UUID, payload: NameUpdate, db: Async
     kb = await db.get(KnowledgeBase, kb_id)
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
-    name = payload.name.strip()
-    if not name or any(c in name for c in '/\\') or any(ord(c) < 32 for c in name):
-        raise HTTPException(400, "名称不能为空或包含路径分隔符、控制字符")
-    kb.name = name
+    kb.name = await _unique_kb_name(db, kb.workspace_id, kb.agent_id, payload.name, kb_id)
     await db.commit()
     await db.refresh(kb)
     return kb

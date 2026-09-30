@@ -3,7 +3,7 @@
     <p v-if="error" class="error notice" role="alert">{{ error }}</p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="loading" class="empty">正在加载 Agent 资源…</p>
-    <p v-if="management && ['knowledge', 'tools'].includes(tab)" class="save-hint">绑定调整需保存并发布后生效。</p>
+    <p v-if="management && ['knowledge', 'tools'].includes(tab)" class="save-hint">绑定调整保存后生效；若同时修改 Agent 配置，需重新发布。</p>
     <template v-if="resources">
       <section v-show="tab === 'knowledge'" class="resource-stack">
         <div class="resource-panel">

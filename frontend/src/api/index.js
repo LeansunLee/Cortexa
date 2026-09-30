@@ -142,6 +142,14 @@ export const toolApi = {
 export const workflowApi = {
   list: () => api.get('/workflows'),
   create: (data) => api.post('/workflows', data),
+  get: id => api.get(`/workflows/${id}`),
+  update: (id, data) => api.patch(`/workflows/${id}`, data),
+  addNode: (id, data) => api.post(`/workflows/${id}/nodes`, data),
+  deleteNode: (id, nodeId) => api.delete(`/workflows/${id}/nodes/${nodeId}`),
+  addEdge: (id, source_node_id, target_node_id) => api.post(`/workflows/${id}/edges`, { source_node_id, target_node_id }),
+  deleteEdge: (id, edgeId) => api.delete(`/workflows/${id}/edges/${edgeId}`),
+  run: (id, input_data) => api.post(`/workflows/${id}/run`, { input_data }, { timeout: 300000 }),
+  runs: id => api.get(`/workflows/${id}/runs`),
   delete: (id) => api.delete(`/workflows/${id}`)
 }
 
@@ -149,6 +157,10 @@ export const workflowApi = {
 export const taskApi = {
   list: () => api.get('/tasks'),
   create: (data) => api.post('/tasks', data),
+  get: id => api.get(`/tasks/${id}`),
+  update: (id, data) => api.patch(`/tasks/${id}`, data),
+  run: id => api.post(`/tasks/${id}/run`, null, { timeout: 150000 }),
+  runs: id => api.get(`/tasks/${id}/runs`),
   delete: (id) => api.delete(`/tasks/${id}`)
 }
 

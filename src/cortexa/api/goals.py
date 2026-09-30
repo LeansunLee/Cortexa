@@ -38,6 +38,11 @@ store = GoalStore()
 log = logging.getLogger(__name__)
 
 
+def strip_email_addresses(text: str) -> str:
+    """Keep task keywords inside email addresses out of message routing."""
+    return re.sub(r"[\w.+-]+@[\w.-]+\.[\w-]+", " ", text)
+
+
 class ParticipantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     agent_id: uuid.UUID
@@ -94,7 +99,7 @@ async def message_route(conv_id: uuid.UUID, request: RouteRequest):
         features = {}
     if features.get("goal_execution_enabled") is not True or agent.agent_type != "llm" or request.has_attachments:
         return {"use_goal": False}
-    goal = parse_goal(request.content, explicit_agent_ids=tuple(str(x) for x in request.participant_ids))
+    goal = parse_goal(strip_email_addresses(request.content), explicit_agent_ids=tuple(str(x) for x in request.participant_ids))
     if goal.explicit_agents and features.get("goal_collaboration_enabled") is not True:
         return {"use_goal": False}
     text = goal.objective.strip()
@@ -110,6 +115,8 @@ async def message_route(conv_id: uuid.UUID, request: RouteRequest):
     ):
         return {"use_goal": True}
     explicit_task = bool(goal.explicit_agents or goal.field_sources.get("labelled_objective") or goal.success_criteria)
+    # Email addresses are data, not task instructions. Unicode \w also covers Chinese local parts.
+    affirmative = strip_email_addresses(affirmative)
     task_language = bool(
         re.search(
             r"研究|制定|规划|生成|撰写|制作|执行|完成|分析|对比|比较|调查|整理|汇总|总结|创建|协作|一起|方案|策略|计划|调研|起草|设计|安排",
