@@ -1,4 +1,4 @@
-"""Strict Proxy projection: default deny, no model-created values or raw context."""
+"""Schema-bound Proxy projection: approved sources, no model-created values or raw context."""
 
 import hashlib
 import json
@@ -40,6 +40,7 @@ class ObservationInput(BaseModel):
 
 class ProxyInvocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    task_fields: list[str] = Field(default_factory=list, max_length=64, description="指定使用本次任务原文的输入字段名；不填写参数值。仅一个字段适合任务原文时可省略。")
     observation_bindings: dict[str, ObservationInput] = Field(
         default_factory=dict,
         max_length=64,
@@ -48,7 +49,12 @@ class ProxyInvocation(BaseModel):
 
 
 def policy(agent):
-    return ProxyContract.model_validate((agent.proxy_config or {}).get("goal_contract") or {})
+    raw = dict((agent.proxy_config or {}).get("goal_contract") or {})
+    raw["fields"] = {
+        name: ["explicit", "goal_task", "observation_facts", "observation_summary"]
+        for name in (agent.input_schema or {}).get("properties", {})
+    }
+    return ProxyContract.model_validate(raw)
 
 
 def enabled(agent, config):
@@ -158,7 +164,13 @@ def build_invocation(agent, payload, args, context_limit):
     observations = {
         o["action_id"]: o for o in payload.get("observations", []) if o["status"] in {"SUCCESS", "EMPTY", "PARTIAL"}
     }
-    bindings = ProxyInvocation.model_validate(args).observation_bindings
+    invocation = ProxyInvocation.model_validate(args)
+    bindings = invocation.observation_bindings
+    task_fields = set(invocation.task_fields)
+    compatible = {name for name, schema in agent.input_schema["properties"].items()
+                  if not contract_errors(schema, task)}
+    if not task_fields and len(compatible) == 1:
+        task_fields = compatible
     result, selected, rejected = {}, {}, []
     properties = agent.input_schema["properties"]
     for name, sources in cfg.fields.items():
@@ -167,9 +179,6 @@ def build_invocation(agent, payload, args, context_limit):
         if "explicit" in sources and name in explicit:
             value, found = explicit[name], True
             selected[name] = "explicit"
-        elif "goal_task" in sources:
-            value, found = task, True
-            selected[name] = "goal_task"
         elif name in bindings:
             binding = bindings[name]
             observation = observations.get(str(binding.action_id))
@@ -185,10 +194,14 @@ def build_invocation(agent, payload, args, context_limit):
                     selected[name] = binding.source
                 except (ValueError, KeyError, IndexError, TypeError):
                     pass
+        if not found and name not in bindings and name in task_fields and "goal_task" in sources and not contract_errors(properties[name], task):
+            value, found = task, True
+            selected[name] = "goal_task"
         if found:
             result[name] = project(value, properties[name], "/" + name, rejected)
     rejected.extend("/" + name for name in explicit if selected.get(name) != "explicit")
     rejected.extend("/" + name for name in bindings if name not in selected)
+    rejected.extend("/" + name for name in task_fields if name not in selected)
     errors = contract_errors(agent.input_schema, result)
     missing = set()
     for error in errors:

@@ -117,6 +117,53 @@ def test_contract_required_and_no_remote_references():
         executor.contract_errors({"$ref": "https://example.com/schema"}, {})
 
 
+def test_agent_input_projects_large_query_results_without_losing_small_product_table():
+    observations = {}
+    for count, label in ((247, "经销商"), (510, "门店"), (17, "车型")):
+        rows = [
+            {"名称": f"{label}{index}", "大区": "华东", "价格": 16980 + index, "说明": "销售渠道信息" * 8}
+            for index in range(count)
+        ]
+        key = label
+        observations[key] = {
+            "source_type": "DATA",
+            "facts": rows,
+            "evidence": [],
+            "raw_result": {
+                "data": rows,
+                "row_count": count,
+                "returned_rows": count,
+                "truncated": False,
+                "facets": {"大区": {"华东": count}},
+            },
+        }
+    invocation = executor.project_agent_input(
+        "制定10月销售任务", {}, list(observations), observations, 8000
+    )
+    assert executor.token_upper_bound(invocation) <= 8000
+    dependencies = {item["action_id"]: item for item in invocation["dependencies"]}
+    for label in ("经销商", "门店"):
+        result = dependencies[label]["result"]
+        assert result["row_count"] == len(observations[label]["facts"])
+        assert result["facets"]["大区"]["华东"] == result["row_count"]
+        assert "rows" not in result
+        assert "data_projection" in result
+    product = dependencies["车型"]["result"]
+    assert product["data_format"] == "columns_rows"
+    assert len(product["rows"]) == 17
+    assert product["rows"][0][product["columns"].index("价格")] == 16980
+    assert "facts" not in dependencies["车型"]
+
+
+def test_agent_input_rejects_large_results_without_safe_aggregate():
+    rows = [{"raw": "x" * 9000}]
+    observations = {
+        "query": {"source_type": "DATA", "facts": rows, "evidence": [], "raw_result": {"data": rows}}
+    }
+    with pytest.raises(RuntimeHalt, match="agent_input_budget_exceeded"):
+        executor.project_agent_input("analyze", {}, ["query"], observations, 8000)
+
+
 @asynccontextmanager
 async def setup(tmp_path, monkeypatch):
     root = create_async_engine(URL)

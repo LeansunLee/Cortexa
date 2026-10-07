@@ -51,14 +51,14 @@ def payload(agent, inputs=None):
     }
 
 
-def test_default_deny_and_task_projection_never_copy_context():
+def test_all_sources_allowed_but_only_declared_inputs_are_sent():
     agent = proxy_agent()
-    data = payload(agent, {"history": "PRIVATE_HISTORY", "input": "MODEL_CANNOT_REPLACE_TASK"})
+    data = payload(agent, {"history": "PRIVATE_HISTORY", "input": "用户指定的任务"})
     before = copy.deepcopy(data)
     projected, body, missing, oversized, trace = build_invocation(agent, data, {}, 32000)
-    assert body == projected == {"input": "查询销售"} and not missing and not oversized
+    assert body == projected == {"input": "用户指定的任务"} and not missing and not oversized
     assert data == before and "PRIVATE" not in json.dumps(body)
-    assert trace["selected_fields"] == ["input"] and trace["rejected_field_count"] == 2
+    assert trace["selected_fields"] == ["input"] and trace["rejected_field_count"] == 1
     assert trace["compression"] == "structural_projection"
     assert "primary_system_prompt" in trace["denied_context"]
     assert not enabled(agent, CONFIG)
@@ -66,6 +66,22 @@ def test_default_deny_and_task_projection_never_copy_context():
         ProxyInvocation.model_validate({"inputs": {"input": "PRIVATE_SYSTEM"}})
     with pytest.raises(ValidationError):
         ProxyInvocation.model_validate({"task": "PRIVATE_SYSTEM"})
+
+
+def test_task_field_selection_does_not_fill_unrelated_fields():
+    schema = {"type": "object", "properties": {"requirement": {"type": "string"}, "target_users": {"type": "string"}, "priority": {"type": "integer"}}, "required": ["requirement"]}
+    agent = proxy_agent(schema, fields={})
+    projected, _, missing, _, _ = build_invocation(agent, payload(agent), {"task_fields": ["requirement"]}, 32000)
+    assert projected == {"requirement": "查询销售"} and not missing
+    from cortexa.runtime.proxy import policy
+    assert all(set(sources) == {"explicit", "goal_task", "observation_facts", "observation_summary"} for sources in policy(agent).fields.values())
+
+
+def test_proxy_invitation_and_discovery_are_always_allowed():
+    from cortexa.runtime.collaboration import settings
+    agent = proxy_agent()
+    agent.collaboration = {"allow_incoming": False, "discoverable": False}
+    assert settings(agent).allow_incoming and settings(agent).discoverable
 
 
 def test_nested_explicit_fields_only_and_no_coercion_or_inference():

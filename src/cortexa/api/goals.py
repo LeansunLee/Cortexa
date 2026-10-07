@@ -19,12 +19,13 @@ from sqlalchemy.exc import ProgrammingError
 
 from cortexa.agents.prompts import build_system_prompt
 from cortexa.config.llm_providers import create_llm
-from cortexa.db.models import Conversation, ConversationMessage, Workspace
+from cortexa.db.models import AgentCollaboration, Conversation, ConversationMessage, Workspace
 from cortexa.runtime.bindings import prepare_bindings
 from cortexa.runtime.collaboration import LEVEL, Autonomy
 from cortexa.runtime.goals import GapType, parse_goal
 from cortexa.runtime.loop import GoalLoop, serialize_messages
 from cortexa.runtime.policy import conversation_modes, resolve_effective_policy
+from cortexa.runtime.recovery import reset_unstarted_agent, unstarted_agent_action
 from cortexa.runtime.shadow import can_read_goal_trace
 from cortexa.runtime.state import BudgetLimits, GoalState, GoalStatus
 from cortexa.runtime.store import GoalStore, own_conversation
@@ -322,6 +323,12 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
     state.policy_trace = policy.trace
     if row.revision != request.revision:
         raise HTTPException(409, "Goal 已更新，请重新读取状态")
+    payload = store.files.read(row.id, row.artifacts["snapshot"])
+    safe_initialization_retry = (
+        row.status == GoalStatus.WAITING
+        and state.reason == "action_result_unknown"
+        and unstarted_agent_action(state, payload)
+    )
     if row.status == GoalStatus.RUNNING:
         # An in-flight request owns its revision until its maximum duration plus
         # cleanup grace expires. After a process crash, explicit recovery records
@@ -341,7 +348,7 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         and state.current_action is None
         and all(state.consumed.get(name, 0) == 0 for name in ("llm_calls", "tool_calls", "agent_calls", "web_calls"))
     )
-    if not retryable_runtime_error and (row.status != GoalStatus.WAITING or state.reason not in {
+    if not retryable_runtime_error and not safe_initialization_retry and (row.status != GoalStatus.WAITING or state.reason not in {
         "missing_inputs",
         "clarify_goal",
         "cancelled",
@@ -349,8 +356,24 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         "collaboration_authorized",
         "runtime_validation_error",
         "invalid_reasoning_action",
+        "agent_initialization_failed",
     }):
         raise HTTPException(409, "此 Goal 不能自动续跑，请检查停止原因")
+    if safe_initialization_retry:
+        action_id = state.current_action.id
+        async with store.sessions() as db:
+            records = (await db.execute(select(AgentCollaboration).where(
+                AgentCollaboration.conversation_id == conv_id,
+                AgentCollaboration.status == "running",
+            ))).scalars().all()
+            for record in records:
+                runtime = (record.result_sources or {}).get("runtime", {})
+                if runtime.get("goal_id") == str(row.id) and runtime.get("action_id") == action_id:
+                    record.status = "failed"
+                    record.result_summary = "协作初始化中断；尚未启动子模型，允许安全重试。"
+                    record.completed_at = datetime.now(UTC)
+            await db.commit()
+        reset_unstarted_agent(state)
     if state.current_action and state.current_action.kind == "CAPABILITY" and state.current_action.phase != "completed":
         raise HTTPException(409, "上次外部行动结果未知，禁止自动重试；请先人工核实结果")
     if execution_config().get("features", {}).get("goal_collaboration_enabled") is True:
@@ -395,6 +418,7 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
 
 
 HALT_MESSAGES = {
+    "agent_initialization_failed": "协作初始化失败，尚未调用参与者。已保留查询结果；请在当前对话中继续重试。",
     "failure_limit": "协作或工具连续失败，目标已停止。请查看上方失败详情后调整任务或配置，再创建新目标。",
     "proxy_contract_invalid": "代理输入契约配置不适用于目标模式，请修正配置并发布。",
     "proxy_contract_changed": "代理契约已改变，请核对配置后新建目标。",
@@ -405,12 +429,18 @@ HALT_MESSAGES = {
     "action_result_unknown": "上次行动的结果尚未确认，已停止自动执行。请先核实结果，避免重复调用。",
     "required_capability_not_used": "尚未取得所需业务数据，本轮不能提供可靠的数据结论。",
     "context_budget_exceeded": "当前上下文超过预算，已停止执行。请缩小任务范围。",
-    "invalid_reasoning_action": "模型返回了不完整的工具调用；该批调用尚未执行。请继续重试。",
+    "invalid_reasoning_action": "模型多次返回不完整的工具调用，本轮仍未执行。请重试；若反复出现，请更换模型或简化目标后重新发起。",
     "runtime_validation_error": "运行时参数校验失败；已保留已完成的协作结果。请在此对话中补充说明并继续。",
     "model_empty": "模型未返回可用内容，目标已停止。请重试或调整模型输出预算。",
     "model_output_incomplete": "模型回复未完成，目标已停止。请重试或提高输出预算。",
     "collaboration_denied": "所请求的协作 Agent 已被拒绝，本目标已停止。请新建目标调整参与者。",
     "child_budget_unavailable": "当前剩余预算不足以完成协作并汇总结果，目标已停止。",
+    "unresolved_capability_failure": "本轮协作或查询未取得可用结果，目标已停止。请查看协作详情中的失败原因，调整参与者配置或任务后重新发起。",
+    "capability_unavailable": "所需能力当前不可用，目标已停止。请检查能力或数据源配置后重试。",
+    "capability_not_authorized": "目标尝试调用未授权的能力，已停止执行。请为该 Agent 配置相应能力权限后重试。",
+    "collaboration_unavailable": "所选协作者不可用（可能是代理型 Agent 或协作深度超限），目标已停止。",
+    "dependency_not_ready": "协作依赖的上游结果尚未就绪，已停止执行。请重新发起目标。",
+    "agent_input_budget_exceeded": "派发给参与者的输入超过上下文预算，目标已停止。请精简任务或减少依赖结果。",
 }
 
 
@@ -461,7 +491,36 @@ def stream_response(row, state, payload, agent, workspace):
                 }
             )
             yield event({"type": "goal_status", **public_status(row)})
-            loop = GoalLoop(state, payload, checkpoint, authorize)
+            live_events = asyncio.Queue()
+            last_progress = {"type": "runtime_progress", "agent_name": agent.name, "message": "正在准备任务上下文", "status": "running"}
+            yield event(last_progress)
+            def publish_live(value):
+                nonlocal last_progress
+                if value.get("type") == "runtime_progress":
+                    last_progress = value
+                    steps = payload.setdefault("execution_steps", [])
+                    entry = {"status": "runtime_error" if value.get("status") == "error" else "runtime_done" if value.get("status") == "completed" else "runtime_start",
+                                  "message": f"{value.get('agent_name') or 'Agent'} · {value.get('message', '')}",
+                                  "tool": value.get("action_id"), "agent_name": value.get("agent_name"),
+                                  "sources": value.get("sources", [])}
+                    previous = next((i for i in range(len(steps) - 1, -1, -1) if value.get("action_id") and steps[i].get("tool") == value["action_id"] and steps[i].get("status") == "runtime_start"), None)
+                    if previous is None:
+                        steps.append(entry)
+                    else:
+                        steps[previous] = {**steps[previous], **entry}
+                    payload["execution_steps"] = steps[-100:]
+                elif value.get("type") == "runtime_draft":
+                    step = next((s for s in reversed(payload.get("execution_steps", [])) if s.get("tool") == value.get("action_id")), None)
+                    if step is not None:
+                        step["draft"] = (step.get("draft", "") + value.get("content", ""))[:600]
+                elif value.get("type") == "runtime_usage":
+                    usage_key = f"{value.get('agent_id')}:{value.get('action_id')}"
+                    payload.setdefault("execution_usage", {})[usage_key] = {"agent_name": value.get("agent_name"), "agent_id": value.get("agent_id"), **value.get("stats", {})}
+                    step = next((s for s in reversed(payload.get("execution_steps", [])) if s.get("tool") == value.get("action_id")), None)
+                    if step is not None:
+                        step["usage"] = value.get("stats", {})
+                live_events.put_nowait(value)
+            loop = GoalLoop(state, payload, checkpoint, authorize, event_sink=publish_live, agent_name=agent.name)
             if state.status == GoalStatus.RUNNING:
                 query = payload["goal"]["raw_request"] + "\n" + "\n".join(payload.get("clarifications", []))
                 async with asyncio.timeout(loop.budget.remaining_time()):
@@ -522,8 +581,32 @@ def stream_response(row, state, payload, agent, workspace):
                     model = create_llm(agent.model)
                     if hasattr(model, "max_retries"):
                         model = model.model_copy(update={"max_retries": 0})
-                    async for value in loop.run(model, bindings, required_names=required):
-                        yield event(value)
+                    async def drive_loop():
+                        try:
+                            async for value in loop.run(model, bindings, required_names=required):
+                                live_events.put_nowait(value)
+                        finally:
+                            live_events.put_nowait(None)
+                    worker = asyncio.create_task(drive_loop())
+                    try:
+                        while True:
+                            try:
+                                value = await asyncio.wait_for(live_events.get(), timeout=10)
+                            except TimeoutError:
+                                yield event({**last_progress, "heartbeat": True})
+                                continue
+                            if value is None:
+                                break
+                            yield event(value)
+                        await worker
+                    finally:
+                        if not worker.done():
+                            worker.cancel()
+                            with anyio.CancelScope(shield=True):
+                                try:
+                                    await worker
+                                except asyncio.CancelledError:
+                                    pass
             reply = loop.reply or payload.get("final_reply", "")
             if state.status == GoalStatus.COMPLETE and payload.get("explicit_invitation") and not state.used_agents:
                 reply += ("\n\n" if reply else "") + "本次未邀请协作 Agent；当前未找到适合此任务的参与者。"

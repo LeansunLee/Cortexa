@@ -13,7 +13,7 @@ from cortexa.runtime.artifacts import ArtifactStore
 from cortexa.runtime.capabilities import CapabilityDescriptor, CapabilityType
 from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages
 from cortexa.runtime.projection import model_result_text
-from cortexa.runtime.state import GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
+from cortexa.runtime.state import BUDGET_BOUNDED_MAX, GoalState, GoalStatus, RuntimeBudget, RuntimeHalt, effective_limits
 
 
 class Args(BaseModel):
@@ -131,7 +131,7 @@ def test_empty_provider_call_does_not_block_complete_call():
 
 
 def test_repeated_partial_actions_wait_without_running_tools():
-    loop, _, _ = make_loop()
+    loop, _, _ = make_loop({"max_replans": 1})
     tool = binding()
     malformed = AIMessageChunk(content="", tool_calls=[
         {"id": "valid", "name": "query", "args": {"city": "杭州"}},
@@ -145,7 +145,7 @@ def test_repeated_partial_actions_wait_without_running_tools():
 
 
 def test_only_empty_provider_calls_are_retried_without_executing():
-    loop, _, _ = make_loop()
+    loop, _, _ = make_loop({"max_replans": 1})
     tool = binding()
     ghost = AIMessageChunk(content="", tool_calls=[{"id": None, "name": "", "args": {}}])
     model = FakeModel([[ghost], [ghost]])
@@ -169,6 +169,73 @@ def test_two_call_child_executes_required_tool_before_synthesis():
     assert state.finalization_reserve["duration"] == 0
     assert tool.invoke.await_count == 1
     assert state.status == GoalStatus.COMPLETE
+    assert model.bound[-1]["max_tokens"] > 4096  # The final answer can use its actual remaining output budget.
+
+
+def test_child_tool_batch_over_budget_keeps_successful_result_and_synthesizes():
+    state = GoalState(limits=effective_limits({"llm_calls": 2, "tool_calls": 1}), runtime_role="CHILD")
+    loop, _, _ = make_loop(state=state)
+    tool = binding()
+    model = FakeModel([[tool_call("first"), tool_call("second", args={"city": "北京"})], [AIMessageChunk(content="根据已取得数据给出结论，第二项未查询。")]])
+    run(loop, model, [tool], ["query"])
+    assert tool.invoke.await_count == 1
+    assert state.status == GoalStatus.COMPLETE
+    assert state.partial
+    assert state.consumed["tool_calls"] == 1
+    assert state.consumed["llm_calls"] == 2
+    assert "第二项未查询" in loop.reply
+
+
+def test_unknown_tool_name_is_rejected_then_corrected_within_budget():
+    state = GoalState(limits=effective_limits({"llm_calls": 3}), runtime_role="CHILD")
+    loop, _, _ = make_loop(state=state)
+    tool = binding()
+    model = FakeModel([[tool_call("wrong", name="query_misspelled")], [tool_call("correct")], [AIMessageChunk(content="已取得数据并完成分析。")]])
+    run(loop, model, [tool], ["query"])
+    assert state.status == GoalStatus.COMPLETE
+    assert tool.invoke.await_count == 1
+    assert state.consumed["max_replans"] == 1
+    assert state.consumed["tool_calls"] == 1
+    assert "该工具名称不可用，本次未执行" in str(model.calls[1])
+
+
+def test_missing_business_query_is_requested_before_final_answer():
+    state = GoalState(limits=effective_limits({"llm_calls": 3}), runtime_role="CHILD")
+    loop, _, _ = make_loop(state=state)
+    tool = binding()
+    model = FakeModel([[AIMessageChunk(content="未经查询的计划")], [tool_call()], [AIMessageChunk(content="已根据真实数据完成计划")]])
+    events = run(loop, model, [tool], ["query"])
+    assert state.status == GoalStatus.COMPLETE
+    assert tool.invoke.await_count == 1
+    assert not any(e.get("content") == "未经查询的计划" for e in events)
+
+
+def test_complete_agent_report_reaches_parent_when_context_can_fit_it():
+    loop, _, _ = make_loop({"context_tokens": 32000})
+    answer = "完整销售计划" + "x" * 7500
+    archived = {"status": "success", "summary": "计划摘要", "result": answer, "sources": []}
+    async def invoke(args, action_id):
+        raw = SimpleNamespace(**archived, confidence=None, usage={}, input_snapshot={})
+        return InvocationResult(tool.adapter.observe(raw, action_id), json.dumps(archived, ensure_ascii=False), archived)
+    tool = binding(invoke=invoke, kind=CapabilityType.AGENT)
+    model = FakeModel([[tool_call()], [AIMessageChunk(content="已经汇总完整报告")]])
+    run(loop, model, [tool])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert answer in str(model.calls[-1])
+
+
+def test_live_child_events_stream_public_answer_without_private_reasoning():
+    state = GoalState(limits=effective_limits({"llm_calls": 1}), runtime_role="CHILD", runtime_agent_id="child")
+    loop, _, _ = make_loop(state=state)
+    events = []
+    loop.event_sink = events.append
+    loop.agent_name = "协作角色"
+    model = FakeModel([[AIMessageChunk(content="公开", additional_kwargs={"reasoning_content": "PRIVATE_REASONING"}), AIMessageChunk(content="回复")]])
+    run(loop, model)
+    drafts = [e for e in events if e["type"] == "runtime_draft"]
+    assert [e["content"] for e in drafts] == ["公开", "回复"]
+    assert all(e["agent_name"] == "协作角色" and e["runtime_role"] == "CHILD" for e in drafts)
+    assert "PRIVATE_REASONING" not in str(events)
 
 
 def test_failed_tool_call_preamble_is_not_saved_as_reply():
@@ -284,7 +351,7 @@ def test_budget_hierarchy_and_atomic_reservation():
     with pytest.raises(ValidationError):
         effective_limits({"llm_calls": True})
     with pytest.raises(ValueError):
-        effective_limits({"agent_calls": 6})
+        effective_limits({"agent_calls": BUDGET_BOUNDED_MAX["agent_calls"] + 1})
 
 
 def test_not_ready_waits_without_invocation_and_batch_protocol_is_complete():
@@ -348,11 +415,11 @@ def test_checkpoint_failure_prevents_external_action():
 
 
 def test_unauthorized_model_capability_and_no_grounding_are_blocked():
-    loop, _, _ = make_loop()
-    run(loop, FakeModel([[tool_call(name="invented")]]), [binding()])
+    loop, _, _ = make_loop({"max_replans": 1})
+    run(loop, FakeModel([[tool_call(name="invented")], [tool_call(name="invented_again")]]), [binding()])
     assert loop.state.reason == "capability_not_authorized"
-    loop, _, _ = make_loop()
-    events = run(loop, FakeModel([[AIMessageChunk(content="编造数据")]]), [binding()], ["query"])
+    loop, _, _ = make_loop({"max_replans": 1})
+    events = run(loop, FakeModel([[AIMessageChunk(content="编造数据")], [AIMessageChunk(content="仍未查询")]]), [binding()], ["query"])
     assert loop.state.reason == "required_capability_not_used"
     assert not any(e["type"] == "token" for e in events)
 
@@ -455,3 +522,19 @@ def test_artifact_keeps_decimal_and_date_type_information(tmp_path):
     result = files.read(goal_id, ref)
     assert result["price"] == {"$runtime_type": "Decimal", "value": "123.000000000000000001"}
     assert result["date"] == {"$runtime_type": "date", "value": "2026-09-23"}
+
+
+def test_live_document_sources_only_include_public_reference_metadata():
+    loop, _, _ = make_loop()
+    events = []
+    loop.event_sink = events.append
+    source = {"name": "销售计划", "document_id": "doc-1", "url": "https://example.com/doc", "content": "PRIVATE_DOCUMENT_CONTENT"}
+    adapter = binding(kind=CapabilityType.KNOWLEDGE).adapter
+    async def invoke(args, action_id):
+        observation = adapter.observe("已检索", action_id, evidence=[source])
+        return InvocationResult(observation, "参考资料", {"sources": [source]})
+    tool = binding(invoke=invoke, kind=CapabilityType.KNOWLEDGE)
+    run(loop, FakeModel([[tool_call()], [AIMessageChunk(content="完成")]]), [tool])
+    completed = next(e for e in events if e.get("sources"))
+    assert completed["sources"] == [{"name": "销售计划", "document_id": "doc-1", "url": "https://example.com/doc"}]
+    assert "PRIVATE_DOCUMENT_CONTENT" not in str(events)

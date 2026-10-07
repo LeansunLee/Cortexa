@@ -1,6 +1,7 @@
 """Agent Capability delegates to the bounded Goal Loop, sharing the parent's budgets."""
 
 import json
+import logging
 import time
 import uuid
 from datetime import UTC, datetime
@@ -67,6 +68,52 @@ def allocate_child_limits(parent_budget, target_limits, remaining_slots):
     return BudgetLimits(**limits)
 
 
+def project_agent_input(task, inputs, requested, known, limit):
+    """Send useful dependency data once, reducing tabular results only when needed."""
+    references = []
+    compactable = []
+    for key in sorted(requested):
+        observation = known[key]
+        result = observation["raw_result"]
+        reference = {
+            "action_id": key,
+            "facts": observation["facts"],
+            "evidence": observation["evidence"],
+            "result": result,
+        }
+        rows = result.get("data") if isinstance(result, dict) else None
+        if (
+            observation["source_type"] == "DATA"
+            and isinstance(rows, list)
+            and rows
+            and all(isinstance(row, dict) and row.keys() == rows[0].keys() for row in rows)
+            and observation["facts"] == rows
+        ):
+            columns = list(rows[0])
+            reference.pop("facts")  # The same rows are already in raw_result.data.
+            reference["result"] = {
+                **{name: value for name, value in result.items() if name != "data"},
+                "data_format": "columns_rows",
+                "columns": columns,
+                "rows": [[row[column] for column in columns] for row in rows],
+            }
+            if result.get("facets"):
+                compactable.append(reference)
+        references.append(reference)
+    invocation = {"task": task, "inputs": inputs, "dependencies": references}
+    for reference in sorted(compactable, key=token_upper_bound, reverse=True):
+        if token_upper_bound(invocation) <= limit:
+            break
+        result = reference["result"]
+        result.pop("columns")
+        result.pop("rows")
+        result.pop("data_format")
+        result["data_projection"] = "仅提供查询结果的行数与 facets 汇总；未提供逐行数据，不要推断逐行明细。"
+    if token_upper_bound(invocation) > limit:
+        raise RuntimeHalt("agent_input_budget_exceeded")
+    return invocation
+
+
 async def prepare_agent_bindings(source, state, payload, loop, store, row, config):
     async with store.sessions() as db:
         candidates, _ = await discover(db, source, state, payload, config())
@@ -75,7 +122,9 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         descriptor = agent_adapter(target).descriptor
         descriptor.requires_confirmation = False  # Goal-scoped checks below, including ASK before invocation.
         descriptor.risk_level = "low"
-        descriptor.timeout = min(120, state.limits.duration)
+        # The child GoalLoop enforces the shared runtime duration. An additional
+        # 120-second wrapper must not cancel its model synthesis mid-flight.
+        descriptor.timeout = min(120, state.limits.duration) if target.agent_type == "proxy" else state.limits.duration
         invocation_schema = ProxyInvocation if target.agent_type == "proxy" else AgentInvocation
         descriptor.input_schema = invocation_schema.model_json_schema()
         descriptor.constraints["target_input_contract"] = target.input_schema or {}
@@ -89,7 +138,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         if target.agent_type == "proxy":
             description += "\n字段来源白名单：" + json.dumps(policy(target).fields, ensure_ascii=False)
             description += (
-                "\n只提交 observation_bindings；用户显式参数与获准的目标文本由 Runtime 构造，"
+                "\n只提交 observation_bindings 和 task_fields 字段名；用户显式参数与获准的任务文本由 Runtime 构造，"
                 "不要提交 task/inputs 或原始上下文。"
             )
             descriptor.context_policy = {
@@ -114,6 +163,8 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 workspace_policy = await db.scalar(
                     select(Workspace.runtime_policy).where(Workspace.id == fresh.workspace_id)
                 )
+                # Read ORM-backed prompt fields while the async session is open.
+                child_system_prompt = build_system_prompt(fresh, workspace)
             ident = str(fresh.id)
             chain = check_path(source.id, target_id, state.active_agent_path, state.limits.agent_depth)
             if fresh.agent_type == "proxy":
@@ -141,26 +192,19 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             }
             if not requested <= set(known):
                 raise RuntimeHalt("dependency_not_ready", status=GoalStatus.WAITING, next_action="ASK_USER")
-            references = [
-                {
-                    "action_id": key,
-                    "facts": known[key]["facts"],
-                    "evidence": known[key]["evidence"],
-                    "result": known[key]["raw_result"],
-                }
-                for key in sorted(requested)
-            ]
             task = payload.get("participant_tasks", {}).get(ident) or args["task"]
-            invocation = {"task": task, "inputs": args.get("inputs", {}), "dependencies": references}
-            if token_upper_bound(invocation) > min(8000, state.limits.context_tokens):
-                raise RuntimeHalt("agent_input_budget_exceeded")
             target_policy = resolve_effective_policy(config(), workspace_policy, fresh)
-            pending_explicit = set(state.explicit_agents) - set(state.used_agents)
-            remaining_slots = (
-                max(1, len(pending_explicit))
-                if pending_explicit
-                else min(5, max(1, state.limits.max_collaborators - len(state.used_agents)))
+            # Keep half the target context available for its prompt, tool schemas
+            # and subsequent results instead of an unrelated fixed 8 KB ceiling.
+            input_limit = max(256, min(state.limits.context_tokens, target_policy.effective_budget.context_tokens) // 2)
+            invocation = project_agent_input(
+                task, args.get("inputs", {}), requested, known, input_limit
             )
+            references = invocation["dependencies"]
+            pending_explicit = set(state.explicit_agents) - set(state.used_agents)
+            # Only explicitly requested participants are promised a share.
+            # Discovery candidates and the collaborator ceiling are optional.
+            remaining_slots = max(1, len(pending_explicit))
             child_limits = allocate_child_limits(loop.budget, target_policy.effective_budget, remaining_slots)
             if child_limits is None:
                 resource = next(
@@ -181,6 +225,30 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 include_history=False,
                 dependency_results=references,
             )
+            try:
+                child_state = GoalState(
+                    limits=child_limits,
+                    policy_trace=target_policy.trace,
+                    collaboration_mode=target_policy.collaboration_mode,
+                    runtime_role="CHILD",
+                    runtime_agent_id=ident,
+                )
+                child_payload = {
+                    "goal_id": str(row.id),
+                    "sources": [],
+                    "messages": serialize_messages(
+                        [
+                            {"role": "system", "content": child_system_prompt + "\n已授权的依赖查询结果可以直接用于分析，不要重复查询已有数据；仅在缺少必要信息时调用工具。"},
+                            {"role": "user", "content": handoff.task},
+                            reference_message("本次授权输入与依赖结果", invocation),
+                        ]
+                    ),
+                }
+            except Exception:
+                logging.getLogger(__name__).exception("Agent input preparation failed: %s", ident)
+                raise RuntimeHalt(
+                    "agent_initialization_failed", status=GoalStatus.WAITING, next_action="ASK_USER"
+                ) from None
             collab_id = uuid.uuid4()
             async with store.sessions() as db:
                 db.add(
@@ -212,24 +280,6 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             }
             state.child_allocations.append(allocation)
             loop.record("Child Budget Allocation", agent_id=ident, limits=allocation["limits"])
-            child_state = GoalState(
-                limits=child_limits,
-                policy_trace=target_policy.trace,
-                collaboration_mode=target_policy.collaboration_mode,
-                runtime_role="CHILD",
-                runtime_agent_id=ident,
-            )
-            child_payload = {
-                "goal_id": str(row.id),
-                "sources": [],
-                "messages": serialize_messages(
-                    [
-                        {"role": "system", "content": build_system_prompt(fresh, workspace)},
-                        {"role": "user", "content": handoff.task},
-                        reference_message("本次授权输入与依赖结果", invocation),
-                    ]
-                ),
-            }
             accounted = {}
 
             async def checkpoint(child, snapshot):
@@ -274,13 +324,67 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                         raise RuntimeHalt("collaboration_unavailable")
                 child_state.policy_trace = current_policy.trace
 
-            child_loop = GoalLoop(child_state, child_payload, checkpoint, child_authorize)
+            child_loop = GoalLoop(child_state, child_payload, checkpoint, child_authorize,
+                                  event_sink=loop.event_sink, agent_name=fresh.name)
+            child_loop.publish("runtime_progress", message="已接收协作任务", status="running")
             started = time.monotonic()
             result = None
             try:
                 async with store.sessions() as db:
                     child_bindings, business = await prepare_bindings(fresh, task, child_payload["sources"], db)
-                model = create_llm(fresh.model)
+                try:
+                    model = create_llm(fresh.model)
+                except Exception as error:
+                    # Deterministic misconfiguration (e.g. unknown provider). Report
+                    # a structured collaboration failure instead of tripping the
+                    # protective "action result unknown" stop that hides the cause.
+                    detail = str(error).strip() or type(error).__name__
+                    output = (
+                        f"参与者 {fresh.name} 的模型不可用，无法开始协作：{detail[:160]}。"
+                        "请在该 Agent 的模型设置中更正后重新发起。"
+                    )
+                    result = AgentHandoffResult(
+                        status="failed",
+                        summary=output[:200],
+                        result=output,
+                        sources=[],
+                        confidence=None,
+                        duration_ms=round((time.monotonic() - started) * 1000),
+                        usage=child_loop.usage.stats(),
+                        input_snapshot={"type": "goal_projection", "selected_observations": sorted(requested)},
+                    )
+                    observation = adapter.observe(result, action_id)
+                    observation.metadata.update(
+                        authorization=origin, goal_id=str(row.id), target_agent_id=ident,
+                        child_reason="participant_model_unavailable",
+                    )
+                    allocation["status"] = "FAILED"
+                    loop.record("Participant model unavailable", agent_id=ident, error=type(error).__name__)
+                    payload.setdefault("collaborations", []).append(
+                        {
+                            "action_id": action_id,
+                            "agent_name": fresh.name,
+                            "agent_avatar": fresh.avatar,
+                            "status": "failed",
+                            "summary": result.summary,
+                            "result": output,
+                            "duration_ms": result.duration_ms,
+                            "authorization": origin,
+                        }
+                    )
+                    return InvocationResult(
+                        observation,
+                        json.dumps(
+                            {
+                                "action_id": action_id,
+                                "status": observation.status,
+                                "result": output,
+                                "sources": [],
+                            },
+                            ensure_ascii=False,
+                        ),
+                        result.model_dump(mode="json"),
+                    )
                 if hasattr(model, "max_retries"):
                     model = model.model_copy(update={"max_retries": 0})
                 with usage_scope(
@@ -295,6 +399,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                         child_bindings,
                         required_names=[t.name for t in business]
                         if should_require_business_tool(task, business)
+                        and not any(known[key]["source_type"] == "DATA" for key in requested)
                         else [],
                     ):
                         pass
@@ -361,6 +466,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                     authorization=origin, goal_id=str(row.id), target_agent_id=ident, child_reason=child_state.reason
                 )
                 allocation["status"] = status.upper()
+                child_loop.publish("runtime_progress", message="协作已完成" if status == "success" else "协作返回部分结果" if status == "partial" else "协作未完成", status="completed" if status == "success" else "partial" if status == "partial" else "error")
                 loop.record(
                     "Child Budget Result",
                     agent_id=ident,

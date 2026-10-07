@@ -141,16 +141,10 @@
             <!-- Assistant Message -->
             <div v-else :id="msg?.id ? `message-${msg.id}` : undefined" class="msg-row msg-row-assistant">
               <div class="msg-col-assistant">
-                <details v-if="(msg._steps || msg.metadata_json?.steps)?.length" class="completed-process">
-                  <summary>处理过程 · {{ (msg._steps || msg.metadata_json.steps).length }} 个步骤</summary>
-                  <div v-for="(step, index) in (msg._steps || msg.metadata_json.steps)" :key="index" :class="['status-step', 'outcome-' + stepOutcome(step, index, msg._steps || msg.metadata_json.steps, false)]">
-                    <span class="status-icon">
-                      <AlertCircle v-if="stepOutcome(step, index, msg._steps || msg.metadata_json.steps, false) === 'error'" :size="14" aria-label="失败" />
-                      <CheckCircle v-else :size="14" aria-label="完成" />
-                    </span>
-                    {{ cleanStatusText(step.message) }}
-                  </div>
-                </details>
+                <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length"
+                  :steps="msg._steps || msg.metadata_json.steps" :goal="msg.metadata_json?.execution_goal || ''"
+                  :usage="msg.metadata_json?.execution_usage || []" :format-message="formatMessage"
+                  @source="source => showSources({ metadata_json: { sources: [source] } })" />
                 <!-- Collaboration Card (completed) -->
                 <AgentCollaborationCard
                   v-if="msg._collabResults && msg._collabResults.length > 0"
@@ -224,18 +218,9 @@
           <!-- Agent Status Panel -->
           <div v-if="(sending || streaming) && statusSteps.length > 0" class="msg-row msg-row-assistant">
             <div class="msg-col-assistant">
-              <details class="agent-status-panel" :open="!streamContent">
-                <summary>{{ statusSteps.at(-1)?.message || '处理过程' }} · 展开详情</summary>
-                <div v-for="(step, idx) in statusSteps" :key="idx" :class="['status-step', 'outcome-' + stepOutcome(step, idx, statusSteps), { 'is-working': stepOutcome(step, idx, statusSteps) === 'running' }]">
-                  <span class="status-icon">
-                    <Loader v-if="stepOutcome(step, idx, statusSteps) === 'running'" :size="14" class="runtime-spinner" aria-label="进行中" />
-                    <AlertCircle v-else-if="stepOutcome(step, idx, statusSteps) === 'error'" :size="14" aria-label="失败" />
-                    <CheckCircle v-else :size="14" aria-label="完成" />
-                  </span>
-                  <span class="status-text">{{ cleanStatusText(step.message) }}</span>
-                  <span v-if="step.detail" class="status-detail">{{ step.detail }}</span>
-                </div>
-              </details>
+              <RuntimeTimeline :steps="statusSteps" :goal="curSession?.liveDebugPrompt || ''" :live="true"
+                :usage="Object.values(curSession?.runtimeUsage || {})" :format-message="formatMessage"
+                @source="source => showSources({ metadata_json: { sources: [source] } })" />
             </div>
           </div>
           <!-- Fallback thinking indicator (before first status) -->
@@ -412,6 +397,7 @@ import CollaborationComposer from '../components/CollaborationComposer.vue'
 import ConversationDebugPanel from '../components/ConversationDebugPanel.vue'
 import { restoreRejectedSend, filterAvailableConversations, sendErrorMessage } from '../utils/chatRecovery.js'
 import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaborationDrafts.js'
+import RuntimeTimeline from '../components/RuntimeTimeline.vue'
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
@@ -607,6 +593,7 @@ const getOrCreateSession = (convId) => {
       input: '', statusSteps: [], lastUserMessage: '',
       collabPending: [],  // in-progress collaborations
       collabResults: [],  // completed collaborations for current streaming message
+      runtimeUsage: {},
       liveDebug: [], liveDebugPrompt: '',
     }
   }
@@ -1160,6 +1147,7 @@ const sendMessage = async () => {
   session.streamContent = ''
   session.streamError = ''
   session.statusSteps = []
+  session.runtimeUsage = {}
   session.liveDebug = []
   session.liveDebugPrompt = displayText
   scrollToBottom(true)
@@ -1210,7 +1198,27 @@ const sendMessage = async () => {
         if (!line.startsWith('data: ')) continue
         try {
           const event = JSON.parse(line.slice(6))
-          if (event.type === 'goal_status') {
+          if (event.type === 'runtime_progress') {
+            if (event.heartbeat) continue
+            const name = event.agent_name || (event.runtime_role === 'CHILD' ? '协作 Agent' : '主 Agent')
+            const existing = event.action_id && event.status === 'running' && session.statusSteps.findLast(item => item.tool === event.action_id && !item._done)
+            if (existing) existing.message = `${name} · ${event.message}`
+            else appendStatusStep(session.statusSteps, { status: event.status === 'error' ? 'runtime_error' : event.status === 'completed' ? 'runtime_done' : 'runtime_start', tool: event.action_id, agent_name: name, sources: event.sources || [], icon: event.status === 'error' ? 'error' : 'thinking' }, `${name} · ${event.message}`)
+            scrollToBottom()
+          } else if (event.type === 'runtime_draft') {
+            let step = session.statusSteps.findLast(item => item.tool === event.action_id)
+            if (!step) {
+              step = { tool: event.action_id, status: 'runtime_start', agent_name: event.agent_name || 'Agent', message: `${event.agent_name || 'Agent'} · 正在生成回复` }
+              session.statusSteps.push(step)
+            }
+            step.draft = (step.draft || '') + (event.content || '')
+            scrollToBottom()
+          } else if (event.type === 'runtime_usage') {
+            const key = `${event.agent_id}:${event.action_id}`
+            session.runtimeUsage[key] = { agent_name: event.agent_name || 'Agent', agent_id: event.agent_id, ...(event.stats || {}) }
+            const step = session.statusSteps.findLast(item => item.tool === event.action_id)
+            if (step) step.usage = event.stats
+          } else if (event.type === 'goal_status') {
             session.goal = { ...(session.goal || {}), ...event }
           } else if (event.type === 'user_message') {
             if (event.conversation_title) {
@@ -1296,6 +1304,8 @@ const sendMessage = async () => {
             }
             if (event.sources?.length) meta.sources = event.sources
             if (event.stats) meta.stats = event.stats
+            meta.execution_goal = displayText
+            meta.execution_usage = Object.values(session.runtimeUsage || {})
             if (event.collaborations?.length) meta.collaborations = event.collaborations
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
             else if (session.liveDebug.length) meta.debug_trace = [...session.liveDebug]

@@ -1,10 +1,27 @@
 import os
+import json
+import uuid
+from datetime import date
+from decimal import Decimal
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 
 from cortexa.api.conversations import _build_system_prompt
 from cortexa.db.models import Agent, Workspace
 from cortexa.agents.prompts import reference_message
+
+
+def test_live_database_scalars_survive_agent_projection_and_prompt_serialization():
+    from cortexa.runtime.agent_executor import project_agent_input
+    from cortexa.runtime.loop import serialize_messages
+    rows = [{"price": Decimal("16980.001234567890123456"), "date": date(2026, 10, 7), "id": uuid.uuid4()}]
+    observation = {"source_type": "DATA", "facts": rows, "evidence": [], "raw_result": {"data": rows}}
+    invocation = project_agent_input("plan", {}, ["query"], {"query": observation}, 8000)
+    reference = reference_message("live SQL result", invocation)
+    messages = serialize_messages([reference])
+    decoded = json.loads(messages[0]["data"]["content"].split("\n", 1)[1])
+    result = decoded["content"]["dependencies"][0]["result"]
+    assert result["rows"][0] == ["16980.001234567890123456", "2026-10-07", str(rows[0]["id"])]
 
 
 def test_prompt_accepts_workspace_and_keeps_agent_instructions():

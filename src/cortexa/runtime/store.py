@@ -147,6 +147,9 @@ class GoalStore:
                         "goal_status": state.status,
                         "stopped": state.reason == "cancelled",
                         "sources": payload.get("sources", []),
+                        "steps": payload.get("execution_steps", []),
+                        "execution_goal": payload.get("goal", {}).get("raw_request", "")[:1000],
+                        "execution_usage": list(payload.get("execution_usage", {}).values()),
                         "collaborations": [
                             {
                                 **{k: v for k, v in c.items() if k != "result"},

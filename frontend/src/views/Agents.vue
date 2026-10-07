@@ -237,7 +237,7 @@
           <!-- Proxy 配置 -->
           <div v-if="currentSection === 'proxy' && editingAgent.agent_type === 'proxy'" class="section">
             <h3><Link :size="18" /> Proxy 代理配置</h3>
-            <p class="section-hint">连接外部 Agent。协作时可先由平台把任务和上下文整理成一段完整请求。</p>
+            <p class="section-hint">连接外部 Agent。配置任务协作时允许发送的字段，以及直接对话时的上下文整理方式。</p>
             <div>
               <div class="form-group">
                 <label>外部系统 Endpoint *</label>
@@ -245,26 +245,26 @@
               </div>
 
               <section class="prompt-resolution-card goal-proxy-contract">
-                <h4>目标模式输入契约</h4>
-                <label><input type="checkbox" :checked="proxyGoalContract.enabled" @change="setGoalContractEnabled($event.target.checked)" /> 允许作为目标协作参与者</label>
-                <p class="section-hint">只发送契约允许的字段。完整对话、记忆和主 Agent 提示词不会进入请求；下方的自动整理、补充提示词和重试设置仅用于普通对话。</p>
+                <div class="resolution-config-head">
+                  <div><h4>任务协作输入权限</h4><p>允许其他 Agent 邀请本代理执行任务。</p></div>
+                  <label class="capability-switch">
+                    <input type="checkbox" :checked="proxyGoalContract.enabled" @change="setGoalContractEnabled($event.target.checked)" aria-label="允许本代理参与任务协作" />
+                    <span class="capability-switch-track" aria-hidden="true"></span><span>{{ proxyGoalContract.enabled ? '已开启' : '未开启' }}</span>
+                  </label>
+                </div>
+                <p class="section-hint">字段可使用用户参数、任务原文和已完成结果。完整对话、记忆和主 Agent 提示词不会进入请求。</p>
                 <template v-if="proxyGoalContract.enabled">
                   <div class="form-group"><label>输入预算（保守估算，256–8000）</label><input type="number" v-model.number="proxyGoalContract.input_budget" min="256" max="8000" /></div>
                   <p v-if="!schemaFields.length">请先在「输入输出 Schema」声明 object 输入字段和类型。</p>
-                  <div v-for="field in schemaFields" :key="field.name" class="form-group">
-                    <label>{{ field.name }} · 允许来源</label>
-                    <label v-for="source in goalInputSources" :key="source.value"><input type="checkbox" :checked="(proxyGoalContract.fields[field.name] || []).includes(source.value)" @change="toggleGoalSource(field.name, source.value, $event.target.checked)" /> {{ source.label }}</label>
-                  </div>
-                  <p class="section-hint">任务原文优先使用本代理的分工，未填写时使用当前目标；Observation 只取指定事实字段或已有摘要。</p>
-                  <label><input type="checkbox" v-model="editingAgent.collaboration.allow_incoming" /> 允许接收协作邀请</label>
-                  <label><input type="checkbox" v-model="editingAgent.collaboration.discoverable" /> 允许被自主发现</label>
+                  <p class="section-hint">任务原文优先使用本代理的分工，未填写时使用当前任务；已完成的查询或协作结果只取指定字段或已有摘要。</p>
+                  <p class="section-hint">所有字段来源均已允许 · 可接收协作邀请 · 可被自主发现</p>
                 </template>
               </section>
               <div class="prompt-resolution-card">
                 <div class="resolution-config-head">
                   <div>
-                    <h4>自动整理协作上下文</h4>
-                    <p>适合只接收一段文字的 Proxy。平台先整理，外部 Agent 不会收到完整对话。</p>
+                    <h4>直接对话的上下文整理</h4>
+                    <p>直接与本代理对话时，将任务和允许的上下文整理成一段请求。其他 Agent 发起任务协作时，使用上方的输入权限配置。</p>
                   </div>
                   <label class="capability-switch">
                     <input type="checkbox" :checked="proxyPromptResolution.enabled" @change="setPromptResolutionEnabled($event.target.checked)" />
@@ -273,12 +273,12 @@
                 </div>
                 <div v-if="proxyPromptResolution.enabled" class="prompt-resolution-body">
                   <div class="form-group">
-                    <label>整理要求 <LlmContextHint text="开启自动整理后，作为平台整理模型的系统指令，指导它把允许的协作上下文整理成发送给外部 Proxy 的请求。" collaboration-text="影响协作任务如何整理成请求并发送给外部 Proxy。" /></label>
+                    <label>整理要求 <LlmContextHint text="直接与本代理对话时，指导平台把任务和允许的对话上下文整理成发送给外部 Proxy 的请求。" /></label>
                     <textarea v-model="proxyCfg.supplemental_prompt" rows="5" placeholder="例如：整理成可直接执行的 DMS 查询请求；保留明确的人名、事项和时间，不要编造信息。"></textarea>
                     <div class="field-mapping-hint">这段文字用于指导平台整理请求，不会连同完整上下文直接发送给外部 Agent。</div>
                   </div>
                   <div class="form-group compact-group">
-                    <label>整理时可以参考 <LlmContextHint text="勾选的来源内容会按需提供给平台整理模型，帮助它生成发送给外部 Proxy 的请求；当前任务始终提供。" collaboration-text="决定协作请求整理时哪些对话、记忆或前序结果可以提供给外部 Proxy。" /></label>
+                    <label>整理时可以参考 <LlmContextHint text="勾选的来源内容会按需提供给平台整理模型，帮助它生成发送给外部 Proxy 的请求；当前任务始终提供。" /></label>
                     <div class="simple-source-options">
                       <label v-for="source in promptSourceOptions" :key="source.value">
                         <input type="checkbox" :checked="proxyPromptResolution.allowed_sources.includes(source.value)" @change="togglePromptSource(source.value, $event.target.checked)" />
@@ -730,17 +730,8 @@ const proxyGoalContract = computed(() => {
   cfg.goal_contract.fields ||= {}
   return cfg.goal_contract
 })
-const goalInputSources = [
-  { value: 'explicit', label: '用户填写的显式参数' }, { value: 'goal_task', label: '本次任务原文' },
-  { value: 'observation_facts', label: '指定 Observation 的结构化事实' }, { value: 'observation_summary', label: '指定 Observation 的已有摘要' },
-]
 const setGoalContractEnabled = enabled => {
   proxyGoalContract.value.enabled = enabled
-  if (enabled) for (const field of schemaFields.value) proxyGoalContract.value.fields[field.name] ||= ['explicit']
-}
-const toggleGoalSource = (field, source, enabled) => {
-  const prior = proxyGoalContract.value.fields[field] || []
-  proxyGoalContract.value.fields[field] = enabled ? [...new Set([...prior, source])] : prior.filter(value => value !== source)
 }
 
 const resolutionSources = [
@@ -1637,6 +1628,9 @@ onMounted(() => {
 .field-mapping-hint { font-size: 12px; color: var(--text3); margin-top: 6px; }
 .prompt-resolution-card { margin: 4px 0 18px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
 .prompt-resolution-card h4 { margin: 0; font-size: 15px; }
+.goal-proxy-contract .resolution-config-head { align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.goal-proxy-contract > .section-hint { margin: 0 0 16px; line-height: 1.65; }
+.goal-proxy-contract .form-group { margin-bottom: 14px; }
 .prompt-resolution-card .resolution-config-head p { margin: 4px 0 0; color: var(--text3); font-size: 12px; line-height: 18px; }
 .prompt-resolution-body { margin-top: 16px; }
 .prompt-resolution-body .form-group:last-child { margin-bottom: 0; }
