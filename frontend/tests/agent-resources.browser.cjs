@@ -90,7 +90,7 @@ const origin = process.env.LIVE_ORIGIN || 'http://agent.local';
         const section = await page.locator('.section:visible').boundingBox();
         assert.ok(section.width > 850, 'editor uses wide viewport');
       }
-      for (const label of ['基础信息', '人格', '职责', '工作边界', '工作方式', 'Schema', '模型配置', '版本管理']) {
+      for (const label of ['基础信息', '人格', '职责', '工作规则', 'Schema', '模型配置', '版本管理']) {
         await nav(label).click();
         await noOverflow();
       }

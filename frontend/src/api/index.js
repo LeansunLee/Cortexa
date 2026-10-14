@@ -166,6 +166,7 @@ export const taskApi = {
 
 // Conversation API
 export const conversationApi = {
+  memorySource: (convId, id) => api.get(`/conversations/${convId}/memory-sources/${id}`),
   list: () => api.get('/conversations'),
   create: (data) => api.post('/conversations', data),
   get: (id) => api.get(`/conversations/${id}`),
@@ -306,6 +307,7 @@ export const workApi = {
 
 // Goal-scoped execution and collaboration decisions; streams use fetch in Chat.
 export const goalApi = {
+  stop: (conv, goal) => api.post(`/conversations/${conv}/goals/${goal}/stop`),
   route: (conv, data) => api.post(`/conversations/${conv}/message-route`, data),
   options: conv => api.get(`/conversations/${conv}/goal-options`),
   saveCollaborationMode: (conv, mode) => api.put(`/conversations/${conv}/collaboration-mode`, { collaboration_mode: mode }),

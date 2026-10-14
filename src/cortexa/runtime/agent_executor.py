@@ -22,7 +22,7 @@ from cortexa.runtime.contracts import contract_errors
 from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages, token_upper_bound
 from cortexa.runtime.observations import Observation
 from cortexa.runtime.policy import resolve_effective_policy
-from cortexa.runtime.proxy import ProxyInvocation, contract_signature, invoke_proxy, policy
+from cortexa.runtime.proxy import ProxyInvocation, contract_signature, invoke_proxy, policy, proxy_timeout
 from cortexa.runtime.state import BudgetLimits, GoalState, GoalStatus, RuntimeHalt, tighten_limits
 from cortexa.tools.runtime import should_require_business_tool
 from cortexa.usage.context import usage_scope
@@ -124,7 +124,8 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         descriptor.risk_level = "low"
         # The child GoalLoop enforces the shared runtime duration. An additional
         # 120-second wrapper must not cancel its model synthesis mid-flight.
-        descriptor.timeout = min(120, state.limits.duration) if target.agent_type == "proxy" else state.limits.duration
+        descriptor.timeout = (proxy_timeout(target, state.limits.duration)
+                              if target.agent_type == "proxy" else state.limits.duration)
         invocation_schema = ProxyInvocation if target.agent_type == "proxy" else AgentInvocation
         descriptor.input_schema = invocation_schema.model_json_schema()
         descriptor.constraints["target_input_contract"] = target.input_schema or {}
@@ -133,13 +134,17 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         description = f"协作角色：{target.role or 'AI助手'}\n执行职责：{(target.responsibilities or '')[:1200]}"
         if explicit_task:
             description += "\n用户明确分工：" + explicit_task
-        description += "\n输入契约：" + json.dumps(target.input_schema or {}, ensure_ascii=False)
+        label = "目标输入契约（外部请求字段，非协作调用参数）" if target.agent_type == "proxy" else "输入契约"
+        description += "\n" + label + "：" + json.dumps(target.input_schema or {}, ensure_ascii=False)
         signature = contract_signature(target)
         if target.agent_type == "proxy":
             description += "\n字段来源白名单：" + json.dumps(policy(target).fields, ensure_ascii=False)
             description += (
-                "\n只提交 observation_bindings 和 task_fields 字段名；用户显式参数与获准的任务文本由 Runtime 构造，"
-                "不要提交 task/inputs 或原始上下文。"
+                "\n协作调用参数只有 task、task_fields、observation_bindings。"
+                "使用 task 提交你拆解的具体子任务，明确数据范围、指标和输出要求；不要直接转发宽泛目标。"
+                "task_fields 指定接收指令的文本字段（唯一兼容字段可省略）；observation_bindings 引用已取得的事实。"
+                "不要直接提交目标输入契约中的 input、priority 等字段或 inputs；"
+                "不要提交完整对话、记忆、系统提示词或编造事实。用户明确分工和显式参数优先。"
             )
             descriptor.context_policy = {
                 "mode": "explicit_allow",
@@ -200,12 +205,19 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             invocation = project_agent_input(
                 task, args.get("inputs", {}), requested, known, input_limit
             )
+            if payload.get("project_ids"):
+                from cortexa.projects.service import summaries
+                async with store.sessions() as project_db:
+                    project_text, _ = await summaries(project_db, payload["project_ids"], budget=min(6000,input_limit//4))
+                invocation["project_reference"] = project_text
             references = invocation["dependencies"]
             pending_explicit = set(state.explicit_agents) - set(state.used_agents)
             # Only explicitly requested participants are promised a share.
             # Discovery candidates and the collaborator ceiling are optional.
             remaining_slots = max(1, len(pending_explicit))
-            child_limits = allocate_child_limits(loop.budget, target_policy.effective_budget, remaining_slots)
+            resuming = payload.get('decision_answer', {}).get('action_id') == action_id
+            child_limits = (GoalState.model_validate(payload['agent_runs'][action_id]['state']).limits if resuming
+                            else allocate_child_limits(loop.budget, target_policy.effective_budget, remaining_slots))
             if child_limits is None:
                 resource = next(
                     (
@@ -235,6 +247,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 )
                 child_payload = {
                     "goal_id": str(row.id),
+                    "project_ids": payload.get("project_ids", []),
                     "sources": [],
                     "messages": serialize_messages(
                         [
@@ -249,6 +262,23 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 raise RuntimeHalt(
                     "agent_initialization_failed", status=GoalStatus.WAITING, next_action="ASK_USER"
                 ) from None
+            resuming = payload.get('decision_answer', {}).get('action_id') == action_id
+            if resuming:
+                from langchain_core.messages import HumanMessage, messages_from_dict
+                saved = payload['agent_runs'][action_id]
+                child_state = GoalState.model_validate(saved['state'])
+                child_payload = saved['payload']
+                answer = payload['decision_answer']['answer']
+                if child_payload.get('decision_continuation'):
+                    child_payload['decision_answer'] = {**child_payload['decision_continuation'], 'answer':answer}
+                else:
+                    messages = messages_from_dict(child_payload['messages'])
+                    messages.append(HumanMessage(content=answer))
+                    child_payload['messages'] = serialize_messages(messages)
+                child_payload.pop('pending_question', None)
+                child_state.status, child_state.reason, child_state.next_action = GoalStatus.RUNNING, None, 'CONTINUE'
+                child_state.current_action = None
+                child_limits = child_state.limits
             collab_id = uuid.uuid4()
             async with store.sessions() as db:
                 db.add(
@@ -278,9 +308,13 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 "consumed": {},
                 "status": "RUNNING",
             }
-            state.child_allocations.append(allocation)
+            if resuming:
+                allocation = next((item for item in state.child_allocations if item['action_id'] == action_id), allocation)
+                allocation['status'] = 'RUNNING'
+            else:
+                state.child_allocations.append(allocation)
             loop.record("Child Budget Allocation", agent_id=ident, limits=allocation["limits"])
-            accounted = {}
+            accounted = dict(allocation.get("consumed", {}))
 
             async def checkpoint(child, snapshot):
                 # Reserve all child work against parent before child execution. A child
@@ -326,12 +360,16 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
 
             child_loop = GoalLoop(child_state, child_payload, checkpoint, child_authorize,
                                   event_sink=loop.event_sink, agent_name=fresh.name)
+            loop.publish("runtime_prompt", prompt_kind="collaboration", agent_id=str(fresh.id), agent_name=fresh.name,
+                         request=invocation)
+            await loop.save()
             child_loop.publish("runtime_progress", message="已接收协作任务", status="running")
             started = time.monotonic()
             result = None
             try:
                 async with store.sessions() as db:
-                    child_bindings, business = await prepare_bindings(fresh, task, child_payload["sources"], db)
+                    child_bindings, business = await prepare_bindings(fresh, task, child_payload["sources"], db,
+                                                                   context_budget=min(6000, child_state.limits.context_tokens // 4), **({"project_ids":child_payload["project_ids"]} if child_payload.get("project_ids") else {}))
                 try:
                     model = create_llm(fresh.model)
                 except Exception as error:
@@ -394,6 +432,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                     goal_id=str(row.id),
                     action_id=action_id,
                 ):
+                    await resume_binding(child_loop, child_bindings)
                     async for _ in child_loop.run(
                         model,
                         child_bindings,
@@ -409,7 +448,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                     "success"
                     if child_state.status == GoalStatus.COMPLETE
                     else "input_required"
-                    if child_state.reason == "missing_inputs"
+                    if child_state.reason in {"missing_inputs", "user_decision_required"}
                     else "failed"
                 )
                 output = child_loop.reply or child_payload.get("waiting_message", "")
@@ -465,6 +504,8 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 observation.metadata.update(
                     authorization=origin, goal_id=str(row.id), target_agent_id=ident, child_reason=child_state.reason
                 )
+                if child_payload.get('pending_question'):
+                    observation.metadata['user_question'] = child_payload['pending_question']
                 allocation["status"] = status.upper()
                 child_loop.publish("runtime_progress", message="协作已完成" if status == "success" else "协作返回部分结果" if status == "partial" else "协作未完成", status="completed" if status == "success" else "partial" if status == "partial" else "error")
                 loop.record(
@@ -567,3 +608,47 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             )
         )
     return bindings
+
+
+async def resume_binding(loop, bindings):
+    """Resume the server-recorded collaborator before the parent's next model call."""
+    continuation = loop.payload.pop('decision_answer', None)
+    if not continuation:
+        return
+    binding = next((b for b in bindings if b.adapter.descriptor.id == continuation['capability_id']), None)
+    if binding is None:
+        raise RuntimeHalt('capability_unavailable', status=GoalStatus.WAITING)
+    if binding.authorize:
+        await binding.authorize()
+    from cortexa.runtime.state import Action
+    loop.state.current_action = Action(id=continuation['action_id'], kind='CAPABILITY', capability_id=continuation['capability_id'])
+    import hashlib
+    loop.state.current_action.fingerprint = hashlib.sha256(json.dumps(
+        [binding.adapter.descriptor.id, continuation['args'], binding.cache_scope],
+        sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+    loop.state.current_action.phase = 'started'
+    loop.payload['decision_answer'] = continuation
+    await loop.save()
+    try:
+        result = await binding.invoke(continuation['args'], continuation['action_id'])
+    finally:
+        loop.payload.pop('decision_answer', None)
+    loop.state.current_action.phase = 'completed'
+    if result.observation.metadata.get('user_question'):
+        loop.payload['pending_question'] = result.observation.metadata['user_question']
+        loop.payload['waiting_message'] = loop.payload['pending_question']['question']
+        loop.publish('user_question', question=loop.payload['pending_question'])
+        loop.budget.halt('user_decision_required', status=GoalStatus.WAITING, next_action='ASK_USER')
+    else:
+        from langchain_core.messages import messages_from_dict
+        from cortexa.runtime.loop import observation_record
+        loop.payload.setdefault('observations', []).append(observation_record(result))
+        import hashlib
+        fingerprint = hashlib.sha256(json.dumps([binding.adapter.descriptor.id, continuation['args'], binding.cache_scope],
+            sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+        loop.payload.setdefault('cache', {})[fingerprint] = {'text':result.text,'status':result.observation.status,'repairable':False}
+        messages = messages_from_dict(loop.payload['messages'])
+        messages.append(reference_message('用户回答后原协作 Agent 的执行结果', {'status':result.observation.status, 'result':result.text}))
+        loop.payload['messages'] = serialize_messages(messages)
+        loop.payload.pop('decision_continuation', None)
+    await loop.save()

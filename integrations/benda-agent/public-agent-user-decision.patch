@@ -1,0 +1,157 @@
+--- app/api/routes/public_agent.py
++++ app/api/routes/public_agent.py
+@@ -6,12 +6,13 @@
+ import json
+ import logging
+ import os
++import re
+ import uuid
+ from typing import Any, Literal
+ 
+ from fastapi import APIRouter, HTTPException, Request
+ from fastapi.responses import StreamingResponse
+-from langchain_core.messages import HumanMessage
++from langchain_core.messages import HumanMessage, messages_to_dict, messages_from_dict
+ from pydantic import BaseModel, Field
+ 
+ from app.access_control.context import build_data_access_context
+@@ -40,6 +41,7 @@
+ 
+ 
+ class PublicAgentRunRequest(BaseModel):
++    session_id: str | None = Field(default=None, max_length=80)
+     prompt: str = Field(
+         ...,
+         min_length=1,
+@@ -56,6 +58,7 @@
+     conversation_log_id: str
+     request_id: str
+     model_provider: str = ""
++    pending_ask: dict[str, Any] | None = None
+ 
+ 
+ def _service_user() -> dict[str, Any]:
+@@ -109,6 +112,7 @@
+     prompt: str,
+     request: Request,
+     event_sink=None,
++    resume_session_id: str | None = None,
+ ) -> dict[str, Any]:
+     from app.mcp.client import load_mcp_tools
+     from app.mcp.registry import get_mcp_registry
+@@ -118,8 +122,17 @@
+     agent_prompt = _model_prompt(prompt)
+ 
+     account = str(service_user.get("account") or PUBLIC_AGENT_ACCOUNT).strip()
+-    session_id = f"{account}_{uuid.uuid4().hex[:12]}"
+-    sess = session_manager.create(session_id, owner=account)
++    if resume_session_id:
++        if not re.fullmatch(re.escape(account) + r"_[0-9a-f]{12}", resume_session_id):
++            raise HTTPException(404, "会话不存在")
++        session_id = resume_session_id
++        sess = session_manager.get_or_create(session_id, owner=account)
++        last = sess.history[-1] if sess.history else None
++        if not last or last.get('role') != 'assistant' or last.get('status') != 'awaiting_user':
++            raise HTTPException(409, "此会话没有待回答的问题，禁止重复续接")
++    else:
++        session_id = f"{account}_{uuid.uuid4().hex[:12]}"
++        sess = session_manager.create(session_id, owner=account)
+     request_id = getattr(request.state, "request_id", "") or uuid.uuid4().hex[:12]
+     conv_log = get_logger(sess.conversation_log_id, account=account)
+ 
+@@ -190,6 +203,15 @@
+         "_artifact_candidates": [],
+     }
+ 
++    if resume_session_id:
++        checkpoint_path = sess._history_file.with_suffix('.checkpoint.json')
++        existing = await graph.aget_state(config)
++        if not existing.values.get('messages'):
++            if not checkpoint_path.exists():
++                raise HTTPException(409, '原执行上下文不可恢复，请检查会话')
++            saved = json.loads(checkpoint_path.read_text(encoding='utf-8'))
++            input_state['messages'] = [*messages_from_dict(saved['messages']), *input_state['messages']]
++
+     turn_id = None
+     status: Literal["completed", "awaiting_user", "failed", "interrupted"] = "completed"
+     answer_parts: list[str] = []
+@@ -298,6 +320,13 @@
+ 
+         if answer:
+             conv_log.assistant_response(answer)
++        if pending_ask:
++            checkpoint_path = sess._history_file.with_suffix('.checkpoint.json')
++            snapshot = await graph.aget_state(config)
++            temporary = checkpoint_path.with_suffix('.tmp')
++            temporary.write_text(json.dumps({'messages':messages_to_dict(snapshot.values.get('messages', []))}, ensure_ascii=False), encoding='utf-8')
++            os.chmod(temporary, 0o600)
++            os.replace(temporary, checkpoint_path)
+         sess.add_assistant(answer, events=events if events else None, status=status)
+         log.info(
+             "[public-agent] request completed request_id=%s session_id=%s status=%s answer_len=%d",
+@@ -311,6 +340,7 @@
+             "conversation_log_id": sess.conversation_log_id,
+             "request_id": request_id,
+             "model_provider": audit_model,
++            "pending_ask": pending_ask,
+         }
+     except SessionBusyError as exc:
+         status = "failed"
+@@ -334,6 +364,13 @@
+         answer = PUBLIC_AGENT_ERROR_MESSAGE
+         if answer:
+             conv_log.assistant_response(answer)
++        if pending_ask:
++            checkpoint_path = sess._history_file.with_suffix('.checkpoint.json')
++            snapshot = await graph.aget_state(config)
++            temporary = checkpoint_path.with_suffix('.tmp')
++            temporary.write_text(json.dumps({'messages':messages_to_dict(snapshot.values.get('messages', []))}, ensure_ascii=False), encoding='utf-8')
++            os.chmod(temporary, 0o600)
++            os.replace(temporary, checkpoint_path)
+         sess.add_assistant(answer, events=events if events else None, status=status)
+         return {
+             "ok": False,
+@@ -343,6 +380,7 @@
+             "conversation_log_id": sess.conversation_log_id,
+             "request_id": request_id,
+             "model_provider": audit_model,
++            "pending_ask": pending_ask,
+         }
+     finally:
+         if turn_id is not None:
+@@ -375,6 +413,7 @@
+                     prompt,
+                     request,
+                     event_sink=emit,
++                    **({"resume_session_id":body.session_id} if body.session_id else {}),
+                 )
+                 payload = PublicAgentRunResponse.model_validate(result).model_dump()
+                 await emit({"type": "done", **payload})
+@@ -425,3 +464,27 @@
+             "X-Accel-Buffering": "no",
+         },
+     )
++
++
++@router.get('/public/agent/sessions/{session_id}/result')
++async def public_agent_result(session_id: str, request: Request):
++    """Return a public turn's durable result without invoking any model or tool."""
++    _validate_api_key(request)
++    if not re.fullmatch(re.escape(PUBLIC_AGENT_ACCOUNT) + r'_[0-9a-f]{12}', session_id):
++        raise HTTPException(404, '会话不存在')
++    sess = session_manager.get_or_create(session_id, owner=PUBLIC_AGENT_ACCOUNT)
++    history = list(sess.history)
++    index = next((i for i in range(len(history)-1,-1,-1) if history[i].get('role') == 'user'), None)
++    if index is None:
++        raise HTTPException(404, '会话不存在')
++    user = history[index]
++    prior = history[index-1] if index else {}
++    last = history[-1]
++    status = last.get('status','running') if last.get('role') == 'assistant' else 'running'
++    pending = next((event for event in reversed(last.get('events') or []) if event.get('type') == 'ask_user'), None)
++    return {'session_id':session_id, 'status':status,
++            'answer':last.get('content','') if status != 'running' else '',
++            'answered_prompt':user.get('content',''),
++            'prior_question':next((event.get('question','') for event in reversed(prior.get('events') or [])
++                                   if event.get('type') == 'ask_user'), ''),
++            'pending_ask':{key:pending[key] for key in ('question','options','multi_select') if key in pending} if pending else None}

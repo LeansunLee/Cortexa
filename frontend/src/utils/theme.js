@@ -166,6 +166,7 @@ export function themeVariables(color) {
   const glassGlow = hex(glassRgb.map(value => value + (255 - value) * 0.62))
   const glassControlBackdrop = glass ? frosted ? 'blur(28px) saturate(108%) contrast(101%) brightness(1.02)' : 'blur(8px) saturate(145%) contrast(104%)' : 'none'
   const glassSurfaceBackdrop = glass ? frosted ? 'blur(34px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(10px) saturate(150%) contrast(104%)' : 'none'
+  const glassReadingBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%)' : 'blur(24px) saturate(130%)' : 'none'
   const glassMenuBackdrop = glass ? frosted ? 'blur(38px) saturate(110%) contrast(101%) brightness(1.01)' : 'blur(12px) saturate(155%) contrast(105%)' : 'none'
   const glassSurfaceBackground = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 92 : 52}%, transparent)` : 'var(--surface)'
   const glassSurfaceBackgroundStrong = glass ? `color-mix(in srgb, var(--surface) ${frosted ? 96 : 78}%, transparent)` : 'var(--surface)'
@@ -201,11 +202,13 @@ export function themeVariables(color) {
     `linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * ${frosted ? '.18' : '.32'})) 0%, transparent 12%)`,
   ].join(', ') : 'none'
   return {
+    '--dialog-overlay': glass ? 'light-dark(rgba(15,23,42,.06),rgba(0,0,0,.16))' : 'var(--overlay)',
     '--glass-finish': glass ? theme.finish || 'clear' : 'none',
     '--glass-rgb': reflection,
     '--glass-control-backdrop': glassControlBackdrop,
     '--glass-surface-backdrop': glassSurfaceBackdrop,
     '--glass-menu-backdrop': glassMenuBackdrop,
+    '--glass-reading-backdrop': glassReadingBackdrop,
     '--glass-surface-background': glassSurfaceBackground,
     '--glass-surface-background-strong': glassSurfaceBackgroundStrong,
     '--glass-panel-background': glassPanelBackground,

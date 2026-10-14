@@ -1,6 +1,8 @@
 """Cookie authentication, CSRF origin checks and fail-closed API authorization."""
 
 import asyncio
+import json
+import logging
 import uuid
 from urllib.parse import urlsplit
 from fastapi import HTTPException, Request
@@ -14,6 +16,50 @@ from .models import ProtectedUpload
 from . import isolation  # noqa: F401
 
 COOKIE = "agentdevstu_session"
+
+
+async def stream_authorization_reason(actor, token, initial, path, streaming):
+    """Revalidate rights using an immutable snapshot of this poll's Agent IDs."""
+    fresh = await load_actor(token)
+    if fresh is None:
+        return "session_expired"
+    if fresh.signature() != initial:
+        return "authorization_changed"
+    fresh.workspace_id = actor.workspace_id
+    if streaming and path.startswith("/api/conversations/"):
+        parts = path.split("/")
+        if len(parts) > 3:
+            try:
+                conversation_id = uuid.UUID(parts[3])
+            except ValueError:
+                return "conversation_unavailable"
+            async with async_session_factory() as db:
+                exists = await db.scalar(raw(select(Conversation.id).where(
+                    Conversation.id == conversation_id,
+                    Conversation.owner_user_id == actor.user_id,
+                    Conversation.workspace_id == actor.workspace_id,
+                )))
+            if exists is None:
+                return "conversation_unavailable"
+    # require_agent_use can add a collaborator while the database query awaits.
+    # Compare against exactly the IDs queried, never the mutable live set.
+    agent_ids = frozenset(actor.runtime_agent_ids)
+    if agent_ids:
+        async with async_session_factory() as db:
+            agents = ((await db.execute(raw(select(Agent).where(Agent.id.in_(agent_ids)))))
+                      .scalars().all())
+        if len(agents) != len(agent_ids) or any(not fresh.can_use(a) for a in agents):
+            return "agent_unavailable"
+    return None
+
+
+AUTHORIZATION_ERRORS = {
+    "session_expired": "登录已过期，请重新登录后继续。",
+    "authorization_changed": "账号权限已变化，本次执行已暂停。请刷新页面后继续。",
+    "conversation_unavailable": "对话已删除或不可访问，本次执行已停止。",
+    "agent_unavailable": "参与执行的 Agent 已停用或授权已撤销，本次执行已暂停。",
+    "authorization_check_failed": "暂时无法核验授权，本次执行已暂停。请稍后重试。",
+}
 
 
 class SecurityMiddleware:
@@ -71,51 +117,27 @@ class SecurityMiddleware:
             started = False
             streaming = False
             revoked = False
+            revocation_reason = None
             monitor = None
 
-            async def still_authorized():
-                fresh = await load_actor(token)
-                if fresh is None or fresh.signature() != initial:
-                    return False
-                fresh.workspace_id = actor.workspace_id
-                if streaming and path.startswith("/api/conversations/"):
-                    parts = path.split("/")
-                    if len(parts) > 3:
-                        try:
-                            conversation_id = uuid.UUID(parts[3])
-                        except ValueError:
-                            return False
-                        async with async_session_factory() as db:
-                            exists = await db.scalar(raw(select(Conversation.id).where(
-                                Conversation.id == conversation_id,
-                                Conversation.owner_user_id == actor.user_id,
-                                Conversation.workspace_id == actor.workspace_id,
-                            )))
-                        if exists is None:
-                            return False
-                if actor.runtime_agent_ids:
-                    async with async_session_factory() as db:
-                        agents = (
-                            (await db.execute(raw(select(Agent).where(Agent.id.in_(actor.runtime_agent_ids)))))
-                            .scalars()
-                            .all()
-                        )
-                    if len(agents) != len(actor.runtime_agent_ids) or any(not fresh.can_use(a) for a in agents):
-                        return False
-                return True
 
             async def watch_authorization():
-                nonlocal revoked
+                nonlocal revoked, revocation_reason
                 try:
                     while True:
                         await asyncio.sleep(2)
-                        if not await still_authorized():
+                        reason = await stream_authorization_reason(actor, token, initial, path, streaming)
+                        if reason:
+                            revocation_reason = reason
+                            logging.getLogger(__name__).warning("Stream authorization stopped: reason=%s path=%s", reason, path)
                             revoked = True
                             application_task.cancel()
                             return
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as exc:
+                    revocation_reason = "authorization_check_failed"
+                    logging.getLogger(__name__).warning("Stream authorization check failed: exception=%s path=%s", type(exc).__name__, path)
                     # An unavailable authorization database must not leave a stream running unchecked.
                     revoked = True
                     application_task.cancel()
@@ -146,7 +168,7 @@ class SecurityMiddleware:
                     await send(
                         {
                             "type": "http.response.body",
-                            "body": b'data: {"type":"error","error":"Authorization changed; reconnect required"}\n\n',
+                            "body": ("data: " + json.dumps({"type": "error", "code": revocation_reason, "error": AUTHORIZATION_ERRORS[revocation_reason]}, ensure_ascii=False) + "\n\n").encode(),
                             "more_body": False,
                         }
                     )
@@ -199,7 +221,7 @@ async def authorize_request(request: Request):
         if method != "GET":
             require("members.manage")
         return
-    if module in ("works", "work-candidates"):
+    if module in ("works", "work-candidates", "projects"):
         return  # Workspace membership above; Work service validates participants and actions.
     if module == "agents":
         if method == "GET":

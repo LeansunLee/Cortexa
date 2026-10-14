@@ -186,8 +186,7 @@ class Agent(Base):
     核心概念：
     - Persona (人格): 智能体的性格特征
     - Role (职责): 智能体负责的工作
-    - Boundary (边界): 智能体能做什么，不能做什么
-    - Behavior (行为): 智能体的工作方式
+    - Work Rules (工作规则): 执行流程、协作方式及工作边界
     - Schema (接口): 标准化的输入输出格式
 
     生命周期：
@@ -237,16 +236,10 @@ class Agent(Base):
         comment="职责描述，列出主要负责的工作"
     )
 
-    # ========== Boundary 工作边界 ==========
-    boundaries: Mapped[str | None] = mapped_column(
+    # ========== 工作规则 ==========
+    work_rules: Mapped[str | None] = mapped_column(
         Text, nullable=True,
-        comment="工作边界，明确可以做什么、不可以做什么"
-    )
-
-    # ========== Behavior 工作方式 ==========
-    behavior: Mapped[str | None] = mapped_column(
-        Text, nullable=True,
-        comment="工作方式描述，定义工作流程和方法"
+        comment="工作规则，定义执行流程、协作方式、能力边界及需要确认的操作"
     )
 
     # ========== Knowledge 知识绑定 ==========

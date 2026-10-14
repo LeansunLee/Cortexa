@@ -20,6 +20,9 @@ const assert = require('node:assert/strict')
     const conversations = [{ id: 'existing', agent_id: 'peter', agent_name: 'Peter', title: '最近咋样' }]
     const created = []
     const renamed = []
+    const sent = []
+    const savedModes = {}
+    let rejectCreation = false
     await page.route(origin + '/**', async route => {
       const req = route.request()
       const pathname = new URL(req.url()).pathname
@@ -31,8 +34,13 @@ const assert = require('node:assert/strict')
         else if (pathname === '/api/collaboration/agents') data = agents
         else if (pathname === '/api/config') data = { conversation_debug_enabled: false }
         else if (pathname === '/api/me/conversation-debug') data = { allowed: false, enabled: false }
+        else if (pathname === '/api/collaboration/draft-options') data={enabled:true,collaboration_mode:'EXPLICIT_ONLY',allowed_collaboration_modes:['EXPLICIT_ONLY','ASK_BEFORE_COLLABORATION','AUTONOMOUS']}
+        else if (pathname.endsWith('/collaboration-mode')) { savedModes[pathname.split('/')[3]]=req.postDataJSON().collaboration_mode;data={collaboration_mode:req.postDataJSON().collaboration_mode,allowed_collaboration_modes:['EXPLICIT_ONLY','ASK_BEFORE_COLLABORATION','AUTONOMOUS']} }
+        else if (pathname.endsWith('/message-route')) data={use_goal:false}
         else if (pathname === '/api/conversations' && req.method() === 'GET') data = conversations
         else if (pathname === '/api/conversations' && req.method() === 'POST') {
+          if (rejectCreation) { rejectCreation=false; return route.fulfill({status:503,json:{detail:'暂时不可用'}}) }
+          await new Promise(resolve=>setTimeout(resolve,150))
           const payload = req.postDataJSON()
           created.push(payload)
           const agent = agents.find(item => item.id === payload.agent_id)
@@ -45,8 +53,11 @@ const assert = require('node:assert/strict')
           const conversation = conversations.find(item => item.id === id)
           conversation.title = title
           data = conversation
+        } else if (pathname.endsWith('/messages/stream')) {
+          sent.push({id:pathname.split('/')[3],content:req.postDataJSON().content})
+          return route.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({type:'done',id:'reply',content:'已收到首条消息'})+'\n\n'})
         } else if (pathname.endsWith('/messages')) data = []
-        else if (pathname.endsWith('/goal-options')) data = { enabled: false, collaboration_mode: 'EXPLICIT_ONLY', allowed_collaboration_modes: ['EXPLICIT_ONLY'] }
+        else if (pathname.endsWith('/goal-options')) data = { enabled: true, collaboration_mode: savedModes[pathname.split('/')[3]] || 'EXPLICIT_ONLY', allowed_collaboration_modes: ['EXPLICIT_ONLY','ASK_BEFORE_COLLABORATION','AUTONOMOUS'] }
         return route.fulfill({ json: data })
       }
       if (process.env.LIVE_ORIGIN) return route.continue()
@@ -77,7 +88,24 @@ const assert = require('node:assert/strict')
     await page.screenshot({ path: '/tmp/cortexa-new-chat-agents.png' })
     await page.locator('.new-chat-agent').filter({ hasText: '销售 Agent' }).click()
     assert.equal(await page.locator('.new-chat-agent.selected').count(), 1)
-    await page.getByRole('button', { name: '创建', exact: true }).click()
+    assert.equal(await page.locator('.new-chat-actions').getByRole('button',{name:'创建',exact:true}).count(),0)
+    await page.locator('.chat-input').waitFor()
+    assert.equal(created.length,0)
+    assert.equal(await headerTitle.innerText(),'新对话')
+    await page.getByRole('button',{name:'协作方式',exact:true}).click()
+    await page.getByRole('option',{name:'主动',exact:true}).click()
+    assert.deepEqual(savedModes,{})
+    await page.locator('.chat-input').fill('制定10月销售计划')
+    await page.screenshot({path:'/tmp/cortexa-new-chat-compose.png'})
+    rejectCreation=true
+    await page.locator('.chat-send').click()
+    await page.getByText('新建对话失败，请重试：暂时不可用',{exact:true}).waitFor()
+    assert.equal(await page.locator('.chat-input').inputValue(),'制定10月销售计划')
+    assert.equal(created.length,0)
+    await page.locator('.chat-send').dblclick()
+    await page.getByText('已收到首条消息',{exact:true}).waitFor()
+    assert.deepEqual(sent,[{id:'new-1',content:'制定10月销售计划'}])
+    assert.deepEqual(savedModes,{'new-1':'AUTONOMOUS'})
     await page.getByRole('button', { name: '销售 Agent', exact: true }).first().waitFor()
     assert.deepEqual(created, [{ agent_id: 'sales' }])
     assert.equal(await headerTitle.innerText(), '销售 Agent')
@@ -100,7 +128,7 @@ const assert = require('node:assert/strict')
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 601)
     await page.screenshot({ path: '/tmp/cortexa-new-chat-agents-narrow.png' })
     assert.deepEqual(errors, [])
-    console.log('PASS: usable Agents are visible, title is omitted at creation, and header click renames with Enter/blur/Escape')
+    console.log('PASS: selecting Agent creates no conversation; first send creates once and sends once; failed creation preserves input; title editing and narrow layout work')
   } finally {
     await browser.close()
   }

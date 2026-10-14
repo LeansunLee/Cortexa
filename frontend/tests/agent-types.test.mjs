@@ -11,10 +11,11 @@ test('type switching exposes applicable sections and restores LLM configuration'
   const groups = new Function('ref', 'computed', 'watch', 'editingAgent', 'currentSection', code + '\nreturn sectionGroups')(ref, computed, watch, editingAgent, currentSection)
   const ids = () => groups.value.flatMap(group => group.items.map(item => item.id))
   assert.ok(ids().includes('personality'))
+  assert.ok(ids().includes('rules'))
   assert.ok(!ids().includes('proxy'))
   editingAgent.value.agent_type = 'proxy'
   await nextTick()
-  assert.deepEqual(ids(), ['basic', 'proxy', 'schema', 'versions'])
+  assert.deepEqual(ids(), ['basic', 'role', 'proxy', 'schema', 'versions'])
   assert.equal(currentSection.value, 'basic')
   currentSection.value = 'proxy'
   editingAgent.value.agent_type = 'llm'

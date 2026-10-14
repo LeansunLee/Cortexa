@@ -226,7 +226,7 @@ async def load_search_tools(agent, db, query="", sources=None):
     return [make_search_tool(sources)]
 
 
-async def invoke_with_tools(model, messages, tools, usage=None, required_tools=None):
+async def invoke_with_tools(model, messages, tools, usage=None, required_tools=None, question_agent=None):
     """Bounded tool loop with optional mandatory first-turn business grounding."""
     from langchain_core.messages import ToolMessage
     from cortexa.tools.runtime import (
@@ -256,4 +256,11 @@ async def invoke_with_tools(model, messages, tools, usage=None, required_tools=N
             tool = by_name.get(call["name"])
             result = await tool.ainvoke(call["args"]) if tool else {"error": "工具不可用"}
             history.append(ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=call["id"]))
+            if question_agent is not None and isinstance(result, dict) and result.get('user_question'):
+                from cortexa.conversation.questions import UserQuestionPause, question
+                from cortexa.runtime.loop import serialize_messages
+                finished = {m.tool_call_id for m in history if isinstance(m, ToolMessage)}
+                history.extend(ToolMessage(content='未执行：等待用户回答。',tool_call_id=c['id']) for c in response.tool_calls if c['id'] not in finished)
+                raise UserQuestionPause(question(result['user_question'],question_agent),
+                    {'engine':'llm','agent_id':str(question_agent.id),'messages':serialize_messages(history),'remaining_iterations':2-iteration})
     raise RuntimeError("工具调用未能完成，请缩小问题范围")

@@ -16,9 +16,10 @@
         <li v-for="(step, index) in steps" :key="index" :class="['flow-step', outcome(step, index)]">
           <span class="flow-node"><Loader v-if="outcome(step, index) === 'running'" :size="14" class="flow-spinner" /><AlertCircle v-else-if="outcome(step, index) === 'error'" :size="14" /><Check v-else :size="14" /></span>
           <div class="flow-step-body">
-            <div class="flow-step-title"><span>{{ step.message }}</span><small v-if="step.usage?.token_count != null">{{ number(step.usage.token_count) }} Token</small></div>
+            <div class="flow-step-title"><span>{{ step.message }}</span>
+              <DataResultTag v-if="step.tool && (step.data_result || /返回 \d+ 条数据；状态/.test(step.message || ''))" :action-id="step.tool" :conversation-id="conversationId" /><PromptTag v-for="prompt in canInspectPrompts ? step.prompts || [] : []" :key="prompt.id" :prompt="prompt" :conversation-id="conversationId" /><small v-if="step.usage?.token_count != null">{{ number(step.usage.token_count) }} Token</small></div>
             <div v-if="step.sources?.length" class="flow-sources">
-              <button v-for="(source, i) in documents(step.sources)" :key="i" @click="$emit('source', source)" :title="source.name || source.title"><FileText :size="13" /><span>{{ source.name || source.title || '参考来源' }}</span></button>
+              <button v-for="(source, i) in documents(step.sources)" :key="i" @click="$emit('source', source)" :title="[source.name || source.title, source.purpose].filter(Boolean).join(' · ')"><FileText :size="13" /><span>{{ source.name || source.title || (source.type === 'memory' ? '记忆来源' : '参考来源') }}</span><small v-if="source.evidence_grade">{{ { DIRECT:'直接证据', RELATED:'相关参考', BACKGROUND:'背景资料' }[source.evidence_grade] || source.evidence_grade }}</small></button>
             </div>
             <details v-if="step.draft" class="flow-draft" :open="live && index === steps.length - 1">
               <summary><MessageSquare :size="13" /> {{ step.agent_name || 'Agent' }} · {{ live ? '实时回复草稿' : '回复摘录' }}</summary>
@@ -34,8 +35,10 @@
 <script setup>
 import { computed } from 'vue'
 import { Activity, Target, FileText, MessageSquare, Check, Loader, AlertCircle } from 'lucide-vue-next'
+import PromptTag from './PromptTag.vue'
+import DataResultTag from './DataResultTag.vue'
 import { stepOutcome } from '../utils/statusSteps'
-const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, live: Boolean, formatMessage: { type: Function, required: true } })
+const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, formatMessage: { type: Function, required: true } })
 defineEmits(['source'])
 const reported = computed(() => props.usage.filter(item => item.token_count != null))
 const total = computed(() => reported.value.reduce((sum, item) => sum + item.token_count, 0))
@@ -54,7 +57,7 @@ const agentUsage = computed(() => {
 })
 const number = value => Number(value || 0).toLocaleString('zh-CN')
 const outcome = (step, index) => stepOutcome(step, index, props.steps, props.live)
-const documents = sources => [...new Map(sources.map((source, i) => [source.document_id || source.url || `${source.name}:${i}`, source])).values()]
+const documents = sources => [...new Map(sources.map((source, i) => [source.memory_id || source.document_id || source.url || `${source.name}:${i}`, source])).values()]
 </script>
 
 <style scoped>
@@ -77,10 +80,11 @@ const documents = sources => [...new Map(sources.map((source, i) => [source.docu
 .flow-step:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 23px; bottom: 0; width: 1px; background: var(--border); }
 .flow-node { width: 21px; height: 21px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; color: var(--success); background: var(--surface2); }
 .flow-step.running .flow-node { color: var(--primary); }.flow-step.error .flow-node { color: var(--danger); }
-.flow-step-body { flex: 1; min-width: 0; }.flow-step-title { display: flex; align-items: baseline; gap: 8px; color: var(--text2); font-size: 13px; line-height: 21px; }.flow-step.running .flow-step-title { color: var(--text); }
+.flow-step-body { flex: 1; min-width: 0; }.flow-step-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; color: var(--text2); font-size: 13px; line-height: 21px; }.flow-step.running .flow-step-title { color: var(--text); }
 .flow-step-title small { margin-left: auto; font-size: 10px; white-space: nowrap; color: var(--text3); }
 .flow-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .flow-sources button { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--text2); padding: 5px 8px; font-size: 11px; cursor: pointer; }
+.flow-sources button small { flex-shrink:0; color:var(--primary); font-size:10px; }
 .flow-sources button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.flow-sources button:hover { color: var(--primary); border-color: var(--primary); }
 .flow-draft { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }.flow-draft summary { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3); cursor: pointer; }
 .flow-draft-content { margin-top: 9px; font-size: 13px; line-height: 1.7; color: var(--text); overflow-x: auto; }

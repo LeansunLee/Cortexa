@@ -9,10 +9,9 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple
 
 import jieba
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cortexa.db.models import Document, DocumentChunk
 
 
 @dataclass
@@ -163,6 +162,7 @@ async def bm25_retrieve(
             dc.document_id,
             d.name as document_name,
             d.content as summary,
+            d.metadata_json as document_metadata,
             dc.content,
             dc.knowledge_base_id
         FROM t_document_chunks dc
@@ -183,16 +183,18 @@ async def bm25_retrieve(
         return []
 
     from types import SimpleNamespace
-    from cortexa.rag.document_selection import rank_documents
+    from cortexa.rag.relevance import select_documents
     documents, full_texts = {}, {}
     for row in rows:
         key = str(row.document_id)
         documents[key] = SimpleNamespace(id=row.document_id, name=row.document_name,
-                                         content=getattr(row, 'summary', '') or '')
+                                         content=getattr(row, 'summary', '') or '',
+                                         metadata_json=getattr(row, 'document_metadata', {}) or {})
         full_texts.setdefault(key, []).append(row.content)
-    ranked = rank_documents(list(documents.values()), query_text,
-                            {key: '\n'.join(parts) for key, parts in full_texts.items()})
-    candidate_ids = {str(doc.id) for _, doc in ranked}
+    analysis, ranked = select_documents(list(documents.values()), query_text,
+                            {key: '\n'.join(parts) for key, parts in full_texts.items()}, algorithm='lexical_document_gate')
+    decisions = {str(doc.id): decision for decision, doc in ranked}
+    candidate_ids = {key for key, decision in decisions.items() if decision['eligible']}
     rows = [row for row in rows if str(row.document_id) in candidate_ids]
     if not rows:
         return []
@@ -204,7 +206,7 @@ async def bm25_retrieve(
         doc_tokens.append(tokens)
 
     # Tokenize query
-    query_tokens = tokenize(query_text)
+    query_tokens = tokenize(query_text + " " + " ".join(analysis.expansion))
 
     if not query_tokens:
         return []
@@ -212,17 +214,20 @@ async def bm25_retrieve(
     # Build BM25 index and search
     bm25 = BM25()
     bm25.fit(doc_tokens)
-    results = bm25.search(query_tokens, top_k=len(rows))
+    results = [(i, bm25.score(query_tokens, i)) for i in range(len(rows))]
+    results.sort(key=lambda pair: -pair[1])
 
     # Filter and format results
     bm25_results = []
     seen_contents = set()  # Deduplicate
 
     for idx, score in results:
-        if score < min_score:
-            continue
-
         row = rows[idx]
+        # Admission is decided by the document's entity/intent/type support,
+        # not an uncalibrated shared BM25/cosine score threshold.
+        decision = decisions[str(row.document_id)]
+        if score <= 0 and decision['entity_source'] != 'metadata':
+            continue
         content = row.content
 
         # Skip duplicate content
@@ -237,11 +242,17 @@ async def bm25_retrieve(
             document_name=row.document_name,
             content=content[:2000],  # Limit content length
             score=score,
+            metadata={"evidence_grade": decision['evidence_grade'], "purpose": decision['purpose'],
+                      "entity_relation": decision['entity_relation'], "relevance": {**decision, "raw_score": score, "algorithm": "bm25",
+                      "candidate_score": decision["raw_score"], "candidate_algorithm": decision["algorithm"]}},
         ))
 
+    order = {'DIRECT': 0, 'RELATED': 1, 'BACKGROUND': 2}
+    bm25_results.sort(key=lambda item: (order[item.metadata['evidence_grade']],
+                                       -item.metadata['relevance']['rerank_score'], -item.score))
     selected = bm25_results[:top_k]
     for item in selected:
-        item.metadata = {'matched_count': len(bm25_results), 'selected_count': len(selected),
+        item.metadata = {**(item.metadata or {}), 'matched_count': len(bm25_results), 'selected_count': len(selected),
                          'truncated': len(bm25_results) > len(selected),
                          'matched_document_count': len(candidate_ids)}
     return selected

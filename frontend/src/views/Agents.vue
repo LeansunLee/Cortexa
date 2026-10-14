@@ -212,18 +212,18 @@
             </div>
           </div>
 
-          <!-- 工作边界 -->
-          <div v-if="currentSection === 'boundary' && editingAgent.agent_type !== 'proxy'" class="section">
-            <h3>工作边界</h3>
+          <!-- 工作规则 -->
+          <div v-if="currentSection === 'rules' && editingAgent.agent_type !== 'proxy'" class="section">
+            <h3>工作规则</h3>
             <div class="form-group">
-              <label>边界定义 <LlmContextHint text="作为「工作边界」写入本 Agent 的系统提示词，告诉模型可以做什么及哪些操作需谨慎。" /></label>
-              <textarea v-model="editingAgent.boundaries" rows="5" 
-                placeholder="明确智能体可以做什么，不可以做什么"></textarea>
+              <label>规则定义 <LlmContextHint text="作为「工作规则」写入本 Agent 的系统提示词，指导执行流程、协作方式、交付标准与工作边界；需要确认的操作也在这里说明。" /></label>
+              <textarea v-model="editingAgent.work_rules" rows="10"
+                placeholder="说明执行步骤、数据核实要求、何时邀请协作、交付标准，以及不能做什么和哪些操作需要确认"></textarea>
             </div>
             <div class="form-group">
-              <label>预设边界（点击自动填入）</label>
+              <label>预设规则（点击自动填入）</label>
               <div class="preset-card-grid">
-                <div v-for="bp in boundaryPresets" :key="bp.name" class="preset-card-item" @click="applyBoundaryPreset(bp)">
+                <div v-for="bp in workRulesPresets" :key="bp.name" class="preset-card-item" @click="applyWorkRulesPreset(bp)">
                   <div class="preset-card-icon"><component :is="iconComponents[bp.icon]" :size="18" /></div>
                   <div class="preset-card-info">
                     <div class="preset-card-name">{{ bp.name }}</div>
@@ -299,8 +299,8 @@
                       <SearchSelect v-model="proxyCfg.method" :options="proxyMethodOptions" placeholder="选择请求方法" aria-label="请求方法" />
                     </div>
                     <div class="form-group">
-                      <label>超时 (ms，最大 10 分钟)</label>
-                      <input type="number" v-model.number="proxyCfg.timeout_ms" min="1000" max="600000" step="1000" />
+                      <label>超时 (ms，最大 1000 秒)</label>
+                      <input type="number" v-model.number="proxyCfg.timeout_ms" min="1000" max="1000000" step="1000" />
                     </div>
                   </div>
                   <div class="form-group">
@@ -310,10 +310,7 @@
                     </div>
                   </div>
                   <div class="form-row">
-                    <div class="form-group">
-                      <label>重试次数</label>
-                      <input type="number" v-model.number="proxyCfg.retry" min="0" max="5" />
-                    </div>
+                    <p class="form-hint">外部任务不自动重发。结果未知时，先读取原会话核实，避免重复执行。</p>
                   </div>
                   <div v-if="!proxyPromptResolution.enabled" class="form-group">
                     <label>直接发送的补充提示词（兼容模式）</label>
@@ -829,7 +826,7 @@ const allSectionGroups = [
     { id: 'basic', icon: 'User', name: '基础信息' },
     { id: 'personality', icon: 'Smile', name: '人格' },
     { id: 'role', icon: 'Briefcase', name: '职责' },
-    { id: 'boundary', icon: 'Shield', name: '工作边界' },
+    { id: 'rules', icon: 'Shield', name: '工作规则' },
   ]},
   { label: '能力', items: [
     { id: 'proxy', icon: 'Link', name: 'Proxy 配置' },
@@ -916,19 +913,19 @@ const applyRolePreset = (rp) => {
   showToast('已填入「' + rp.role + '」预设内容')
 }
 
-// --- Boundary Presets ---
-const boundaryPresets = [
-  { icon: 'Shield', name: '保守型', desc: '严格按指令执行，不主动扩展任务范围', value: '【工作边界 - 保守型】\n可以做：\n- 严格按用户指令完成指定任务\n- 在已有知识范围内回答问题\n- 提供客观事实和数据\n\n不可以做：\n- 不主动扩展任务范围\n- 不执行未经确认的高风险操作\n- 不访问或修改未授权的资源' },
-  { icon: 'Scale', name: '标准型', desc: '职责范围内主动思考，超出范围需确认', value: '【工作边界 - 标准型】\n可以做：\n- 在职责范围内主动分析和提供建议\n- 识别潜在问题并预警\n- 推荐优化方案\n\n需要确认：\n- 超出当前任务范围的额外操作\n- 涉及资金、权限变更的操作\n- 对外发布或通知类操作\n\n不可以做：\n- 未经确认删除重要数据\n- 绕过审批流程' },
-  { icon: 'Rocket', name: '激进型', desc: '主动发现问题并解决，大胆提供建议', value: '【工作边界 - 激进型】\n可以做：\n- 主动发现问题并提出解决方案\n- 大胆给出创新性建议\n- 跨领域关联分析\n- 持续追问直到问题根因明确\n\n需要确认：\n- 直接执行影响生产环境的操作\n- 替代他人做决策\n\n不可以做：\n- 违反法律法规的操作\n- 泄露敏感信息' },
-  { icon: 'Target', name: '协作型', desc: '主动协调资源，推动跨角色协作', value: '【工作边界 - 协作型】\n可以做：\n- 主动识别需要协作的环节\n- 推荐合适的协作角色或工具\n- 整合多方输入给出综合方案\n- 跟踪协作进度并提醒\n\n需要确认：\n- 代替其他角色做决策\n- 调整他人工作优先级\n\n不可以做：\n- 未经沟通直接分配任务给他人' },
-  { icon: 'Shield', name: '合规型', desc: '严格遵守流程规范，留痕可审计', value: '【工作边界 - 合规型】\n可以做：\n- 按标准流程执行每一步\n- 记录操作日志和决策依据\n- 对照规范逐项检查\n\n需要确认：\n- 任何流程外的变通操作\n\n不可以做：\n- 跳过审批或检查环节\n- 未记录直接修改数据\n- 违反数据安全规范' },
+// --- Work Rules Presets ---
+const workRulesPresets = [
+  { icon: 'Shield', name: '保守型', desc: '严格按指令执行，不主动扩展任务范围', value: '【工作规则 - 保守型】\n可以做：\n- 严格按用户指令完成指定任务\n- 在已有知识范围内回答问题\n- 提供客观事实和数据\n\n不可以做：\n- 不主动扩展任务范围\n- 不执行未经确认的高风险操作\n- 不访问或修改未授权的资源' },
+  { icon: 'Scale', name: '标准型', desc: '职责范围内主动思考，超出范围需确认', value: '【工作规则 - 标准型】\n可以做：\n- 在职责范围内主动分析和提供建议\n- 识别潜在问题并预警\n- 推荐优化方案\n\n需要确认：\n- 超出当前任务范围的额外操作\n- 涉及资金、权限变更的操作\n- 对外发布或通知类操作\n\n不可以做：\n- 未经确认删除重要数据\n- 绕过审批流程' },
+  { icon: 'Rocket', name: '激进型', desc: '主动发现问题并解决，大胆提供建议', value: '【工作规则 - 激进型】\n可以做：\n- 主动发现问题并提出解决方案\n- 大胆给出创新性建议\n- 跨领域关联分析\n- 持续追问直到问题根因明确\n\n需要确认：\n- 直接执行影响生产环境的操作\n- 替代他人做决策\n\n不可以做：\n- 违反法律法规的操作\n- 泄露敏感信息' },
+  { icon: 'Target', name: '协作型', desc: '主动协调资源，推动跨角色协作', value: '【工作规则 - 协作型】\n可以做：\n- 主动识别需要协作的环节\n- 推荐合适的协作角色或工具\n- 整合多方输入给出综合方案\n- 跟踪协作进度并提醒\n\n需要确认：\n- 代替其他角色做决策\n- 调整他人工作优先级\n\n不可以做：\n- 未经沟通直接分配任务给他人' },
+  { icon: 'Shield', name: '合规型', desc: '严格遵守流程规范，留痕可审计', value: '【工作规则 - 合规型】\n可以做：\n- 按标准流程执行每一步\n- 记录操作日志和决策依据\n- 对照规范逐项检查\n\n需要确认：\n- 任何流程外的变通操作\n\n不可以做：\n- 跳过审批或检查环节\n- 未记录直接修改数据\n- 违反数据安全规范' },
 ]
 
-const applyBoundaryPreset = (bp) => {
+const applyWorkRulesPreset = (bp) => {
   if (!editingAgent.value) return
-  editingAgent.value.boundaries = bp.value
-  showToast('已填入「' + bp.name + '」边界预设')
+  editingAgent.value.work_rules = '执行要求：先确认任务与所需信息，核实数据来源；缺少自身能力时按协作策略邀请合适的 Agent；完成后给出结果、依据和待确认事项。\n\n' + bp.value
+  showToast('已填入「' + bp.name + '」规则预设')
 }
 
 // --- Avatar Crop ---
@@ -1339,8 +1336,7 @@ const duplicateAgent = async (agent) => {
       role: agent.role,
       personality: agent.personality,
       responsibilities: agent.responsibilities,
-      boundaries: agent.boundaries,
-      behavior: agent.behavior,
+      work_rules: agent.work_rules,
       model: agent.model,
       agent_type: agent.agent_type,
       avatar: agent.avatar,

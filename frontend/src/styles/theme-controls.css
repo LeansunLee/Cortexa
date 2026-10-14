@@ -219,7 +219,7 @@
   color: var(--text);
   border-color: var(--border);
 }
-:root body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor, .user-dropdown, .agent-dropdown, .mention-popover) {
+:root body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor, .user-dropdown, .agent-dropdown, .mention-popover) {
   background-color: var(--surface-dialog);
   color: var(--text);
   border-color: var(--border);
@@ -256,7 +256,7 @@
   background-color: var(--glass-surface-background-strong);
 }
 /* Dense cards and tables stay on level 0. Dialogs use level 3; panels use level 1. */
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   position: relative;
   isolation: isolate;
   background-color: var(--glass-panel-background, var(--glass-surface-background));
@@ -267,22 +267,22 @@
   backdrop-filter: var(--glass-surface-backdrop);
   -webkit-backdrop-filter: var(--glass-surface-backdrop);
 }
-:root[data-theme=dark][data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-theme=dark][data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   background-color: var(--glass-panel-background, var(--glass-surface-background)) !important;
   background-image: var(--glass-panel-gradient, none) !important;
   border-color: var(--glass-edge-border-soft) !important;
   color: var(--text);
   box-shadow: var(--glass-edge-shadow), 0 20px 54px rgba(0,0,0,.34);
 }
-:root[data-color-theme=glass] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   background-color: var(--surface-dialog) !important;
   background-image: var(--glass-menu-gradient, none) !important;
   box-shadow: var(--shadow-dialog);
   backdrop-filter: var(--glass-menu-backdrop);
   -webkit-backdrop-filter: var(--glass-menu-backdrop);
 }
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before,
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before,
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -290,50 +290,50 @@
   border-radius: inherit;
   z-index: 0;
 }
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) > * {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) > * {
   position: relative;
   z-index: 1;
 }
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before {
   background:
     linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 11%),
     linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .08)) 0%, transparent 6%, transparent 94%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 100%);
   opacity: 1;
   mix-blend-mode: normal;
 }
-:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .24)) 0%, transparent 13%);
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .38)),
     inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)),
     inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .16));
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   border-color: var(--glass-edge-border);
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before {
   background:
     radial-gradient(140px 44px at 8% 0%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .42)), transparent),
     radial-gradient(110px 52px at 96% 100%, rgba(var(--glass-rgb),calc(var(--glass-edge-alpha) * .28)), transparent);
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   background: none;
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .36)),
     inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .72)),
     inset 0 -1px 0 rgba(15,23,42,calc(var(--glass-edge-alpha) * .20));
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   background-color: var(--glass-panel-background, var(--glass-surface-background-strong));
   border-color: var(--glass-edge-border-soft);
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before {
   background:
     linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .16)) 0%, transparent 12%),
     linear-gradient(90deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .06)) 0%, transparent 7%, transparent 93%, rgba(255,255,255,calc(var(--glass-edge-alpha) * .05)) 100%);
   filter: saturate(.94) contrast(.98) blur(.25px);
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.panel, .capability-panel, .debug-panel, .agent-status-panel, .chat-input-wrap, .theme-demo, .modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   background: linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-edge-alpha) * .18)) 0%, transparent 14%);
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--glass-edge-alpha) * .34)),
@@ -342,7 +342,7 @@
 }
 
 /* The former even, softly blurred dialog surface belongs to frosted glass. */
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   position: relative;
   background-color: color-mix(in srgb, var(--surface) 10%, transparent) !important;
   background-image: none !important;
@@ -351,19 +351,19 @@
   backdrop-filter: blur(6px) saturate(145%) !important;
   -webkit-backdrop-filter: blur(6px) saturate(145%) !important;
 }
-:root[data-color-theme=glass] body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay, .org-overlay) {
-  background-color: light-dark(rgba(15,23,42,.06),rgba(0,0,0,.16));
+:root[data-color-theme=glass] body :is(.modal-overlay, .dialog-backdrop, .work-overlay, .create-overlay, .push-overlay, .validity-overlay, .preview-overlay, .org-overlay, .summary-overlay, .textdoc-overlay, .confirm-backdrop, .source-modal, .editor-overlay, .provider-modal-overlay) {
+  background-color: var(--dialog-overlay);
 }
-:root[data-theme=dark][data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-theme=dark][data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   box-shadow: 0 24px 58px rgba(0,0,0,.38) !important;
 }
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before,
-:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before,
+:root[data-color-theme=glass][data-glass-finish=frosted] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   content: none;
 }
 
 /* Liquid glass keeps the backdrop legible; only a two-pixel rim bends and lights it. */
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   position: relative;
   background-color: color-mix(in srgb, var(--surface) 4%, transparent) !important;
   background-image: none !important;
@@ -375,16 +375,16 @@
   backdrop-filter: blur(2px) saturate(160%) contrast(105%) !important;
   -webkit-backdrop-filter: blur(2px) saturate(160%) contrast(105%) !important;
 }
-:root[data-theme=dark][data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor) {
+:root[data-theme=dark][data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor) {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * 1.35)),
     inset 1px 0 0 rgba(255,255,255,calc(var(--glass-edge-alpha) * .45)),
     0 24px 58px rgba(0,0,0,.38) !important;
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::before {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::before {
   content: none;
 }
-:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .preview-modal, .resource-editor)::after {
+:root[data-color-theme=glass][data-glass-finish=clear] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor)::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -403,6 +403,12 @@
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
 }
+/* Reading dialogs suppress underlying text without increasing glass opacity. */
+:root[data-color-theme=glass] body :is(.summary-overlay .summary-dialog, .preview-overlay .document-preview, .textdoc-overlay .textdoc-dialog, .source-modal .source-modal-box, .memory-overlay .memory-dialog) {
+  backdrop-filter: var(--glass-reading-backdrop, var(--glass-menu-backdrop)) !important;
+  -webkit-backdrop-filter: var(--glass-reading-backdrop, var(--glass-menu-backdrop)) !important;
+}
+
 :root[data-color-theme=glass] body :is(.user-dropdown, .agent-dropdown, .mention-popover, .dropdown-menu, .popover, .tooltip, [role=menu]) {
   isolation: isolate;
   background-color: var(--glass-menu-background, var(--surface));
@@ -552,6 +558,31 @@
   backdrop-filter: var(--glass-control-backdrop);
   -webkit-backdrop-filter: var(--glass-control-backdrop);
 }
+/* Glass belongs to the dialog shell; editable text stays on a solid surface. */
+:root[data-color-theme=glass] body :is(.modal, .dialog, .create-dialog, .push-dialog, .validity-dialog, .work-editor, .org-dialog, .confirm-dialog, .summary-dialog, .textdoc-dialog, .document-preview, .modal-box, .source-modal-box, .preview-modal, .resource-editor, .agent-knowledge-dialog)
+  :is(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file], [type=hidden]), textarea:not(.plain-editor)) {
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root[data-color-theme=glass] body :is(.summary-text, .source-modal-preview) {
+  background-color: var(--surface);
+  color: var(--text);
+}
+:root[data-color-theme=glass] body dialog.agent-knowledge-dialog {
+  background-color: var(--surface-dialog);
+  background-image: var(--glass-menu-gradient);
+  border-color: var(--glass-edge-border-soft);
+  box-shadow: var(--shadow-dialog);
+  backdrop-filter: var(--glass-menu-backdrop);
+  -webkit-backdrop-filter: var(--glass-menu-backdrop);
+}
+:root[data-color-theme=glass] body dialog.agent-knowledge-dialog::backdrop {
+  background-color: var(--dialog-overlay);
+}
+
 :root[data-color-theme=glass] body :is(.tab.active, .tab-btn.active, .tabs button.active, .work-tabs .selected, .mem-filter-btn.active, .purpose-btn.active, .type-btn.active, .editor-nav .nav-item.active, .source-list-item.active, .mention-popover-item.active, .target-list label.selected, .pagination [aria-current=page], .tag, .admin-badge, .badge-published, .theme-demo-tag) {
   border-color: var(--glass-edge-border-soft);
 }
@@ -564,10 +595,11 @@
   outline-color: var(--danger);
 }
 
-/* Provider forms are rendered in a fixed modal. Keep their fields opaque enough
-   to preserve text and placeholder contrast over the glass surface. */
+/* Provider forms follow the same solid-field / glass-shell separation. */
 :root[data-color-theme=glass] body .provider-modal-overlay .provider-modal .form-group :is(input, textarea, select) {
-  background-color: var(--glass-surface-background-strong, var(--surface2)) !important;
+  background-color: var(--surface) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   color: var(--text) !important;
   border-color: var(--glass-edge-border) !important;
   caret-color: var(--primary) !important;

@@ -27,6 +27,9 @@ def model_result_text(result, *, max_bytes: int = 6000) -> str:
         "original_bytes": original_bytes,
         "summary": observation.summary,
     }
+    if observation.source_type == "KNOWLEDGE":
+        view["evidence_status"] = observation.metadata.get("evidence_status", "UNKNOWN")
+        view["evidence_rule"] = "只有 DIRECT 支持其明确覆盖的目标事实；RELATED/BACKGROUND 仅用于标注的参考用途。"
     raw = result.archive
     if observation.source_type == "DATA" and isinstance(raw, dict) and isinstance(raw.get("data"), list):
         rows = raw["data"]
@@ -86,6 +89,10 @@ def model_result_text(result, *, max_bytes: int = 6000) -> str:
                 view["omitted_sources"] += 1
                 continue
 
+    if observation.source_type == "KNOWLEDGE" and not any(
+        s.get("evidence_grade") == "DIRECT" for s in view.get("selected_sources", [])
+    ):
+        view["evidence_status"] = "EVIDENCE_INSUFFICIENT"
     encoded = _encode(view)
     if len(encoded.encode("utf-8")) <= max_bytes:
         return encoded
@@ -98,5 +105,6 @@ def model_result_text(result, *, max_bytes: int = 6000) -> str:
             "status": str(observation.status),
             "projection": "metadata_only",
             "original_bytes": original_bytes,
+            **({"evidence_status": "EVIDENCE_INSUFFICIENT"} if observation.source_type == "KNOWLEDGE" else {}),
         }
     )

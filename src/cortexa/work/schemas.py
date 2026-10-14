@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class WorkInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    project_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=200)
     goal: str = Field(min_length=1, max_length=2000)
     description: str = Field(default="", max_length=4000)

@@ -25,7 +25,7 @@
       </article>
     </div>
     <p v-if="items.length" class="hint">建议由你确认后才会派发。</p>
-    <WorkEditor v-if="editing || creatingManual" :candidate="editing || undefined" @close="closeEditor" @saved="saved" />
+    <WorkEditor v-if="editing || creatingManual" :candidate="editing || undefined" :project-id="message.metadata_json?.project_ids?.length === 1 ? message.metadata_json.project_ids[0] : undefined" @close="closeEditor" @saved="saved" />
   </section>
 </template>
 <script setup>

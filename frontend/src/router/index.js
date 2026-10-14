@@ -4,6 +4,8 @@ import { auth, can, canAdmin, refreshAuth } from '../auth'
 const routes = [
   { path: "/model-usage", component: () => import("../views/ModelUsage.vue"), meta: { superadmin: true } },
   { path: '/personalization', name: 'Personalization', component: () => import('../views/Personalization.vue') },
+  { path: "/projects", component: () => import("../views/Projects.vue") },
+  { path: "/projects/:id", component: () => import("../views/Projects.vue") },
   { path: "/works", component: () => import("../views/Works.vue") },
   { path: "/works/:id", component: () => import("../views/Works.vue") },
   { path: '/login', component: () => import('../views/Login.vue') },

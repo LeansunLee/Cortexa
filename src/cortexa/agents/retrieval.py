@@ -34,6 +34,12 @@ def plan_retrieval(query, recent_messages=None):
     return RetrievalPlan(knowledge=True, memory=True, reason="检索相关知识与记忆")
 
 
+def parse_knowledge_query(query, documents=()):
+    """Reuse the planner entry point for deterministic knowledge constraints."""
+    from cortexa.rag.relevance import analyze_query
+    return analyze_query(query, documents)
+
+
 def select_capabilities(items, query=None):
     """Expose configured capabilities; the model selects using descriptions and context.
 

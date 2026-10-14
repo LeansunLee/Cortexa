@@ -538,3 +538,36 @@ def test_live_document_sources_only_include_public_reference_metadata():
     completed = next(e for e in events if e.get("sources"))
     assert completed["sources"] == [{"name": "销售计划", "document_id": "doc-1", "url": "https://example.com/doc"}]
     assert "PRIVATE_DOCUMENT_CONTENT" not in str(events)
+
+
+
+def test_invalid_proxy_arguments_replan_without_silent_task_loss():
+    from cortexa.runtime.proxy import ProxyInvocation
+    loop, _, _ = make_loop({"max_replans": 1})
+    proxy = binding(raw={"success": True, "result": "数据已取得"}, kind=CapabilityType.AGENT)
+    proxy.tool.args_schema = ProxyInvocation
+    task = "查询2026年4至9月销量、销售额、目标达成、车型结构、区域排名及库存"
+    model = FakeModel([
+        [tool_call(args={"input": task, "priority": "high", "target_users": '["国内销售负责人"]'})],
+        [tool_call(ident="fixed", args={"task": task})],
+        [AIMessageChunk(content="已取得数据")],
+    ])
+    run(loop, model, [proxy])
+    assert loop.state.status == GoalStatus.COMPLETE
+    assert loop.state.consumed["max_replans"] == 1
+    assert proxy.invoke.await_count == 1
+    assert proxy.invoke.await_args.args[0] == {"task": task}
+    feedback = [m.content for m in model.calls[1] if getattr(m, "tool_call_id", None) == "tc"]
+    assert len(feedback) == 1 and "本次未派发" in feedback[0] and "task" in feedback[0]
+    assert not any(item.get("title") == "Invalid tool arguments fell back to schema defaults" for item in loop.trace)
+
+
+def test_invalid_collaboration_arguments_block_after_replan_budget():
+    from cortexa.runtime.proxy import ProxyInvocation
+    loop, _, _ = make_loop({"max_replans": 0})
+    proxy = binding(raw={"success": True, "result": "数据已取得"}, kind=CapabilityType.AGENT)
+    proxy.tool.args_schema = ProxyInvocation
+    run(loop, FakeModel([[tool_call(args={"input": "不应丢失的子任务"})]]), [proxy])
+    assert loop.state.status == GoalStatus.BLOCKED
+    assert loop.state.reason == "invalid_collaboration_arguments"
+    proxy.invoke.assert_not_awaited()

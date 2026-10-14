@@ -4,6 +4,7 @@
       <form class="work-editor" @submit.prevent="save" role="dialog" aria-modal="true" aria-labelledby="work-editor-title">
         <header><h2 id="work-editor-title">{{ work ? '编辑工作' : candidate ? '确认并创建工作' : '新建工作' }}</h2><button type="button" @click="$emit('close')" aria-label="关闭">×</button></header>
         <p class="hint">明确目标、负责人和交付结果，确认后派发。</p>
+        <label>所属项目<SearchSelect v-model="form.project_id" :options="projectOptions" placeholder="不属于项目" aria-label="所属项目" /></label>
         <label>标题<input v-model="form.title" required maxlength="200" autofocus /></label>
         <label>执行目标<textarea v-model="form.goal" required maxlength="2000" rows="3" /></label>
         <section v-if="form.goal.trim() || form.title.trim()" class="assignee-recommendations" aria-label="推荐负责人" aria-live="polite">
@@ -31,18 +32,21 @@ import { computed, inject as injectPageTab } from 'vue'
 const pageTabActive = injectPageTab('pageTabActive', true)
 
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
-import { workApi } from '../api'
+import api, { workApi } from '../api'
 import { auth } from '../auth'
-const props = defineProps({ work: Object, candidate: Object })
+const props = defineProps({ work: Object, candidate: Object, projectId: String })
 const emit = defineEmits(['close', 'saved'])
 const base = props.work || props.candidate || {}
-const form = ref({ title: base.title || '', goal: base.goal || '', description: base.description || '',
+const form = ref({ project_id: base.project_id || props.projectId || '', title: base.title || '', goal: base.goal || '', description: base.description || '',
   assignee_type: 'human', assignee_id: base.assignee_type === 'agent' ? '' : base.assignee_id || '',
   reviewer_id: base.reviewer_id || auth.user?.id || '', priority: base.priority || 'P2',
   deliverable_requirement: base.deliverable_requirement || '' })
 const initialDue = base.due_at || base.suggested_due_at
 const date = initialDue ? new Date(initialDue) : null
 const due = ref(date ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16) : '')
+const projects = ref([])
+const projectOptions = computed(()=>[{value:'',label:'不属于项目'},...projects.value.filter(p=>p.status !== 'archived' || p.id===base.project_id).map(p=>({value:p.id,label:p.title}))])
+onMounted(async()=>{try{projects.value=(await api.get('/projects')).data}catch{error.value='项目列表加载失败，请刷新后重试'}})
 const members = ref([]), error = ref(''), busy = ref(false)
 const priorityOptions = [
   { value: 'P0', label: 'P0 · 紧急' },
@@ -79,7 +83,7 @@ async function save() {
   if (busy.value) return
   busy.value = true; error.value = ''
   try {
-    const payload = {...form.value, due_at: due.value ? new Date(due.value).toISOString() : null}
+    const payload = {...form.value, project_id: form.value.project_id || null, due_at: due.value ? new Date(due.value).toISOString() : null}
     const { data } = props.work ? await workApi.update(props.work.id, payload) : props.candidate
       ? await workApi.accept(props.candidate.id, payload) : await workApi.create(payload)
     emit('saved', data)

@@ -62,7 +62,7 @@ def test_rule_order_and_reference_content_are_separate():
 def test_collaboration_uses_same_rules_as_normal_chat():
     from cortexa.collaboration.manager import _build_handoff_system_prompt
     from cortexa.collaboration.schemas import AgentHandoff
-    target = Agent(name="渠道部", boundaries="只处理渠道业务")
+    target = Agent(name="渠道部", work_rules="只处理渠道业务")
     workspace = Workspace(name="销售", system_prompt="遵循销售政策")
     handoff = AgentHandoff(source_agent_id="source", target_agent_id="target", task="分析", question="给出建议")
     assert _build_handoff_system_prompt(Agent(name="销售部"), target, handoff, workspace) == _build_system_prompt(target, workspace)

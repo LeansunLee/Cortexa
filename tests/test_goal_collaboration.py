@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, messages_from_dict
 from referencing.exceptions import Unresolvable
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -568,3 +568,39 @@ async def settings_scenario(tmp_path, monkeypatch):
             payload = {"goal": parse_goal("分析销售").model_dump(mode="json")}
             with pytest.raises(RuntimeHalt, match="explicit_only"):
                 await authorize_agent(db, agent.id, ctx.targets[0].id, state, payload, CONFIG)
+
+
+
+@pytest.mark.skipif(not URL, reason="Isolated PostgreSQL URL required")
+@pytest.mark.parametrize("allow", [True, False])
+def test_approval_prompt_matches_actual_decision_and_dispatch(tmp_path, monkeypatch, allow):
+    async def scenario():
+        async with setup(tmp_path, monkeypatch) as ctx:
+            selected = ctx.targets[0]
+            model = FakeModel([[tool_call(name="agent_" + selected.id.hex, args={"task": "分析销售"})]])
+            child = FakeModel([[AIMessageChunk(content="已取得数据")]])
+            monkeypatch.setattr(api, "create_llm", lambda *_: model)
+            monkeypatch.setattr(executor, "create_llm", lambda *_: child)
+            done = await start(ctx, "approval-prompt")
+            assert done["reason"] == "collaboration_approval_required"
+            goal = uuid.UUID(done["goal_id"])
+            candidates = await api.approval_candidates(ctx.conv, goal)
+            ids = [uuid.UUID(c["id"]) for c in candidates]
+            decision = await api.authorize_collaboration(ctx.conv, goal, api.AuthorizationRequest(
+                revision=done["revision"], approved_agents=ids if allow else [], denied_agents=[] if allow else ids))
+            row = await ctx.store.get(ctx.conv, goal)
+            payload = ctx.store.files.read(row.id, row.artifacts["snapshot"])
+            prompt = messages_from_dict(payload["messages"])[-1].content
+            assert ("用户已明确允许" in prompt) == allow
+            assert ("用户已明确拒绝" in prompt) == (not allow)
+            assert "agent_" + selected.id.hex in prompt
+            rounds = ([[tool_call(name="agent_" + selected.id.hex, args={"task": "分析销售"})],
+                       [AIMessageChunk(content="已根据分析结果完成目标")]] if allow else
+                      [[AIMessageChunk(content="协作未获允许，缺少数据，已说明现有结论")]])
+            model = FakeModel(rounds)
+            resumed = await collect(await api.resume_goal(ctx.conv, goal,
+                api.ResumeRequest(content="继续执行目标", revision=decision["revision"])))
+            assert resumed[-1]["status"] == "COMPLETE", resumed
+            assert len(child.calls) == (1 if allow else 0)
+            assert resumed[-1]["consumed"].get("agent_calls", 0) == (1 if allow else 0)
+    asyncio.run(scenario())

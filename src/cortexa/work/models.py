@@ -3,10 +3,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cortexa.db.engine import Base
+from cortexa.projects.models import Project  # register referenced table
 
 
 class Identity:
@@ -18,6 +19,7 @@ class Identity:
 class Work(Identity, Base):
     __tablename__ = "t_works"
     __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["t_projects.workspace_id", "t_projects.id"]),
         CheckConstraint("assignee_type IN ('human','agent')"),
         CheckConstraint(
             "status IN ('draft','pending','todo','in_progress','review','completed','rejected','cancelled')"
@@ -25,6 +27,7 @@ class Work(Identity, Base):
         CheckConstraint("priority IN ('P0','P1','P2','P3')"),
         CheckConstraint("source_type IN ('manual','conversation','agent_collaboration','workflow')"),
     )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     title: Mapped[str] = mapped_column(String(200))
     goal: Mapped[str] = mapped_column(String(2000))
     description: Mapped[str] = mapped_column(String(4000), default="")

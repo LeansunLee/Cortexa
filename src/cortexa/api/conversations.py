@@ -47,6 +47,8 @@ from cortexa.runtime.capture import CapabilityCapture, capability_shadow_enabled
 from cortexa.runtime.adapters import tool_adapter, retrieval_adapter, agent_adapter
 from cortexa.runtime.capabilities import CapabilityType
 
+from cortexa.conversation.questions import ask_user_tool, pause_after_tool, UserQuestionPause, persist_pause
+
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 _DEBUG_TEXT_LIMIT = 4000
@@ -224,6 +226,12 @@ async def list_messages(
         .order_by(ConversationMessage.created_at)
     )
     messages=list(result.scalars().all())
+    from cortexa.api.memory_sources import restored_messages
+    from sqlalchemy.orm.attributes import set_committed_value
+    for msg, meta in await restored_messages(db, conv_id, messages):
+        set_committed_value(msg, "metadata_json", meta)
+    from cortexa.runtime.budget_notices import restore_budget_notices
+    await restore_budget_notices(db, conv_id, messages)
     if not can_read_goal_trace():
         from sqlalchemy.orm.attributes import set_committed_value
         for msg in messages:
@@ -232,6 +240,33 @@ async def list_messages(
             meta.pop('debug_trace', None)
             set_committed_value(msg,'metadata_json',meta)
     return messages
+
+
+
+@router.get("/{conv_id}/memory-sources/{memory_id}")
+async def memory_source_detail(conv_id: uuid.UUID, memory_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import JSONResponse
+    from cortexa.runtime.store import own_conversation
+    from cortexa.api.memory_sources import restored_messages, contains_memory, recalled_in_snapshot
+    from cortexa.memory.access import memory_access
+    from cortexa.memory.models import MemoryEvidence
+    from cortexa.memory.evidence import visible_evidence
+
+    await own_conversation(db, conv_id, use_agent=True)
+    messages = list(await db.scalars(select(ConversationMessage).where(ConversationMessage.conversation_id == conv_id)))
+    if not any(contains_memory(meta, memory_id) for _, meta in await restored_messages(db, conv_id, messages)) and not await recalled_in_snapshot(db, conv_id, memory_id):
+        raise HTTPException(404, "本对话未记录该记忆来源")
+    mem = await memory_access(db, memory_id)
+    meta = mem.metadata_json or {}
+    if meta.get("content_purged") or mem.status in {"retracted", "rejected", "archived"} or meta.get("source_review_required") or (mem.risk_level == "high" and not meta.get("risk_approved")):
+        raise HTTPException(410, "该记忆已撤回、归档或不可用")
+    rows = await db.scalars(select(MemoryEvidence).where(MemoryEvidence.memory_id == memory_id).order_by(MemoryEvidence.created_at.desc()).limit(30))
+    data = {"id": str(mem.id), "content": mem.content, "type": mem.type,
+            "subject_name": mem.subject_name, "status": mem.status, "confidence": mem.confidence,
+            "source_mode": mem.source_mode, "has_conflict": mem.has_conflict,
+            "updated_at": mem.updated_at.isoformat() if mem.updated_at else None,
+            "evidences": [await visible_evidence(db, row) for row in rows]}
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{conv_id}/messages", response_model=ConversationMessageOut, status_code=201)
@@ -247,10 +282,15 @@ async def create_message(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    from cortexa.conversation.questions import require_no_pending
+    await require_no_pending(conv_id)
+    from cortexa.projects.service import summaries
+    project_context, project_refs = await summaries(db, payload.project_ids)
     msg = ConversationMessage(
         conversation_id=conv_id,
         role="user",
         content=payload.content,
+        metadata_json={"project_ids":[str(i) for i in payload.project_ids]},
     )
     await assign_first_message_title(db, conv_id, payload.content)
     db.add(msg)
@@ -270,12 +310,14 @@ async def create_message(
                 workspace = await db.get(Workspace, conv.workspace_id) if conv.workspace_id else None
                 system_prompt = _build_system_prompt(agent, workspace)
                 references = await organization_reference(agent, db)
+                if project_context:
+                    references.append(reference_message("本轮引用项目（只读参考）", project_context))
                 memory = await memory_reference(agent, payload.content, db)
                 if memory:
                     references.append(memory)
 
                 # Initialize sources tracker
-                sources = []
+                sources = list(project_refs)
                 collaboration_results = []
 
                 # Retrieve knowledge base content
@@ -310,7 +352,8 @@ async def create_message(
                 # Load data capabilities and build tools
                 cap_list = await _load_agent_capabilities(agent.id, db, payload.content)
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=llm_messages, agent_id=agent.id) if cap_list else []
-                data_tools = list(business_tools)
+                from cortexa.projects.runtime import tools as project_tools
+                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 
@@ -334,10 +377,10 @@ async def create_message(
                     from cortexa.agents.proxy_executor import execute_proxy_agent
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content,
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else ""),
                             "conversation_context": [
                                 {"role": m.role, "content": history_text(m.content)[:3000]}
                                 for m in messages
@@ -395,6 +438,8 @@ async def create_message(
                                     content=str(tool_result),
                                     tool_call_id=tc["id"],
                                 ))
+                                pause_after_tool(tool_result, agent, llm_messages, response, tool_messages, tc,
+                                                 remaining=max_iterations - iteration)
                             llm_messages.append(response)
                             llm_messages.extend(tool_messages)
                             response = await model_with_tools.ainvoke(llm_messages)
@@ -416,6 +461,9 @@ async def create_message(
                     metadata_json=metadata,
                 )
                 db.add(reply_msg)
+            except UserQuestionPause as pause:
+                await db.commit()
+                await persist_pause(conv_id, pause)
             except Exception as e:
                 error_msg = ConversationMessage(
                     conversation_id=conv_id,
@@ -826,6 +874,8 @@ async def regenerate_message(
     db: AsyncSession = Depends(get_db),
 ) -> ConversationMessage:
     """Regenerate the last assistant message."""
+    from cortexa.conversation.questions import require_no_pending
+    await require_no_pending(conv_id)
     if (await request.body()).strip() not in {b"", b"{}"}:
         raise HTTPException(422, "重新生成不接受请求参数")
     conv = await db.get(Conversation, conv_id)
@@ -908,7 +958,7 @@ async def regenerate_message(
         from cortexa.tools.web_search import load_search_tools, invoke_with_tools
         cap_list = await _load_agent_capabilities(agent.id, db, last_user_content)
         business_tools = _build_data_tools(cap_list, sources, model=model, user_query=last_user_content, context=llm_messages, agent_id=agent.id) if cap_list else []
-        tools = list(business_tools)
+        tools = [*business_tools, ask_user_tool()]
         tools.extend(await load_search_tools(agent, db, last_user_content, sources))
         if cap_list:
             capability_text = "\n".join(
@@ -919,9 +969,14 @@ async def regenerate_message(
             llm_messages[0]["content"] += _build_tool_usage_instructions(cap_list, business_tools)
             llm_messages[0]["content"] += f"\n\n## 可用数据能力\n你可以通过工具调用查询以下业务数据；每个能力下的补充提示词在选择工具、填写入参和组织答案时都必须遵循：\n{capability_text}"
         response = await invoke_with_tools(
-            model, llm_messages, tools, usage, required_tools=business_tools if should_require_business_tool(last_user_content, business_tools) else []
+            model, llm_messages, tools, usage, required_tools=business_tools if should_require_business_tool(last_user_content, business_tools) else [], question_agent=agent
         )
         reply_content = response.content if hasattr(response, 'content') else str(response)
+    except UserQuestionPause as pause:
+        await db.commit()
+        msg_id = await persist_pause(conv_id, pause)
+        async with async_session_factory() as saved_db:
+            return await saved_db.get(ConversationMessage, uuid.UUID(msg_id))
     except Exception as e:
         reply_content = f"重新生成失败: {str(e)}"
 
@@ -967,6 +1022,8 @@ async def create_message_stream(
 ) -> StreamingResponse:
     """Send message and stream response via SSE. Uses its own DB session."""
 
+    from cortexa.conversation.questions import require_no_pending
+    await require_no_pending(conv_id)
     process_steps = []
     debug_enabled = _conversation_debug_enabled()
     goal_shadow_enabled = shadow_enabled(_CONFIG_PATH)
@@ -1000,7 +1057,8 @@ async def create_message_stream(
     async def _status(msg_type, **kwargs):
         """Helper to yield a status SSE event."""
         data = {"type": "status", "status": msg_type, **kwargs}
-        process_steps.append({"status": msg_type, "message": kwargs.get("message", "")})
+        process_steps.append({"status": msg_type, "message": kwargs.get("message", ""),
+                              **({"prompts": kwargs["prompts"]} if kwargs.get("prompts") else {})})
         return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     @usage_action("reply")
@@ -1027,6 +1085,9 @@ async def create_message_stream(
                             raise ValueError("不能邀请当前 Agent 自身协作")
                         await require_agent_use(db, draft.agent_id)
 
+                from cortexa.projects.service import summaries
+                project_context, project_refs = await summaries(db, payload.project_ids)
+                sources.extend(project_refs)
                 # Save user message
                 attachments = payload.attachments or []
                 generated_title = await assign_first_message_title(db, conv_id, payload.content)
@@ -1034,7 +1095,7 @@ async def create_message_stream(
                     conversation_id=conv_id,
                     role="user",
                     content=payload.content,
-                    metadata_json={"attachments": attachments, "collaboration_drafts": [draft.model_dump(mode="json") for draft in payload.collaboration_drafts or []]},
+                    metadata_json={"project_ids": [str(i) for i in payload.project_ids], "attachments": attachments, "collaboration_drafts": [draft.model_dump(mode="json") for draft in payload.collaboration_drafts or []]},
                 )
                 db.add(user_msg)
                 await db.flush()
@@ -1118,10 +1179,10 @@ async def create_message_stream(
                         yield debug_event
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content,
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else ""),
                             "conversation_context": proxy_context,
                         },
                     )
@@ -1176,6 +1237,8 @@ async def create_message_stream(
                 workspace = await db.get(Workspace, conv.workspace_id) if conv.workspace_id else None
                 system_prompt = _build_system_prompt(agent, workspace)
                 references = await organization_reference(agent, db)
+                if project_context:
+                    references.append(reference_message("本轮引用项目（只读参考）", project_context))
                 sources = []
                 # Build recent messages for follow-up detection
                 recent_for_plan = []
@@ -1254,6 +1317,7 @@ async def create_message_stream(
                                         "content": source.get("description", ""),
                                     } for source in sources if source.get("type") == "knowledge_base"],
                                     "injected_context": knowledge_context,
+                                    "relevance": knowledge_stats.get("retrieval_trace", {}),
                                 },
                             )
                         else:
@@ -1534,6 +1598,8 @@ async def create_message_stream(
                         background = await prepare_background(db, conv_id, draft, payload.content,
                             target_type=target_agent.agent_type, attachments=file_context_parts,
                             exclude_message_id=user_msg.id)
+                        if project_context:
+                            background["project_reference"] = project_context
                         resolver_context = {}
                         if target_agent.agent_type == "proxy":
                             from cortexa.collaboration.background import prepare_proxy_resolution_context
@@ -1583,6 +1649,7 @@ async def create_message_stream(
 
                         # Build handoff
                         handoff = AgentHandoff(
+                            project_ids=[str(i) for i in payload.project_ids],
                             source_agent_id=str(agent.id),
                             target_agent_id=str(target_agent.id),
                             task=mention.message_after or f"来自 {agent.role or '主 Agent'} 的协作请求",
@@ -1797,7 +1864,8 @@ async def create_message_stream(
                 tool_context = []
                 cap_list = await _load_agent_capabilities(agent.id, db, payload.content, recent_for_plan)
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=tool_context, agent_id=agent.id) if cap_list else []
-                data_tools = list(business_tools)
+                from cortexa.projects.runtime import tools as project_tools
+                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 
@@ -1932,6 +2000,11 @@ async def create_message_stream(
                         first_model = bind_tools_for_first_response(model, data_tools, required_business_tools)
                         response = None
                         first_chunks = []
+                        if conv.agent_id:
+                            from cortexa.runtime.prompt_requests import model_request, save_prompt
+                            prompt_ref = save_prompt(conv_id, conv.agent_id, agent.name if agent else 'Agent', 'model',
+                                                     model_request(llm_messages, data_tools))
+                            yield await _status('runtime_start', message='主 Agent · 调用模型', prompts=[prompt_ref])
                         async for token, completed in _stream_model_response(first_model, llm_messages):
                             if token:
                                 first_chunks.append(token)
@@ -2037,10 +2110,17 @@ async def create_message_stream(
                                     content=str(tool_result),
                                     tool_call_id=tc["id"],
                                 ))
+                                pause_after_tool(tool_result, agent, llm_messages, response, tool_messages, tc,
+                                                 remaining=max_iterations - iteration)
 
                             llm_messages.append(response)
                             llm_messages.extend(tool_messages)
                             yield await _status("thinking_start", message="🧠 正在基于查询结果分析...")
+                            if conv.agent_id:
+                                from cortexa.runtime.prompt_requests import model_request, save_prompt
+                                prompt_ref = save_prompt(conv_id, conv.agent_id, agent.name if agent else 'Agent', 'model',
+                                                         model_request(llm_messages, data_tools))
+                                yield await _status('runtime_start', message='主 Agent · 调用模型', prompts=[prompt_ref])
                             async for token, completed in _stream_model_response(model_with_tools, llm_messages):
                                 if token:
                                     full_reply += token
@@ -2049,6 +2129,8 @@ async def create_message_stream(
                                 if completed is not None:
                                     usage.add(completed)
                                     response = completed
+                    except UserQuestionPause:
+                        raise
                     except Exception as e:
                         if full_reply:
                             raise
@@ -2063,6 +2145,11 @@ async def create_message_stream(
                 # ── Phase 5: Generate response ──
                 if not full_reply:
                     yield await _status("generating_start", message="✍️ 正在生成回复...")
+                    if conv.agent_id:
+                        from cortexa.runtime.prompt_requests import model_request, save_prompt
+                        prompt_ref = save_prompt(conv_id, conv.agent_id, agent.name if agent else 'Agent', 'model',
+                                                 model_request(llm_messages, []))
+                        yield await _status('runtime_start', message='主 Agent · 调用模型', prompts=[prompt_ref])
                     async for token, completed in _stream_model_response(model, llm_messages):
                         if completed is not None:
                             usage.add(completed)
@@ -2101,6 +2188,7 @@ async def create_message_stream(
                     meta["memory_trace"]=trace
                 if debug_trace:
                     meta["debug_trace"] = debug_trace
+                meta["project_ids"] = [str(i) for i in payload.project_ids]
                 assistant_msg = ConversationMessage(
                     conversation_id=conv_id,
                     role="assistant",
@@ -2124,6 +2212,34 @@ async def create_message_stream(
                 yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
 
+            except UserQuestionPause as pause:
+                await db.commit()
+                if pause.question['agent_id'] != str(agent.id):
+                    # Save original parent context and unstarted siblings. Child uses only its own snapshot.
+                    from cortexa.runtime.loop import serialize_messages
+                    parent_messages = [{'role':'system','content':system_prompt}, *references,
+                                       {'role':'user','content':payload.content}]
+                    completed_results = [{k:v for k,v in cr.items() if k not in {'result','background'}} |
+                        {'result':cr['result'].model_dump(mode='json')} for cr in collaboration_results]
+                    following = mentions_to_process[mentions_to_process.index(mention)+1:]
+                    remaining = []
+                    for item in following:
+                        info = next((a for a in agents_list if a['id'] == item.name or a['name'] == item.name), None)
+                        if info:
+                            draft = drafts_by_id.get(info['id'])
+                            remaining.append({'agent_id':info['id'], 'task':draft.task if draft else item.message_after or payload.content,
+                                              'constraints':draft.constraints if draft else [],
+                                              'expected_output':draft.expected_output if draft else '给出专业分析和建议',
+                                              'draft':draft.model_dump(mode='json') if draft else None})
+                    pause.context['parent'] = {'agent_id':str(agent.id), 'engine':'llm',
+                        'messages':serialize_messages(parent_messages), 'remaining_iterations':5,
+                        'completed_results':completed_results, 'siblings':remaining, 'attachments':file_context_parts,
+                        'original_task':payload.content, 'project_ids':[str(i) for i in payload.project_ids], 'exclude_message_id':str(user_msg.id)}
+                pause.context["project_ids"] = [str(i) for i in payload.project_ids]
+                message_id = await persist_pause(conv_id, pause, process_steps)
+                yield 'data: ' + json.dumps({'type':'user_question','question':pause.question}, ensure_ascii=False) + '\n\n'
+                yield 'data: ' + json.dumps({'type':'done','id':message_id,'content':pause.question['question'],
+                    'user_question':pause.question}, ensure_ascii=False) + '\n\n'
             except asyncio.CancelledError:
                 if full_reply and not reply_saved:
                     import anyio

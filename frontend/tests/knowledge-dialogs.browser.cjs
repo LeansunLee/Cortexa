@@ -3,15 +3,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const dist=path.resolve(__dirname,'../../src/cortexa/web/static/dist');
 const origin=process.env.LIVE_ORIGIN||'http://textdoc.local';
 (async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
-for (const appearance of ['light', 'dark', 'system']) for (const width of [1440, 390]) {
+for (const finish of ['clear', 'frosted']) for (const appearance of ['light', 'dark', 'system']) for (const width of [1440, 390]) {
 const page=await browser.newPage({viewport:{width,height:1000},colorScheme:appearance==='light'?'light':'dark'}),errors=[];
-await page.addInitScript(appearance=>{
-  for(const key of ['theme-color','theme-color:user:user']) localStorage.setItem(key,JSON.stringify({value:'#008575',mode:'glass',finish:'clear'}));
+await page.addInitScript(({appearance,finish})=>{
+  for(const key of ['theme-color','theme-color:user:user']) localStorage.setItem(key,JSON.stringify({value:'#008575',mode:'glass',finish}));
   for(const key of ['ui-appearance','ui-appearance:user:user']) localStorage.setItem(key,appearance);
-},appearance);
+},{appearance,finish});
 page.on('pageerror',e=>errors.push(e.message));
 let content='',name='';
-const doc=()=>({id:'doc',name,status:'active',content:'文档测试摘要',metadata_json:{size:20},created_by:'user'});
+const doc=()=>({id:'doc',name,status:'active',content:'文档测试摘要',metadata_json:{size:20,summary_source:'full'},created_by:'user'});
 await page.route(origin+'/**',async route=>{const u=new URL(route.request().url());
 if(u.pathname.startsWith('/api/')){let data={};
 if(u.pathname==='/api/auth/me')data={id:'user',username:'tester',display_name:'验证账号',system_permissions:['knowledge.manage','knowledge.use'],memberships:[{workspace_id:'ws',permissions:['knowledge.manage','knowledge.use']}]};
@@ -58,6 +58,20 @@ await page.getByPlaceholder('例如：笔记.txt 或 说明.md').fill('发布验
 const ed=()=>page.locator('.toastui-editor-ww-container [contenteditable=true]');
 await ed().click();await page.keyboard.insertText('发布包正文输入验证');
 await page.getByRole('button',{name:'创建文档',exact:true}).click();
+await page.getByRole('button',{name:'摘要',exact:true}).click();
+const summary=page.locator('.summary-dialog');
+await summary.waitFor();
+assert.ok((await summary.innerText()).includes('文档测试摘要'));
+const summaryStyles=await summary.evaluate(el=>({blur:getComputedStyle(el).backdropFilter,mask:getComputedStyle(el.parentElement).backgroundColor}));
+assert.ok(summaryStyles.blur.includes(finish==='clear'?'blur(24px)':'blur(38px)'),summaryStyles.blur);
+assert.ok(!summaryStyles.mask.includes('0.5'),summaryStyles.mask);
+assert.ok(await summary.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight}),'summary fits viewport');
+await page.screenshot({path:'/tmp/summary-glass-'+width+'-'+appearance+'.png'});
+await summary.getByRole('button',{name:'编辑',exact:true}).click();
+assert.equal(await summary.locator('.summary-editor').evaluate(el=>getComputedStyle(el).backdropFilter),'none');
+assert.ok(await summary.locator('.summary-editor').evaluate(el=>!getComputedStyle(el).backgroundColor.includes('rgba')));
+await summary.getByRole('button',{name:'取消',exact:true}).click();
+await summary.getByRole('button',{name:'关闭',exact:true}).click();
 await page.getByText('发布验证.md',{exact:true}).first().click();
 await page.getByRole('button',{name:'编辑',exact:true}).click();
 await ed().click();await page.keyboard.insertText('再次编辑');
@@ -80,5 +94,5 @@ await page.getByRole('button',{name:'关闭编辑器',exact:true}).click();
 await page.getByRole('button',{name:'关闭预览',exact:true}).click();
 await page.locator('.folder-tree').waitFor();
 await page.screenshot({path:'/tmp/textdoc-restored-explorer.png'});
-console.log('PASS glass folder input / white editor / button order / create → edit → save',origin,width,appearance); await page.close(); }
+console.log('PASS glass folder input / white editor / button order / create → edit → save',origin,width,appearance,finish); await page.close(); }
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

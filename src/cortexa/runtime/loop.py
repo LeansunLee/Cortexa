@@ -171,7 +171,8 @@ class GoalLoop:
                              **details})
 
     def record(self, event, **details):
-        # Only controlled enum/count/hash metadata, never prompt, fields or raw exceptions.
+        # Runtime metadata and authorized retrieval diagnostics. Access to traces
+        # is filtered by existing conversation debug permissions. Never log auth secrets.
         self.trace.append(
             {
                 "seq": self.trace[-1]["seq"] + 1 if self.trace else 1,
@@ -230,6 +231,8 @@ class GoalLoop:
         messages = messages_from_dict(self.payload["messages"])
         by_name = {binding.tool.name: binding for binding in bindings}
         tools = [binding.tool for binding in bindings]
+        from cortexa.runtime.completion import completion_tool, CompletionReview, validate_completion, partial_requested
+        completion = completion_tool() if "ask_user" in by_name else None
         required_satisfied = self.payload.get("required_satisfied", not bool(required_names))
         cache = self.payload.setdefault("cache", {})
         self.payload.setdefault("observations", [])
@@ -289,20 +292,30 @@ class GoalLoop:
                 else:
                     active_bindings = bindings
                 active_tools = [item.tool for item in active_bindings]
-                model_messages = messages
+                if completion and phase != BudgetPhase.FINALIZING:
+                    active_tools.append(completion)
+                from cortexa.runtime.completion import collaboration_status
+                status_message = collaboration_status(self.state, bindings, self.payload["observations"], active_bindings)
+                model_messages = [*messages, status_message] if status_message else messages
                 if phase == BudgetPhase.FINALIZING:
                     model_messages = [
-                        *messages,
+                        *model_messages,
                         SystemMessage(
                             content="预算进入收尾阶段。不要调用工具或 Agent；"
                             "仅基于已有结果在本次回复中完成总结，明确说明缺失或未完成的部分。"
                             "不要只承诺稍后读取、查询或汇总。"
                         ),
                     ]
+                if completion and phase != BudgetPhase.FINALIZING:
+                    model_messages = [*model_messages, SystemMessage(content=
+                        "结束任务时必须使用 complete_task 提交结构化完成声明，列出必需条件、实际 observation_ids 和未决项。"
+                        "未满足条件时先协作或 ask_user，不得把缺参方案当完成。纯方法或草案可列空数据要求，但不得隐瞒任务实际需要的数据。")]
                 context_size = token_upper_bound(serialize_messages(model_messages)) + token_upper_bound(
                     [binding.adapter.descriptor.input_schema for binding in active_bindings]
                 )
                 context_size += sum(len(t.description.encode()) + len(t.name.encode()) + 64 for t in active_tools)
+                if completion and phase != BudgetPhase.FINALIZING:
+                    context_size += token_upper_bound(completion.args_schema.model_json_schema())
                 if context_size > self.state.limits.context_tokens:
                     self.budget.mark_failure("context_tokens", current=context_size)
                     raise RuntimeHalt("context_budget_exceeded")
@@ -316,13 +329,17 @@ class GoalLoop:
                 # Provider override supplements local enforcement; provider availability
                 # and routing continue using the existing Agent model configuration.
                 planning_output = self.budget.remaining("output_tokens", protect_finalization=True)
-                selected = selected.bind(
-                    max_tokens=min(
+                requested_max_tokens = min(
                         remaining_output if phase == BudgetPhase.FINALIZING else 4096,
                         remaining_output,
                         remaining_output if phase == BudgetPhase.FINALIZING else max(256, planning_output),
                     )
-                )
+                selected = selected.bind(max_tokens=requested_max_tokens)
+                from cortexa.runtime.prompt_requests import model_request
+                self.publish("runtime_prompt", prompt_kind="model", request=model_request(
+                    model_messages, active_tools, {"max_tokens": requested_max_tokens}
+                ))
+                await self.save()
                 response = None
                 chunk_cost = 0
                 previous_output = self.state.consumed.get("output_tokens", 0)
@@ -437,8 +454,55 @@ class GoalLoop:
                         "若反复出现，请更换模型或简化目标后重新发起。"
                     )
                     raise RuntimeHalt("invalid_reasoning_action", status=GoalStatus.WAITING, next_action="ASK_USER")
+                review_gap = None
+                if completion and len(calls) == 1 and calls[0]["name"] == "complete_task":
+                    try:
+                        review = CompletionReview.model_validate(calls[0]["args"])
+                        review_gap = validate_completion(review, self.state, self.payload)
+                        if required_names and not partial_requested(self.payload) and not any(r.kind in {'data','lookup'} for r in review.requirements):
+                            review_gap = review_gap or '本轮必需业务查询未列入完成依据。'
+                        self.record("Structured completion review", requirements=[r.model_dump() for r in review.requirements],
+                                    unresolved=review.unresolved, valid=not bool(review_gap))
+                        response = response.model_copy(update={"content": review.answer, "tool_calls": []})
+                        round_text, calls = review.answer, []
+                    except ValidationError:
+                        review_gap = "完成声明格式无效，需提供任务条件与真实来源。"
+                        response = response.model_copy(update={"tool_calls": []})
+                        calls = []
+                elif completion and not calls and phase != BudgetPhase.FINALIZING and not partial_requested(self.payload):
+                    review_gap = "尚未提交本轮任务的结构化完成依据，不能直接标记完成。"
                 messages.append(response)
                 if not calls:
+                    from cortexa.runtime.completion import completion_gap
+                    gap = review_gap or completion_gap(round_text, self.state, bindings, self.payload)
+                    if gap and phase == BudgetPhase.FINALIZING:
+                        self.state.partial = True
+                    if gap and "ask_user" in by_name and (
+                        phase != BudgetPhase.FINALIZING or review_gap or gap.startswith("回复声称协作被拒绝")
+                    ):
+                        messages.pop()  # An unaccepted draft is not an execution fact.
+                        self.record("Completion needs data or user decision", reason=gap)
+                        if phase != BudgetPhase.FINALIZING and not self.payload.get("completion_gap_checked") and self.budget.can_expand(max_replans=1, llm_calls=1, max_steps=1):
+                            self.payload["completion_gap_checked"] = True
+                            self.budget.reserve(max_replans=1)
+                            messages.append(SystemMessage(content="上一轮草案尚未交付：" + gap +
+                                "请依据本轮真实协作状态，拆解缺失数据需求后调用合适 Agent；"
+                                "若需要用户确认方向或是否接受不完整草案，调用 ask_user；条件满足则用 complete_task 提交完成声明。不要再次直接输出缺失说明结束任务。"))
+                            self.payload["messages"] = serialize_messages(messages)
+                            await self.save()
+                            continue
+                        result = await by_name["ask_user"].invoke({
+                            "question": "当前方案仍有未解决的数据或协作问题：" + gap[:400] + "。你希望如何继续？",
+                            "options": ["继续获取所需数据后完成任务", "接受标明数据缺失的草案"],
+                            "allow_free_text": True,
+                        }, self.state.current_action.id)
+                        self.payload["pending_question"] = result.observation.metadata["user_question"]
+                        self.payload["waiting_message"] = self.payload["pending_question"]["question"]
+                        self.payload["messages"] = serialize_messages(messages)
+                        self.budget.halt("user_decision_required", status=GoalStatus.WAITING, next_action="ASK_USER")
+                        await self.save()
+                        self.publish("user_question", question=self.payload["pending_question"])
+                        raise RuntimeHalt("user_decision_required", status=GoalStatus.WAITING, next_action="ASK_USER")
                     if not required_satisfied and phase != BudgetPhase.FINALIZING:
                         if self.budget.can_expand(max_replans=1, llm_calls=1, max_steps=1):
                             self.budget.reserve(max_replans=1)
@@ -569,7 +633,7 @@ class GoalLoop:
                             # Only adapters loaded through permission and policy checks
                             # are executable; a model cannot invent capability access.
                             if (
-                                cap.type not in {"DATA", "WEB", "KNOWLEDGE", "MEMORY", "AGENT"}
+                                cap.type not in {"DATA", "WEB", "KNOWLEDGE", "MEMORY", "AGENT", "TOOL"}
                                 or cap.availability != "available"
                             ):
                                 raise RuntimeHalt("capability_unavailable")
@@ -579,7 +643,8 @@ class GoalLoop:
                                 validated = binding.tool.args_schema.model_validate(call["args"])
                             except ValidationError as error:
                                 validation_error = error
-                                repair = repair_tool_args(binding.tool.args_schema, call["args"], error)
+                                repair = (None if cap.type == "AGENT" else
+                                          repair_tool_args(binding.tool.args_schema, call["args"], error))
                                 if repair is not None:
                                     repaired, repaired_fields = repair
                                     try:
@@ -595,6 +660,18 @@ class GoalLoop:
                                         )
                             if validated is None:
                                 fields = sorted({str(e["loc"][0]) for e in validation_error.errors() if e["loc"]})
+                                if cap.type == "AGENT":
+                                    result_text = (
+                                        "协作参数不符合调用契约，本次未派发，任务内容未被删除。请按以下协作调用 Schema 重新提交；"
+                                        "具体子任务写入 task，外部请求字段由平台构造："
+                                        + json.dumps(binding.tool.args_schema.model_json_schema(), ensure_ascii=False)
+                                    )
+                                    if self.budget.remaining("max_replans") > 0 and phase != BudgetPhase.FINALIZING:
+                                        self.budget.reserve(max_replans=1)
+                                        self.state.next_action = "REPLAN"
+                                        self.record("Invalid collaboration arguments rejected for bounded correction", fields=fields)
+                                        continue
+                                    raise RuntimeHalt("invalid_collaboration_arguments", status=GoalStatus.BLOCKED, next_action="FAIL") from validation_error
                                 result_text = "请补充或修正工具参数：" + "、".join(fields)
                                 self.payload["waiting_message"] = result_text
                                 await self.begin(Action(kind="CAPABILITY", capability_id=cap.id))
@@ -680,11 +757,22 @@ class GoalLoop:
                                     raise RuntimeHalt(
                                         "action_result_unknown", status=GoalStatus.WAITING, next_action="ASK_USER"
                                     ) from None
+                                if result.observation.metadata.get('user_question'):
+                                    self.payload['pending_question'] = result.observation.metadata['user_question']
+                                    if cap.type == 'AGENT':
+                                        self.payload['decision_continuation'] = {'capability_id':cap.id,
+                                            'args':args, 'action_id':self.state.current_action.id}
+                                    self.payload['waiting_message'] = self.payload['pending_question']['question']
+                                    self.state.current_action.phase = 'completed'
+                                    self.state.current_action.observation_status = 'NOT_READY'
+                                    result_text = self.payload['waiting_message']
+                                    self.publish('user_question', question=self.payload['pending_question'])
+                                    raise RuntimeHalt('user_decision_required', status=GoalStatus.WAITING, next_action='ASK_USER')
                                 record = observation_record(result)
-                                source_keys = {"type", "name", "title", "document_id", "kb_id", "knowledge_base_id", "url", "page"}
+                                source_keys = {"type", "name", "title", "document_id", "kb_id", "knowledge_base_id", "url", "page", "evidence_grade", "purpose", "memory_id"}
                                 source_refs = [{k: v for k, v in item.items() if k in source_keys and isinstance(v, (str, int))}
                                                for item in (result.observation.evidence or [])[:30] if isinstance(item, dict)]
-                                self.publish("runtime_progress", message=result.observation.summary or "已取得执行结果", status="completed", sources=source_refs)
+                                self.publish("runtime_progress", message=result.observation.summary or "已取得执行结果", status="completed", sources=source_refs, data_result=cap.type == "DATA")
                                 self.payload["observations"].append(record)
                                 remaining_context = self.state.limits.context_tokens - (
                                     token_upper_bound(serialize_messages(messages))
@@ -707,6 +795,12 @@ class GoalLoop:
                                         },
                                         ensure_ascii=False,
                                     )
+                                if cap.type == "KNOWLEDGE" and result.observation.metadata.get("retrieval_trace"):
+                                    self.record("Knowledge retrieval relevance", **{
+                                        **result.observation.metadata["retrieval_trace"],
+                                        "injected_context": result_text,
+                                    })
+                                    self.publish("runtime_retrieval", entry=self.trace[-1])
                                 cache[fingerprint] = {
                                     "text": result_text,
                                     "status": status,
@@ -750,6 +844,10 @@ class GoalLoop:
                                 self.budget.halt(halt.reason, status=halt.status, next_action=halt.next_action)
                             await self.save()
                     if halt:
+                        if halt.reason == 'user_decision_required':
+                            finished = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+                            messages.extend(ToolMessage(content='未执行：等待用户回答。', tool_call_id=c['id'])
+                                            for c in response.tool_calls if c['id'] not in finished)
                         self.payload["messages"] = serialize_messages(messages)
                         raise halt
                 self.payload["messages"] = serialize_messages(messages)

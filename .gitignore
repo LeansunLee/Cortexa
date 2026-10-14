@@ -24,3 +24,8 @@ data/documents/.locks/
 # Local runtime telemetry outbox (never source data)
 data/usage/
 data/runtime_goals/
+
+# Private user decision continuation snapshots
+data/user_questions/
+
+data/prompt_requests/
