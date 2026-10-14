@@ -12,7 +12,7 @@ from cortexa.api.meetings import (
 def test_meeting_prompts_use_role_instead_of_display_name():
     agent = SimpleNamespace(
         name="Peter", role="产品经理", responsibilities="梳理需求", personality=None,
-        boundaries=None, system_prompt=None,
+        work_rules=None, system_prompt=None,
     )
     participant_prompt = _build_agent_meeting_prompt(agent, "版本规划", "分析")
     host_prompt = _build_host_summary_prompt(agent, "版本规划", 1, 2)

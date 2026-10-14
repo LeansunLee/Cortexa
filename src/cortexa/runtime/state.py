@@ -157,7 +157,7 @@ class RuntimeBudget:
                 # A two-call child needs one call to request its required tool and
                 # one to synthesize. Its parent already protects finalization.
                 "llm_calls": (
-                    0 if state.runtime_role == "CHILD" and limits.llm_calls <= 2
+                    0 if state.runtime_role == "CHILD"
                     else 1 if limits.llm_calls > 1 else 0
                 ),
                 "max_steps": 1 if limits.max_steps > 1 else 0,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
 import re
@@ -57,6 +59,22 @@ async def _get_version_id(agent_id, db):
     return ver_result.scalar()
 
 
+class ProxyExecutionError(ValueError):
+    """The remote Agent explicitly failed its task, rather than losing transport."""
+
+
+class ProxyResultUnknown(ValueError):
+    """The remote endpoint acknowledged work but has no terminal result yet."""
+
+
+def _run_failed(event):
+    # Tools may fail and be repaired by the Agent; only task-level events end the run.
+    if event.get("type") in {"tool_start", "tool_result", "tool_error"}:
+        return False
+    return (event.get("type") == "error" or event.get("status") in {"failed", "error"}
+            or (event.get("ok") is False and event.get("status") != "awaiting_user"))
+
+
 def _parse_proxy_response(response):
     content_type = response.headers.get("content-type", "").lower()
     text = response.text.lstrip("\ufeff").strip()
@@ -81,11 +99,13 @@ def _parse_proxy_response(response):
             if not isinstance(event, dict):
                 continue
             kind = event.get("type", "")
-            if kind == "error" or event.get("ok") is False or event.get("status") in ("failed", "error"):
-                raise ValueError(
+            if _run_failed(event):
+                raise ProxyExecutionError(
                     "外部智能体执行失败：" + str(event.get("error") or event.get("message") or "未提供错误详情")
                 )
-            if kind == "start":
+            if kind == 'ask_user':
+                output['user_question'] = {k:event[k] for k in ('question', 'options', 'multi_select', 'allow_free_text') if k in event}
+            elif kind == "start":
                 for key in ("session_id", "request_id", "model_provider"):
                     if key in event:
                         output[key] = event[key]
@@ -104,9 +124,16 @@ def _parse_proxy_response(response):
         output["answer"] = output.get("answer") or "".join(chunks)
         if not output["answer"]:
             raise ValueError("外部事件流已结束，但没有返回回答正文")
+        if output.get('status') == 'awaiting_user':
+            output['requires_input'] = True
+            output['user_question'] = output.get('user_question') or output.get('pending_ask') or {'question':output['answer']}
         return output
     try:
-        return json.loads(text)
+        output = json.loads(text)
+        if isinstance(output, dict) and output.get('status') == 'awaiting_user':
+            output['requires_input'] = True
+            output['user_question'] = output.get('user_question') or output.get('pending_ask') or {'question':output.get('answer', '')}
+        return output
     except json.JSONDecodeError as error:
         if "text/plain" in content_type or "text/markdown" in content_type:
             return {"answer": text}
@@ -153,7 +180,7 @@ def build_proxy_body(cfg, input_data, supplemental_prompt=None):
     return request_body
 
 
-async def send_proxy_request(cfg, request_body, *, timeout_seconds=None, max_response_bytes=None):
+async def send_proxy_request(cfg, request_body, *, timeout_seconds=None, max_response_bytes=None, on_event=None):
     """One transport attempt. Goal callers supply a bounded, already validated body."""
     endpoint = _resolve_env(cfg["endpoint"])
     method = cfg.get("method", "POST").upper()
@@ -161,7 +188,7 @@ async def send_proxy_request(cfg, request_body, *, timeout_seconds=None, max_res
     if "Content-Type" not in headers:
         headers["Content-Type"] = "application/json"
     timeout = timeout_seconds if timeout_seconds is not None else cfg.get("timeout_ms", 30000) / 1000
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with asyncio.timeout(timeout), httpx.AsyncClient(timeout=timeout) as client:
         if max_response_bytes is None:
             response = await (
                 client.get(endpoint, headers=headers, params=request_body)
@@ -172,14 +199,85 @@ async def send_proxy_request(cfg, request_body, *, timeout_seconds=None, max_res
             kwargs = {"params" if method == "GET" else "json": request_body}
             async with client.stream(method, endpoint, headers=headers, **kwargs) as response:
                 response.raise_for_status()
+                import codecs
+                decoder, events_buffer = codecs.getincrementaldecoder('utf-8')(), ''
+                streaming = 'text/event-stream' in response.headers.get('content-type', '').lower()
                 chunks, size = [], 0
+                text_parts, text_size, retained = [], 0, {}
+                # Result budget covers the report, not repeated SSE framing or tool telemetry.
+                # Transport and individual frames remain separately bounded.
+                wire_limit = max(4 * 1024 * 1024, min(32 * max_response_bytes, 32 * 1024 * 1024))
+                frame_limit = max(1024 * 1024, max_response_bytes)
+
+                async def consume(frame):
+                    nonlocal text_size
+                    data = '\n'.join(line[5:].lstrip(' ') for line in frame.splitlines() if line.startswith('data:'))
+                    if not data:
+                        return
+                    if data == '[DONE]':
+                        retained['done'] = retained.get('done', {'type': 'done'})
+                        return
+                    try:
+                        event = json.loads(data)
+                    except ValueError as error:
+                        raise ValueError('外部接口 SSE 事件包含无效 JSON') from error
+                    if not isinstance(event, dict):
+                        return
+                    kind = event.get('type')
+                    if _run_failed(event):
+                        raise ProxyExecutionError('外部智能体执行失败：' + str(event.get('error') or event.get('message') or '未提供错误详情'))
+                    if kind in ('text_delta', 'token', 'delta'):
+                        content = event.get('content', event.get('text', ''))
+                        if isinstance(content, str):
+                            text_size += len(content.encode())
+                            if text_size > max_response_bytes:
+                                raise ValueError('proxy_response_budget_exceeded')
+                            text_parts.append(content)
+                    elif kind in ('start', 'usage', 'ask_user'):
+                        retained[kind] = event
+                    elif kind in ('done', 'message_end', 'final_answer'):
+                        retained.setdefault('final_answer', {'type': 'final_answer'}).update(
+                            {key: value for key, value in event.items() if key != 'type'})
+                        if kind in ('done', 'message_end'):
+                            retained['done'] = {'type': 'done'}
+                    if sum(len(json.dumps(e, ensure_ascii=False).encode()) for e in retained.values()) > max_response_bytes:
+                        raise ValueError('proxy_response_budget_exceeded')
+                    if on_event and kind in {'start', 'tool_start', 'tool_result', 'tool_error', 'text_delta', 'usage'}:
+                        pending = on_event(event)
+                        if inspect.isawaitable(pending):
+                            await pending
+
                 async for chunk in response.aiter_bytes():
                     size += len(chunk)
-                    if size > max_response_bytes:
-                        raise ValueError("proxy_response_budget_exceeded")
-                    chunks.append(chunk)
+                    if size > (wire_limit if streaming else max_response_bytes):
+                        raise ValueError('proxy_stream_budget_exceeded' if streaming else 'proxy_response_budget_exceeded')
+                    if not streaming:
+                        chunks.append(chunk)
+                        continue
+                    events_buffer = (events_buffer + decoder.decode(chunk)).replace('\r\n', '\n')
+                    while '\n\n' in events_buffer:
+                        frame, events_buffer = events_buffer.split('\n\n', 1)
+                        if len(frame.encode()) > frame_limit:
+                            raise ValueError('proxy_stream_budget_exceeded')
+                        await consume(frame)
+                    if len(events_buffer.encode()) > frame_limit:
+                        raise ValueError('proxy_stream_budget_exceeded')
+                if streaming:
+                    events_buffer += decoder.decode(b'', final=True)
+                    if events_buffer.strip():
+                        await consume(events_buffer)
+                    events = [retained[k] for k in ('start', 'usage', 'ask_user') if k in retained]
+                    if text_parts:
+                        events.append({'type': 'text_delta', 'content': ''.join(text_parts)})
+                    events.extend(retained[k] for k in ('final_answer', 'done') if k in retained)
+                    compact = '\n\n'.join('data: ' + json.dumps(e, ensure_ascii=False) for e in events)
+                    parsed = _parse_proxy_response(httpx.Response(response.status_code, headers=response.headers,
+                        text=compact, request=response.request))
+                    if len(json.dumps(parsed, ensure_ascii=False).encode()) > max_response_bytes:
+                        raise ValueError('proxy_response_budget_exceeded')
+                    return parsed
                 response = httpx.Response(
-                    response.status_code, headers=response.headers, content=b"".join(chunks), request=response.request
+                    response.status_code, headers=response.headers, content=b''.join(chunks), request=response.request
                 )
     response.raise_for_status()
     return _parse_proxy_response(response)
@@ -198,6 +296,28 @@ def map_proxy_output(cfg, raw_output):
     return mapped
 
 
+def response_limit(cfg):
+    value = (cfg.get("goal_contract") or {}).get("response_bytes", 128000)
+    return max(1024, min(1048576, int(value)))
+
+
+def validated_proxy_output(agent, raw):
+    """Apply the same terminal state and output contract in every Proxy entry."""
+    if isinstance(raw, dict):
+        if raw.get('status') in {'running', 'pending', 'queued', 'started'}:
+            raise ProxyResultUnknown('外部任务尚未完成，需要核实原会话；不能重复派发')
+        if raw.get("user_question") or raw.get("status") == "awaiting_user":
+            return None
+        if raw.get("success") is False or raw.get("requires_input") or _run_failed(raw):
+            raise ProxyExecutionError("外部 Agent 未完成任务，请查看失败或缺参状态")
+    output = map_proxy_output(agent.proxy_config, raw)
+    if agent.output_schema:
+        from cortexa.runtime.contracts import contract_errors
+        if contract_errors(agent.output_schema, output):
+            raise ProxyExecutionError("代理输出未通过契约校验")
+    return output
+
+
 async def execute_proxy_agent(
     agent: Agent,
     input_data: dict[str, Any],
@@ -206,6 +326,7 @@ async def execute_proxy_agent(
     resolution_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a proxy agent by calling the external system endpoint."""
+    from cortexa.conversation.questions import UserQuestionPause
     cfg = agent.proxy_config or {}
     if not cfg.get("endpoint"):
         return {"success": False, "error": "Proxy endpoint is not configured", "duration_ms": 0}
@@ -238,6 +359,11 @@ async def execute_proxy_agent(
     if resolution_result is not None:
         if not resolution_result["canInvoke"]:
             validation_errors = resolution_result.get("validationErrors") or []
+            if resolution_result['blockingMissingFields']:
+                from cortexa.conversation.questions import UserQuestionPause, question
+                public = question({'question':resolution_result['message'] or '请补充代理执行所需信息。'}, agent)
+                raise UserQuestionPause(public, {'engine':'proxy_setup','agent_id':str(agent.id),
+                    'input_data':input_data,'supplemental_prompt':supplemental_prompt,'resolution_context':resolution_context})
             return {
                 "success": False,
                 "requires_input": bool(resolution_result["blockingMissingFields"])
@@ -246,20 +372,30 @@ async def execute_proxy_agent(
                 "resolution": resolution_result,
                 "duration_ms": int((time.time() - start_time) * 1000),
             }
-    retry = cfg.get("retry", 0)
 
     try:
         request_body = build_proxy_body(cfg, resolved_input, outbound_supplemental_prompt)
     except ValueError as error:
         return {"success": False, "error": str(error), "duration_ms": 0}
 
+    from cortexa.runtime.proxy import contract_signature, REJECTED_HTTP_STATUSES
+    identity = {}
+    async def remember(event):
+        if event.get('type') == 'start' and isinstance(event.get('session_id'), str):
+            identity.update(session_id=event['session_id'], request_id=event.get('request_id'), signature=contract_signature(agent))
     version_id = await _get_version_id(agent.id, db)
     last_error = None
+    evidence_error = None
 
-    for attempt in range(retry + 1):
+    for attempt in range(1):
         try:
-            raw_output = await send_proxy_request(cfg, request_body)
-            output_data = map_proxy_output(cfg, raw_output)
+            raw_output = await send_proxy_request(cfg, request_body, max_response_bytes=response_limit(cfg), on_event=remember)
+            if isinstance(raw_output, dict) and raw_output.get('user_question'):
+                from cortexa.conversation.questions import UserQuestionPause, question, proxy_context
+                raise UserQuestionPause(question(raw_output['user_question'], agent), proxy_context(agent, raw_output, request_body))
+            if isinstance(raw_output, dict) and isinstance(raw_output.get('session_id'), str):
+                identity.update(session_id=raw_output['session_id'], request_id=raw_output.get('request_id'), signature=contract_signature(agent))
+            output_data = validated_proxy_output(agent, raw_output)
 
             duration_ms = int((time.time() - start_time) * 1000)
             await _save_run(agent.id, version_id, resolved_input, output_data, "completed", None, duration_ms, db)
@@ -271,11 +407,44 @@ async def execute_proxy_agent(
                 "duration_ms": duration_ms,
             }
 
+        except UserQuestionPause:
+            raise
         except Exception as e:
-            last_error = str(e)
-            if attempt < retry:
-                continue
+            evidence_error = e
+            last_error = ("外部 Agent 明确返回失败或输出未满足契约，请核对配置与执行结果。"
+                if isinstance(e, ProxyExecutionError) else "外部调用未取得可靠结果；如已开始执行，请核实原会话，不能重复派发。")
 
     duration_ms = int((time.time() - start_time) * 1000)
-    await _save_run(agent.id, version_id, resolved_input, None, "failed", last_error, duration_ms, db)
-    return {"success": False, "error": last_error, "resolution": resolution_result, "duration_ms": duration_ms}
+    unknown = isinstance(evidence_error, (httpx.TransportError, TimeoutError, ProxyResultUnknown)) or (
+        isinstance(evidence_error, httpx.HTTPStatusError) and evidence_error.response.status_code not in REJECTED_HTTP_STATUSES
+    ) or (
+        isinstance(evidence_error, ValueError) and not isinstance(evidence_error, ProxyExecutionError)
+        and any(term in str(evidence_error) for term in ('未正常结束', 'proxy_response_budget', 'proxy_stream_budget', 'SSE 事件包含无效')))
+    await _save_run(agent.id, version_id, resolved_input, None, "unknown" if unknown else "failed", last_error, duration_ms, db)
+    if unknown and identity.get('session_id'):
+        from cortexa.conversation.questions import question
+        public = question({'question':'原外部会话结果需要核实，将读取原会话而不重新派发任务。'}, agent)
+        public.update(status='interrupted', can_recover=True)
+        raise UserQuestionPause(public, {'engine':'proxy_reconcile','agent_id':str(agent.id),
+            'run':{'input':resolved_input,'request_body':request_body,'remote_execution':identity}})
+    return {"success": False, "error": last_error, "resolution": resolution_result, "duration_ms": duration_ms,
+            "result_unknown": unknown}
+
+
+async def read_proxy_turn(cfg, session_id):
+    """Read-only reconciliation; never send the original run request again."""
+    from urllib.parse import quote
+    endpoint = _resolve_env(cfg.get('result_endpoint') or '')
+    run_endpoint = _resolve_env(cfg.get('endpoint') or '')
+    if endpoint:
+        endpoint = endpoint.replace('{session_id}', quote(session_id, safe=''))
+    elif run_endpoint.rstrip('/').endswith('/run'):
+        endpoint = run_endpoint.rstrip('/')[:-4] + '/sessions/' + quote(session_id, safe='') + '/result'
+    else:
+        raise ValueError('此代理尚未配置只读结果查询接口')
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(endpoint, headers=_resolve_headers(cfg.get('headers') or {}))
+        response.raise_for_status()
+        if len(response.content) > 1048576:
+            raise ValueError('外部报告超过读取预算')
+        return response.json()

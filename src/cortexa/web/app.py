@@ -177,7 +177,7 @@ async def page_index(request: Request) -> HTMLResponse:
     from fastapi.responses import FileResponse
     index_path = DIST_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return templates.TemplateResponse(request, "dashboard.html")
 
 

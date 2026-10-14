@@ -221,7 +221,7 @@ async def run_integration():
                     await db.delete(grant)
                     await db.commit()
                 revoked = await asyncio.wait_for(task, 8)
-                assert "MUST NOT ARRIVE" not in revoked.text and "Authorization changed" in revoked.text, revoked.text
+                assert "MUST NOT ARRIVE" not in revoked.text and '"code": "authorization_changed"' in revoked.text, revoked.text
                 async with factory() as db:
                     db.add(sm.AgentGrant(member_id=member.id, agent_id=ag1.id))
                     await db.commit()

@@ -212,18 +212,18 @@
             </div>
           </div>
 
-          <!-- 工作边界 -->
-          <div v-if="currentSection === 'boundary' && editingAgent.agent_type !== 'proxy'" class="section">
-            <h3>工作边界</h3>
+          <!-- 工作规则 -->
+          <div v-if="currentSection === 'rules' && editingAgent.agent_type !== 'proxy'" class="section">
+            <h3>工作规则</h3>
             <div class="form-group">
-              <label>边界定义 <LlmContextHint text="作为「工作边界」写入本 Agent 的系统提示词，告诉模型可以做什么及哪些操作需谨慎。" /></label>
-              <textarea v-model="editingAgent.boundaries" rows="5" 
-                placeholder="明确智能体可以做什么，不可以做什么"></textarea>
+              <label>规则定义 <LlmContextHint text="作为「工作规则」写入本 Agent 的系统提示词，指导执行流程、协作方式、交付标准与工作边界；需要确认的操作也在这里说明。" /></label>
+              <textarea v-model="editingAgent.work_rules" rows="10"
+                placeholder="说明执行步骤、数据核实要求、何时邀请协作、交付标准，以及不能做什么和哪些操作需要确认"></textarea>
             </div>
             <div class="form-group">
-              <label>预设边界（点击自动填入）</label>
+              <label>预设规则（点击自动填入）</label>
               <div class="preset-card-grid">
-                <div v-for="bp in boundaryPresets" :key="bp.name" class="preset-card-item" @click="applyBoundaryPreset(bp)">
+                <div v-for="bp in workRulesPresets" :key="bp.name" class="preset-card-item" @click="applyWorkRulesPreset(bp)">
                   <div class="preset-card-icon"><component :is="iconComponents[bp.icon]" :size="18" /></div>
                   <div class="preset-card-info">
                     <div class="preset-card-name">{{ bp.name }}</div>
@@ -237,7 +237,7 @@
           <!-- Proxy 配置 -->
           <div v-if="currentSection === 'proxy' && editingAgent.agent_type === 'proxy'" class="section">
             <h3><Link :size="18" /> Proxy 代理配置</h3>
-            <p class="section-hint">连接外部 Agent。协作时可先由平台把任务和上下文整理成一段完整请求。</p>
+            <p class="section-hint">连接外部 Agent。配置任务协作时允许发送的字段，以及直接对话时的上下文整理方式。</p>
             <div>
               <div class="form-group">
                 <label>外部系统 Endpoint *</label>
@@ -245,26 +245,26 @@
               </div>
 
               <section class="prompt-resolution-card goal-proxy-contract">
-                <h4>目标模式输入契约</h4>
-                <label><input type="checkbox" :checked="proxyGoalContract.enabled" @change="setGoalContractEnabled($event.target.checked)" /> 允许作为目标协作参与者</label>
-                <p class="section-hint">只发送契约允许的字段。完整对话、记忆和主 Agent 提示词不会进入请求；下方的自动整理、补充提示词和重试设置仅用于普通对话。</p>
+                <div class="resolution-config-head">
+                  <div><h4>任务协作输入权限</h4><p>允许其他 Agent 邀请本代理执行任务。</p></div>
+                  <label class="capability-switch">
+                    <input type="checkbox" :checked="proxyGoalContract.enabled" @change="setGoalContractEnabled($event.target.checked)" aria-label="允许本代理参与任务协作" />
+                    <span class="capability-switch-track" aria-hidden="true"></span><span>{{ proxyGoalContract.enabled ? '已开启' : '未开启' }}</span>
+                  </label>
+                </div>
+                <p class="section-hint">字段可使用用户参数、任务原文和已完成结果。完整对话、记忆和主 Agent 提示词不会进入请求。</p>
                 <template v-if="proxyGoalContract.enabled">
                   <div class="form-group"><label>输入预算（保守估算，256–8000）</label><input type="number" v-model.number="proxyGoalContract.input_budget" min="256" max="8000" /></div>
                   <p v-if="!schemaFields.length">请先在「输入输出 Schema」声明 object 输入字段和类型。</p>
-                  <div v-for="field in schemaFields" :key="field.name" class="form-group">
-                    <label>{{ field.name }} · 允许来源</label>
-                    <label v-for="source in goalInputSources" :key="source.value"><input type="checkbox" :checked="(proxyGoalContract.fields[field.name] || []).includes(source.value)" @change="toggleGoalSource(field.name, source.value, $event.target.checked)" /> {{ source.label }}</label>
-                  </div>
-                  <p class="section-hint">任务原文优先使用本代理的分工，未填写时使用当前目标；Observation 只取指定事实字段或已有摘要。</p>
-                  <label><input type="checkbox" v-model="editingAgent.collaboration.allow_incoming" /> 允许接收协作邀请</label>
-                  <label><input type="checkbox" v-model="editingAgent.collaboration.discoverable" /> 允许被自主发现</label>
+                  <p class="section-hint">任务原文优先使用本代理的分工，未填写时使用当前任务；已完成的查询或协作结果只取指定字段或已有摘要。</p>
+                  <p class="section-hint">所有字段来源均已允许 · 可接收协作邀请 · 可被自主发现</p>
                 </template>
               </section>
               <div class="prompt-resolution-card">
                 <div class="resolution-config-head">
                   <div>
-                    <h4>自动整理协作上下文</h4>
-                    <p>适合只接收一段文字的 Proxy。平台先整理，外部 Agent 不会收到完整对话。</p>
+                    <h4>直接对话的上下文整理</h4>
+                    <p>直接与本代理对话时，将任务和允许的上下文整理成一段请求。其他 Agent 发起任务协作时，使用上方的输入权限配置。</p>
                   </div>
                   <label class="capability-switch">
                     <input type="checkbox" :checked="proxyPromptResolution.enabled" @change="setPromptResolutionEnabled($event.target.checked)" />
@@ -273,12 +273,12 @@
                 </div>
                 <div v-if="proxyPromptResolution.enabled" class="prompt-resolution-body">
                   <div class="form-group">
-                    <label>整理要求 <LlmContextHint text="开启自动整理后，作为平台整理模型的系统指令，指导它把允许的协作上下文整理成发送给外部 Proxy 的请求。" collaboration-text="影响协作任务如何整理成请求并发送给外部 Proxy。" /></label>
+                    <label>整理要求 <LlmContextHint text="直接与本代理对话时，指导平台把任务和允许的对话上下文整理成发送给外部 Proxy 的请求。" /></label>
                     <textarea v-model="proxyCfg.supplemental_prompt" rows="5" placeholder="例如：整理成可直接执行的 DMS 查询请求；保留明确的人名、事项和时间，不要编造信息。"></textarea>
                     <div class="field-mapping-hint">这段文字用于指导平台整理请求，不会连同完整上下文直接发送给外部 Agent。</div>
                   </div>
                   <div class="form-group compact-group">
-                    <label>整理时可以参考 <LlmContextHint text="勾选的来源内容会按需提供给平台整理模型，帮助它生成发送给外部 Proxy 的请求；当前任务始终提供。" collaboration-text="决定协作请求整理时哪些对话、记忆或前序结果可以提供给外部 Proxy。" /></label>
+                    <label>整理时可以参考 <LlmContextHint text="勾选的来源内容会按需提供给平台整理模型，帮助它生成发送给外部 Proxy 的请求；当前任务始终提供。" /></label>
                     <div class="simple-source-options">
                       <label v-for="source in promptSourceOptions" :key="source.value">
                         <input type="checkbox" :checked="proxyPromptResolution.allowed_sources.includes(source.value)" @change="togglePromptSource(source.value, $event.target.checked)" />
@@ -299,8 +299,8 @@
                       <SearchSelect v-model="proxyCfg.method" :options="proxyMethodOptions" placeholder="选择请求方法" aria-label="请求方法" />
                     </div>
                     <div class="form-group">
-                      <label>超时 (ms，最大 10 分钟)</label>
-                      <input type="number" v-model.number="proxyCfg.timeout_ms" min="1000" max="600000" step="1000" />
+                      <label>超时 (ms，最大 1000 秒)</label>
+                      <input type="number" v-model.number="proxyCfg.timeout_ms" min="1000" max="1000000" step="1000" />
                     </div>
                   </div>
                   <div class="form-group">
@@ -310,10 +310,7 @@
                     </div>
                   </div>
                   <div class="form-row">
-                    <div class="form-group">
-                      <label>重试次数</label>
-                      <input type="number" v-model.number="proxyCfg.retry" min="0" max="5" />
-                    </div>
+                    <p class="form-hint">外部任务不自动重发。结果未知时，先读取原会话核实，避免重复执行。</p>
                   </div>
                   <div v-if="!proxyPromptResolution.enabled" class="form-group">
                     <label>直接发送的补充提示词（兼容模式）</label>
@@ -730,17 +727,8 @@ const proxyGoalContract = computed(() => {
   cfg.goal_contract.fields ||= {}
   return cfg.goal_contract
 })
-const goalInputSources = [
-  { value: 'explicit', label: '用户填写的显式参数' }, { value: 'goal_task', label: '本次任务原文' },
-  { value: 'observation_facts', label: '指定 Observation 的结构化事实' }, { value: 'observation_summary', label: '指定 Observation 的已有摘要' },
-]
 const setGoalContractEnabled = enabled => {
   proxyGoalContract.value.enabled = enabled
-  if (enabled) for (const field of schemaFields.value) proxyGoalContract.value.fields[field.name] ||= ['explicit']
-}
-const toggleGoalSource = (field, source, enabled) => {
-  const prior = proxyGoalContract.value.fields[field] || []
-  proxyGoalContract.value.fields[field] = enabled ? [...new Set([...prior, source])] : prior.filter(value => value !== source)
 }
 
 const resolutionSources = [
@@ -838,7 +826,7 @@ const allSectionGroups = [
     { id: 'basic', icon: 'User', name: '基础信息' },
     { id: 'personality', icon: 'Smile', name: '人格' },
     { id: 'role', icon: 'Briefcase', name: '职责' },
-    { id: 'boundary', icon: 'Shield', name: '工作边界' },
+    { id: 'rules', icon: 'Shield', name: '工作规则' },
   ]},
   { label: '能力', items: [
     { id: 'proxy', icon: 'Link', name: 'Proxy 配置' },
@@ -925,19 +913,19 @@ const applyRolePreset = (rp) => {
   showToast('已填入「' + rp.role + '」预设内容')
 }
 
-// --- Boundary Presets ---
-const boundaryPresets = [
-  { icon: 'Shield', name: '保守型', desc: '严格按指令执行，不主动扩展任务范围', value: '【工作边界 - 保守型】\n可以做：\n- 严格按用户指令完成指定任务\n- 在已有知识范围内回答问题\n- 提供客观事实和数据\n\n不可以做：\n- 不主动扩展任务范围\n- 不执行未经确认的高风险操作\n- 不访问或修改未授权的资源' },
-  { icon: 'Scale', name: '标准型', desc: '职责范围内主动思考，超出范围需确认', value: '【工作边界 - 标准型】\n可以做：\n- 在职责范围内主动分析和提供建议\n- 识别潜在问题并预警\n- 推荐优化方案\n\n需要确认：\n- 超出当前任务范围的额外操作\n- 涉及资金、权限变更的操作\n- 对外发布或通知类操作\n\n不可以做：\n- 未经确认删除重要数据\n- 绕过审批流程' },
-  { icon: 'Rocket', name: '激进型', desc: '主动发现问题并解决，大胆提供建议', value: '【工作边界 - 激进型】\n可以做：\n- 主动发现问题并提出解决方案\n- 大胆给出创新性建议\n- 跨领域关联分析\n- 持续追问直到问题根因明确\n\n需要确认：\n- 直接执行影响生产环境的操作\n- 替代他人做决策\n\n不可以做：\n- 违反法律法规的操作\n- 泄露敏感信息' },
-  { icon: 'Target', name: '协作型', desc: '主动协调资源，推动跨角色协作', value: '【工作边界 - 协作型】\n可以做：\n- 主动识别需要协作的环节\n- 推荐合适的协作角色或工具\n- 整合多方输入给出综合方案\n- 跟踪协作进度并提醒\n\n需要确认：\n- 代替其他角色做决策\n- 调整他人工作优先级\n\n不可以做：\n- 未经沟通直接分配任务给他人' },
-  { icon: 'Shield', name: '合规型', desc: '严格遵守流程规范，留痕可审计', value: '【工作边界 - 合规型】\n可以做：\n- 按标准流程执行每一步\n- 记录操作日志和决策依据\n- 对照规范逐项检查\n\n需要确认：\n- 任何流程外的变通操作\n\n不可以做：\n- 跳过审批或检查环节\n- 未记录直接修改数据\n- 违反数据安全规范' },
+// --- Work Rules Presets ---
+const workRulesPresets = [
+  { icon: 'Shield', name: '保守型', desc: '严格按指令执行，不主动扩展任务范围', value: '【工作规则 - 保守型】\n可以做：\n- 严格按用户指令完成指定任务\n- 在已有知识范围内回答问题\n- 提供客观事实和数据\n\n不可以做：\n- 不主动扩展任务范围\n- 不执行未经确认的高风险操作\n- 不访问或修改未授权的资源' },
+  { icon: 'Scale', name: '标准型', desc: '职责范围内主动思考，超出范围需确认', value: '【工作规则 - 标准型】\n可以做：\n- 在职责范围内主动分析和提供建议\n- 识别潜在问题并预警\n- 推荐优化方案\n\n需要确认：\n- 超出当前任务范围的额外操作\n- 涉及资金、权限变更的操作\n- 对外发布或通知类操作\n\n不可以做：\n- 未经确认删除重要数据\n- 绕过审批流程' },
+  { icon: 'Rocket', name: '激进型', desc: '主动发现问题并解决，大胆提供建议', value: '【工作规则 - 激进型】\n可以做：\n- 主动发现问题并提出解决方案\n- 大胆给出创新性建议\n- 跨领域关联分析\n- 持续追问直到问题根因明确\n\n需要确认：\n- 直接执行影响生产环境的操作\n- 替代他人做决策\n\n不可以做：\n- 违反法律法规的操作\n- 泄露敏感信息' },
+  { icon: 'Target', name: '协作型', desc: '主动协调资源，推动跨角色协作', value: '【工作规则 - 协作型】\n可以做：\n- 主动识别需要协作的环节\n- 推荐合适的协作角色或工具\n- 整合多方输入给出综合方案\n- 跟踪协作进度并提醒\n\n需要确认：\n- 代替其他角色做决策\n- 调整他人工作优先级\n\n不可以做：\n- 未经沟通直接分配任务给他人' },
+  { icon: 'Shield', name: '合规型', desc: '严格遵守流程规范，留痕可审计', value: '【工作规则 - 合规型】\n可以做：\n- 按标准流程执行每一步\n- 记录操作日志和决策依据\n- 对照规范逐项检查\n\n需要确认：\n- 任何流程外的变通操作\n\n不可以做：\n- 跳过审批或检查环节\n- 未记录直接修改数据\n- 违反数据安全规范' },
 ]
 
-const applyBoundaryPreset = (bp) => {
+const applyWorkRulesPreset = (bp) => {
   if (!editingAgent.value) return
-  editingAgent.value.boundaries = bp.value
-  showToast('已填入「' + bp.name + '」边界预设')
+  editingAgent.value.work_rules = '执行要求：先确认任务与所需信息，核实数据来源；缺少自身能力时按协作策略邀请合适的 Agent；完成后给出结果、依据和待确认事项。\n\n' + bp.value
+  showToast('已填入「' + bp.name + '」规则预设')
 }
 
 // --- Avatar Crop ---
@@ -1348,8 +1336,7 @@ const duplicateAgent = async (agent) => {
       role: agent.role,
       personality: agent.personality,
       responsibilities: agent.responsibilities,
-      boundaries: agent.boundaries,
-      behavior: agent.behavior,
+      work_rules: agent.work_rules,
       model: agent.model,
       agent_type: agent.agent_type,
       avatar: agent.avatar,
@@ -1637,6 +1624,9 @@ onMounted(() => {
 .field-mapping-hint { font-size: 12px; color: var(--text3); margin-top: 6px; }
 .prompt-resolution-card { margin: 4px 0 18px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
 .prompt-resolution-card h4 { margin: 0; font-size: 15px; }
+.goal-proxy-contract .resolution-config-head { align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.goal-proxy-contract > .section-hint { margin: 0 0 16px; line-height: 1.65; }
+.goal-proxy-contract .form-group { margin-bottom: 14px; }
 .prompt-resolution-card .resolution-config-head p { margin: 4px 0 0; color: var(--text3); font-size: 12px; line-height: 18px; }
 .prompt-resolution-body { margin-top: 16px; }
 .prompt-resolution-body .form-group:last-child { margin-bottom: 0; }

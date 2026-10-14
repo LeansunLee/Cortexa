@@ -20,15 +20,14 @@
         <p v-else-if="!agents.length" class="new-chat-hint">暂无可用 Agent</p>
         <div v-else class="new-chat-agent-list" role="radiogroup" aria-label="选择智能体">
           <label v-for="agent in agents" :key="agent.id" class="new-chat-agent" :class="{ selected: newChatAgentId === agent.id }">
-            <input v-model="newChatAgentId" type="radio" name="new-chat-agent" :value="agent.id" />
+            <input v-model="newChatAgentId" type="radio" name="new-chat-agent" :value="agent.id" :disabled="creatingChat" />
             <span class="new-chat-agent-avatar" aria-hidden="true"><AgentAvatar :avatar="agent.avatar || ''" /></span>
             <span class="new-chat-agent-name">{{ agent.name }}</span>
             <Check v-if="newChatAgentId === agent.id" :size="16" class="new-chat-agent-check" aria-hidden="true" />
           </label>
         </div>
         <div class="new-chat-actions">
-          <button class="btn btn-ghost btn-sm" @click="closeNewChat">取消</button>
-          <button class="btn btn-primary btn-sm" :disabled="!newChatAgentId || creatingChat" @click="createChat">{{ creatingChat ? '创建中…' : '创建' }}</button>
+          <button class="btn btn-ghost btn-sm" :disabled="creatingChat" @click="closeNewChat">取消</button>
         </div>
       </div>
 
@@ -76,13 +75,13 @@
     <!-- Main Chat Area -->
     <div class="chat-main">
       <!-- No conversation selected -->
-      <div v-if="!currentConvId" class="chat-empty">
+      <div v-if="!currentConvId || (showNewChat && !newChatAgentId)" class="chat-empty">
         <div class="empty-state">
           <div class="empty-icon-wrap">
             <MessageSquare :size="32" />
           </div>
-          <h3>选择一个对话</h3>
-          <p>或创建新对话开始与智能体交互</p>
+          <h3>{{ showNewChat ? '选择一个智能体' : '选择一个对话' }}</h3>
+          <p>{{ showNewChat ? '选择左侧 Agent，发送第一条消息即可开始对话' : '或新建对话开始与智能体交互' }}</p>
         </div>
       </div>
 
@@ -95,13 +94,14 @@
               <span v-else class="chat-agent-emoji"><AppIcon name="Bot" :size="20" /></span>
             </div>
             <div class="chat-header-text">
-              <input v-if="editingConvId === currentConvId && renameTarget === 'header'" ref="headerRenameInput" v-model="renameTitle" class="chat-title-input" aria-label="对话标题" maxlength="200" @blur="saveRename(currentConvId)" @keydown.enter.prevent="saveRename(currentConvId)" @keydown.esc.stop="cancelRename" />
+              <span v-if="curSession?.isDraft" class="chat-conv-title">新对话</span>
+              <input v-else-if="editingConvId === currentConvId && renameTarget === 'header'" ref="headerRenameInput" v-model="renameTitle" class="chat-title-input" aria-label="对话标题" maxlength="200" @blur="saveRename(currentConvId)" @keydown.enter.prevent="saveRename(currentConvId)" @keydown.esc.stop="cancelRename" />
               <button v-else type="button" class="chat-conv-title" :title="`点击修改对话标题：${currentConvTitle}`" @click="startRename(currentConv, 'header')">{{ currentConvTitle }}</button>
               <span class="chat-agent-name">{{ currentConv?.agent_name || currentConvAgent?.name || '通用对话' }}</span>
               <span v-if="renameError" class="chat-rename-error" role="alert">{{ renameError }}</span>
             </div>
           </div>
-          <button v-if="debugEnabled" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
+          <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
             <Bug :size="15" />
             <span>调试</span>
             <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
@@ -116,7 +116,7 @@
               <span v-else><AppIcon name="Bot" :size="20" /></span>
             </div>
             <h3>{{ currentConvAgent ? currentConvAgent.name : '通用对话' }}</h3>
-            <p>{{ currentConvAgent?.description || '开始输入消息来对话' }}</p>
+            <p>{{ curSession?.isDraft ? '发送第一条消息后创建对话' : currentConvAgent?.description || '开始输入消息来对话' }}</p>
           </div>
 
           <!-- Messages -->
@@ -141,16 +141,10 @@
             <!-- Assistant Message -->
             <div v-else :id="msg?.id ? `message-${msg.id}` : undefined" class="msg-row msg-row-assistant">
               <div class="msg-col-assistant">
-                <details v-if="(msg._steps || msg.metadata_json?.steps)?.length" class="completed-process">
-                  <summary>处理过程 · {{ (msg._steps || msg.metadata_json.steps).length }} 个步骤</summary>
-                  <div v-for="(step, index) in (msg._steps || msg.metadata_json.steps)" :key="index" :class="['status-step', 'outcome-' + stepOutcome(step, index, msg._steps || msg.metadata_json.steps, false)]">
-                    <span class="status-icon">
-                      <AlertCircle v-if="stepOutcome(step, index, msg._steps || msg.metadata_json.steps, false) === 'error'" :size="14" aria-label="失败" />
-                      <CheckCircle v-else :size="14" aria-label="完成" />
-                    </span>
-                    {{ cleanStatusText(step.message) }}
-                  </div>
-                </details>
+                <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length"
+                  :steps="msg._steps || msg.metadata_json.steps" :goal="msg.metadata_json?.execution_goal || ''"
+                  :usage="msg.metadata_json?.execution_usage || []" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
+                  @source="source => showSources({ metadata_json: { sources: [source] } })" />
                 <!-- Collaboration Card (completed) -->
                 <AgentCollaborationCard
                   v-if="msg._collabResults && msg._collabResults.length > 0"
@@ -166,7 +160,10 @@
                   :source-avatar="currentConvAgent?.avatar || 'Bot'"
                 />
 
-                <div class="msg-content-assistant" v-html="formatMessage(msg.content)"></div>
+                <UserQuestionCard v-if="isActiveQuestionMessage(msg)" :key="curSession.pendingQuestion.id"
+                  :question="curSession.pendingQuestion" :busy="sending || streaming" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" />
+                <div v-else class="msg-content-assistant" v-html="formatMessage(msg.content)"></div>
+                <BudgetNotice :notices="msg.metadata_json?.budget_notices || []" />
                 <div v-if="msg.metadata_json?.stopped" class="preview-hint">已停止生成</div>
 
                 <!-- Sources -->
@@ -186,7 +183,7 @@
                   </div>
                 </div>
 
-                <WorkCandidates v-if="msg.id && msg.role === 'assistant'" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
+                <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
                   <span class="action-time" v-if="msg.created_at">{{ formatMessageTime(msg.created_at) }}</span>
@@ -199,7 +196,7 @@
                     <Check v-if="copiedIdx === i" :size="14" class="copy-ok" />
                     <Copy v-else :size="14" />
                   </button>
-                  <button v-if="i === messages.length - 1 && msg.role === 'assistant' && !sending && !streaming" class="action-btn" @click="regenerateMessage(i)" title="重新生成">
+                  <button v-if="i === messages.length - 1 && msg.role === 'assistant' && !sending && !streaming && !curSession?.pendingQuestion && !curSession?.goal?.can_reconcile" class="action-btn" @click="regenerateMessage(i)" title="重新生成">
                     <RefreshCw :size="14" />
                   </button>
 
@@ -224,18 +221,9 @@
           <!-- Agent Status Panel -->
           <div v-if="(sending || streaming) && statusSteps.length > 0" class="msg-row msg-row-assistant">
             <div class="msg-col-assistant">
-              <details class="agent-status-panel" :open="!streamContent">
-                <summary>{{ statusSteps.at(-1)?.message || '处理过程' }} · 展开详情</summary>
-                <div v-for="(step, idx) in statusSteps" :key="idx" :class="['status-step', 'outcome-' + stepOutcome(step, idx, statusSteps), { 'is-working': stepOutcome(step, idx, statusSteps) === 'running' }]">
-                  <span class="status-icon">
-                    <Loader v-if="stepOutcome(step, idx, statusSteps) === 'running'" :size="14" class="runtime-spinner" aria-label="进行中" />
-                    <AlertCircle v-else-if="stepOutcome(step, idx, statusSteps) === 'error'" :size="14" aria-label="失败" />
-                    <CheckCircle v-else :size="14" aria-label="完成" />
-                  </span>
-                  <span class="status-text">{{ cleanStatusText(step.message) }}</span>
-                  <span v-if="step.detail" class="status-detail">{{ step.detail }}</span>
-                </div>
-              </details>
+              <RuntimeTimeline :steps="statusSteps" :goal="curSession?.liveDebugPrompt || ''" :live="true"
+                :usage="Object.values(curSession?.runtimeUsage || {})" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
+                @source="source => showSources({ metadata_json: { sources: [source] } })" />
             </div>
           </div>
           <!-- Fallback thinking indicator (before first status) -->
@@ -257,6 +245,9 @@
             </div>
           </div>
 
+          <div v-if="(curSession?.pendingQuestion && !questionInMessages) || collaborationQuestion" class="msg-row msg-row-assistant">
+            <div class="msg-col-assistant"><UserQuestionCard :key="(curSession.pendingQuestion || collaborationQuestion).id" :question="curSession.pendingQuestion || collaborationQuestion" :busy="sending || streaming || curSession?.approvalBusy" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" /></div>
+          </div>
           <!-- Error state -->
           <div v-if="streamError" class="msg-error-bar">
             <div class="msg-error-text">
@@ -264,6 +255,7 @@
               <span>{{ streamError }}</span>
             </div>
             <button v-if="curSession?.unavailable" class="btn-retry-sm" @click="recoverConversation" :disabled="sending">新建对话继续</button>
+            <button v-else-if="curSession?.pendingQuestion" class="btn-retry-sm" @click="loadQuestion(currentConvId, curSession)">刷新状态</button>
             <button v-else class="btn-retry-sm" @click="retryMessage">
               <RefreshCw :size="12" /> 重试
             </button>
@@ -272,19 +264,17 @@
 
         <button v-if="hasNewContent" class="new-content-button" @click="scrollToBottom(true)">有新内容 ↓</button>
 
-        <section v-if="curSession?.goal?.reason === 'collaboration_approval_required'" class="goal-panel" aria-label="协作授权">
-          <div class="goal-approval">
-            <p>请选择允许参与本次任务的智能体。</p>
-            <label v-for="candidate in curSession.goalCandidates" :key="candidate.id" class="goal-candidate">
-              <input type="checkbox" v-model="curSession.goalSelection" :value="candidate.id" :disabled="curSession.approvalBusy" />
-              <span><strong>{{ candidate.name }}</strong><small>{{ candidate.role }}{{ candidate.responsibilities ? ` · ${candidate.responsibilities}` : '' }}</small></span>
-            </label>
-            <p v-if="!curSession.goalCandidates.length">候选已不可用，可以拒绝并继续。</p>
-            <button type="button" class="btn btn-primary btn-sm" :disabled="curSession.approvalBusy || sending || streaming" @click="approveGoal">{{ curSession.approvalBusy ? '正在保存…' : curSession.goalSelection.length ? '允许所选并继续' : '全部拒绝并继续' }}</button>
-          </div>
-        </section>
+        <div v-if="curSession?.goal?.can_reconcile && !curSession?.pendingQuestion && !sending && !streaming" class="goal-panel" aria-live="polite">
+          外部调用的结果需要核实；将读取原会话，不重新派发任务。
+          <button class="source-open" @click="sendMessage({ goal_recover: true })">检查原会话并继续</button>
+        </div>
+        <div v-else-if="curSession?.goal?.status === 'RUNNING' && !sending && !streaming" class="goal-panel" aria-live="polite">
+          任务仍在后台执行，结果会自动更新。
+          <button class="source-open" @click="stopGeneration">停止任务</button>
+        </div>
+
         <!-- Input Area -->
-        <div class="chat-input-area" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop="handleDrop">
+        <div v-if="!curSession?.pendingQuestion && !collaborationQuestion" class="chat-input-area" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop="handleDrop">
           <!-- Drag overlay -->
           <div v-if="isDragging" class="chat-drop-overlay">
             <Paperclip :size="24" />
@@ -310,31 +300,31 @@
 
           <p v-if="curSession?.draftError" class="msg-error-bar">{{ curSession.draftError }}</p>
           <div class="chat-input-wrap">
-            <div v-if="currentConvAgent?.agent_type !== 'proxy'" class="chat-collaboration-mode">
-              <label>协作方式
+            <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
+            <ProjectPicker ref="projectPickerRef" :key="currentConvId" :references="curSession?.projectRefs || []" :initial-project="route.query.project_id" :query="projectQuery" :disabled="sending || streaming" @update="refs => curSession.projectRefs=refs" @close="closeProjectQuery" />
+            <div class="chat-input-row">
+            <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
+              <Paperclip :size="18" />
+            </button>
+            <button class="chat-attach-btn" :disabled="sending || streaming" title="引用项目" aria-label="引用项目" @click="projectPickerRef?.openMenu()"><FileText :size="18" /></button>
+            <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.zip,.rar" style="display:none" @change="handleFileSelect" />
+            <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
+              @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
+            <div v-if="currentConvAgent?.agent_type !== 'proxy'" class="chat-collaboration-mode" :title="curSession?.modeSaving ? '保存中…' : pendingFiles.length ? '含附件的消息仅使用用户明确 @ 的协作' : collaborationModeHints[curSession?.collaborationMode || 'EXPLICIT_ONLY']">
+              <label><span class="collaboration-mode-label">协作方式</span>
                 <SearchSelect aria-label="协作方式" :searchable="false" :model-value="curSession?.collaborationMode || 'EXPLICIT_ONLY'"
                   :options="(curSession?.allowedCollaborationModes || ['EXPLICIT_ONLY']).map(mode => ({ value: mode, label: collaborationModeLabels[mode] }))"
                   :disabled="!curSession?.goalEnabled || curSession?.modeSaving || sending || streaming || curSession?.approvalBusy || Boolean(curSession?.pendingGoalRequest)"
                   @change="saveCollaborationMode" />
               </label>
-              <span>{{ curSession?.modeSaving ? '保存中…' : pendingFiles.length ? '含附件的消息仅使用用户明确 @ 的协作' : collaborationModeHints[curSession?.collaborationMode || 'EXPLICIT_ONLY'] }}</span>
             </div>
-            <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
-            <div class="chat-input-row">
-            <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
-              <Paperclip :size="18" />
-            </button>
-            <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.zip,.rar" style="display:none" @change="handleFileSelect" />
-            <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
-              @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
-            <button v-if="sending || streaming" class="stop-generation" @click="stopGeneration" :disabled="!controllers.has(currentConvId)"><span class="runtime-bars" aria-hidden="true"><i></i><i></i><i></i></span>停止生成</button>
+            <button v-if="(sending || streaming) && !creatingChat" class="stop-generation" @click="stopGeneration" :disabled="!controllers.has(currentConvId)"><span class="runtime-bars" aria-hidden="true"><i></i><i></i><i></i></span>停止生成</button>
             <button v-else class="chat-send" :title="curSession?.collaborationDrafts?.length ? '发送并开始协作' : '发送'" aria-label="发送消息并执行已配置的协作任务" @click="sendMessage" :disabled="sending || streaming || curSession?.modeSaving || (!input.trim() && pendingFiles.length === 0)">
               <span v-if="sending || streaming" class="send-loading"></span>
               <Send v-else :size="16" />
             </button>
           </div>
           </div>
-          <div class="chat-input-hint">Enter 发送，Shift+Enter 换行 · 支持拖入文件或粘贴图片</div>
         </div>
       </template>
     </div>
@@ -375,7 +365,7 @@
               <span v-else-if="src.type === 'data_source'" class="source-list-icon"><Database :size="14" /></span>
               <span v-else class="source-list-icon"><Link :size="14" /></span>
               <div class="source-list-info">
-                <div class="source-list-name">{{ src.name }}</div>
+                <div class="source-list-name">{{ src.name || (src.type === 'memory' ? '记忆来源' : '参考来源') }}</div>
                 <div v-if="src.capability" class="source-list-cap">{{ src.capability }}</div>
               </div>
             </div>
@@ -383,13 +373,30 @@
           <div class="source-modal-preview">
             <div v-if="selectedSourceIdx !== null && selectedSources[selectedSourceIdx]" class="preview-content">
               <div class="preview-title">{{ selectedSources[selectedSourceIdx].name }}</div>
-              <div class="preview-type">{{ selectedSources[selectedSourceIdx].type === 'web' ? '网页搜索结果' : selectedSources[selectedSourceIdx].type === 'knowledge_base' ? '知识库文档' : '数据源' }}</div>
+              <div class="preview-type">{{ selectedSources[selectedSourceIdx].type === 'memory' ? 'Agent 记忆' : selectedSources[selectedSourceIdx].type === 'web' ? '网页搜索结果' : selectedSources[selectedSourceIdx].type === 'knowledge_base' ? '知识库文档' : '数据源' }}</div>
+              <section v-if="selectedSources[selectedSourceIdx].type === 'memory'" class="memory-source-detail" aria-live="polite">
+                <div v-if="memorySourceLoading" class="preview-meta">正在加载记忆详情…</div>
+                <div v-else-if="memorySourceError" class="preview-meta">{{ memorySourceError }} <button v-if="selectedSources[selectedSourceIdx].memory_id" class="source-open" @click="loadMemorySource">重试</button></div>
+                <template v-else-if="memorySourceDetail">
+                  <div class="preview-meta">{{ memorySourceDetail.subject_name || '业务记忆' }} · {{ memorySourceDetail.status }}<span v-if="memorySourceDetail.has_conflict"> · 存在冲突</span></div>
+                  <div class="preview-desc">{{ memorySourceDetail.content }}</div>
+                  <div class="preview-meta">来源方式：{{ memorySourceDetail.source_mode || '未记录' }} · 置信度：{{ memorySourceDetail.confidence ?? '未记录' }}</div>
+                  <div v-if="memorySourceDetail.updated_at" class="preview-meta">更新时间：{{ new Date(memorySourceDetail.updated_at).toLocaleString() }}</div>
+                  <h4 class="memory-evidence-heading">记忆依据</h4>
+                  <div v-for="evidence in memorySourceDetail.evidences" :key="evidence.id" class="memory-evidence">
+                    <div class="preview-meta">{{ evidence.label }} · {{ evidence.source_type }}</div>
+                    <div class="preview-desc">{{ evidence.accessible ? (evidence.summary || '该来源未记录摘要') : '该来源已不可用或无权查看' }}</div>
+                    <div v-if="evidence.recorded_at" class="preview-meta">{{ new Date(evidence.recorded_at).toLocaleString() }}</div>
+                  </div>
+                  <div v-if="!memorySourceDetail.evidences.length" class="preview-meta">历史记忆未记录独立来源依据。</div>
+                </template>
+              </section>
               <div v-if="selectedSources[selectedSourceIdx].description" class="preview-desc">{{ selectedSources[selectedSourceIdx].description }}</div>
               <div v-if="selectedSources[selectedSourceIdx].type === 'knowledge_base' && selectedSources[selectedSourceIdx].doc_count" class="preview-meta"><AppIcon name="FileText" /> 包含 {{ selectedSources[selectedSourceIdx].doc_count }} 份文档</div>
               <div v-if="selectedSources[selectedSourceIdx].capability" class="preview-cap"><AppIcon name="Wrench" /> 查询能力: {{ selectedSources[selectedSourceIdx].capability }}</div>
               <button v-if="selectedSources[selectedSourceIdx].document_id" class="source-open" @click="previewSource = selectedSources[selectedSourceIdx]; showSourceModal = false">查看原文件</button>
               <a v-if="/^https?:\/\//i.test(selectedSources[selectedSourceIdx].url || '')" :href="selectedSources[selectedSourceIdx].url" target="_blank" rel="noopener noreferrer" class="source-open">打开网页来源</a>
-              <div class="preview-hint">{{ selectedSources[selectedSourceIdx].url ? '以上为搜索引擎返回的摘要；请打开网页核对完整内容。' : selectedSources[selectedSourceIdx].document_id ? '以上为本次提供给模型的参考片段；原文件页码以预览为准。' : '历史来源未记录具体文件，无法定位原文。' }}</div>
+              <div v-if="selectedSources[selectedSourceIdx].type !== 'memory'" class="preview-hint">{{ selectedSources[selectedSourceIdx].url ? '以上为搜索引擎返回的摘要；请打开网页核对完整内容。' : selectedSources[selectedSourceIdx].document_id ? '以上为本次提供给模型的参考片段；原文件页码以预览为准。' : '历史来源未记录具体文件，无法定位原文。' }}</div>
             </div>
             <div v-else class="preview-empty">← 选择一个来源查看详情</div>
           </div>
@@ -412,6 +419,10 @@ import CollaborationComposer from '../components/CollaborationComposer.vue'
 import ConversationDebugPanel from '../components/ConversationDebugPanel.vue'
 import { restoreRejectedSend, filterAvailableConversations, sendErrorMessage } from '../utils/chatRecovery.js'
 import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaborationDrafts.js'
+import UserQuestionCard from '../components/UserQuestionCard.vue'
+import RuntimeTimeline from '../components/RuntimeTimeline.vue'
+import BudgetNotice from '../components/BudgetNotice.vue'
+import ProjectPicker from '../components/ProjectPicker.vue'
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
@@ -510,6 +521,7 @@ const sessions = ref({})  // { [convId]: { messages: [], sending: false, streami
 const showNewChat = ref(false)
 const newChatAgentId = ref('')
 const creatingChat = ref(false)
+const newChatReturnId = ref(null)
 const messagesContainer = ref(null)
 const debugEnabled = ref(false)
 const showDebugPanel = ref(false)
@@ -542,6 +554,8 @@ const currentConvTitle = computed(() => currentConv.value?.title || currentConv.
 
 const curSession = computed(() => sessions.value[activeTabId.value] || null)
 const messages = computed(() => curSession.value?.messages || [])
+const isActiveQuestionMessage = msg => Boolean(curSession.value?.pendingQuestion && msg.metadata_json?.user_question?.id === curSession.value.pendingQuestion.id)
+const questionInMessages = computed(() => messages.value.some(isActiveQuestionMessage))
 const sending = computed(() => curSession.value?.sending || false)
 const streaming = computed(() => curSession.value?.streaming || false)
 const streamContent = computed(() => curSession.value?.streamContent || '')
@@ -602,11 +616,12 @@ const getOrCreateSession = (convId) => {
       messages: [], sending: false, streaming: false,
       streamContent: '', streamError: '', unread: false,
       goalEnabled: false, goalMode: false, goalLoaded: false, goal: null, goalCandidates: [], goalSelection: [], approvalBusy: false, pendingGoalRequest: null,
-      collaborationDrafts: [], lastDrafts: null, draftError: '',
+      projectRefs: [], lastProjectRefs: [], collaborationDrafts: [], lastDrafts: null, draftError: '',
       collaborationMode: 'EXPLICIT_ONLY', allowedCollaborationModes: ['EXPLICIT_ONLY'], modeSaving: false,
       input: '', statusSteps: [], lastUserMessage: '',
       collabPending: [],  // in-progress collaborations
       collabResults: [],  // completed collaborations for current streaming message
+      pendingQuestion: null, runtimeUsage: {},
       liveDebug: [], liveDebugPrompt: '',
     }
   }
@@ -658,6 +673,17 @@ watch(input, (newVal) => {
   }
 })
 
+watch([input, currentConvId], () => {
+  const textarea = chatInputRef.value
+  if (!textarea) return
+  textarea.style.height = '38px'
+  if (!textarea.value) return
+  textarea.style.height = `${Math.min(120, Math.max(38, textarea.scrollHeight))}px`
+}, { flush: 'post' })
+
+const projectPickerRef = ref(null)
+const projectQuery = computed(()=>{const match=(input.value || '').match(/(?:^|\s)#([^\s#]*)$/);return match ? match[1] : null})
+const closeProjectQuery = ()=>{input.value=(input.value || '').replace(/(?:^|\s)#[^\s#]*$/, '').trimEnd()}
 // ── @Agent Mention Handlers ──
 // Simple @input handler that syncs to session and detects @mentions
 const onTextInput = (e) => {
@@ -828,14 +854,40 @@ const loadAgents = async () => {
 }
 
 const openNewChat = () => {
+  if (creatingChat.value) return
+  newChatReturnId.value = curSession.value?.isDraft ? newChatReturnId.value : activeTabId.value
   newChatAgentId.value = ''
   showNewChat.value = true
   loadAgents()
 }
 const closeNewChat = () => {
+  if (creatingChat.value) return
+  if (curSession.value?.isDraft) activeTabId.value = newChatReturnId.value
   showNewChat.value = false
   newChatAgentId.value = ''
 }
+
+watch(newChatAgentId, async (agentId) => {
+  if (!showNewChat.value || !agentId || creatingChat.value) return
+  if (!agents.value.some(agent => agent.id === agentId)) return
+  const draftId = `draft:${agentId}`
+  const session = getOrCreateSession(draftId)
+  session.isDraft = true
+  session.agentId = agentId
+  activeTabId.value = draftId
+  session.modeSaving = true
+  await nextTick()
+  chatInputRef.value?.focus()
+  try {
+    const { data } = await collaborationApi.draftOptions(agentId)
+    session.goalEnabled = data.enabled
+    session.allowedCollaborationModes = data.allowed_collaboration_modes || ['EXPLICIT_ONLY']
+    if (!session.draftModeDirty || !session.allowedCollaborationModes.includes(session.collaborationMode)) {
+      session.collaborationMode = data.collaboration_mode || 'EXPLICIT_ONLY'
+    }
+  } catch { session.draftError = '对话选项加载失败，请重新选择 Agent。' }
+  finally { session.modeSaving = false }
+})
 
 const loadDebugConfig = async () => {
   try {
@@ -867,13 +919,39 @@ const refreshGoal = async (convId, session) => {
   if (!session.goal?.goal_id) return
   const { data } = await goalApi.get(convId, session.goal.goal_id)
   session.goal = data
+  if (data.user_question) session.pendingQuestion = data.user_question
   session.goalCandidates = []
   session.goalSelection = []
   if (data.reason === 'collaboration_approval_required') {
     session.goalCandidates = (await goalApi.candidates(convId, data.goal_id)).data
   }
 }
+const loadQuestion = async (convId, session) => {
+  const response = await fetch(`/api/conversations/${convId}/question`, { headers: { 'X-Workspace-Id': currentWorkspace() } })
+  if (response.ok) session.pendingQuestion = (await response.json()).question
+}
+let questionPollBusy = false
+const questionPoll = setInterval(async () => {
+  const convId = activeTabId.value
+  const session = curSession.value
+  if (!convId || !session || session.sending || session.streaming || (session.pendingQuestion?.status !== 'answering' && session.goal?.status !== 'RUNNING') || questionPollBusy) return
+  questionPollBusy = true
+  try {
+    await loadQuestion(convId, session)
+    if (session.goal?.status === 'RUNNING') await refreshGoal(convId, session)
+    if (!session.pendingQuestion || session.pendingQuestion.status !== 'answering') {
+      session.messages = (await conversationApi.messages(convId)).data
+      await refreshGoal(convId, session)
+      scrollToBottom()
+    }
+  } catch { /* Retain the submitted answer until the next status check succeeds. */ }
+  finally { questionPollBusy = false }
+}, 4000)
+onBeforeUnmount(() => clearInterval(questionPoll))
 const loadGoalSession = async (convId, session) => {
+  const savedQuestion = session.messages.findLast(msg => msg.metadata_json?.user_question?.status === 'pending')?.metadata_json.user_question
+  if (savedQuestion) session.pendingQuestion = savedQuestion
+  try { await loadQuestion(convId, session) } catch { /* The saved message and Goal remain available as recovery sources. */ }
   try {
     const { data } = await goalApi.options(convId)
     session.goalEnabled = data.enabled
@@ -886,6 +964,22 @@ const loadGoalSession = async (convId, session) => {
     await refreshGoal(convId, session)
   } catch (error) { session.streamError = '任务状态加载失败，请重试：' + (error.response?.data?.detail || error.message) }
 }
+const collaborationQuestion = computed(() => {
+  const session = curSession.value
+  if (session?.goal?.reason !== 'collaboration_approval_required') return null
+  return { id: `collaboration-${session.goal.goal_id}-${session.goal.revision}`, status: 'pending',
+    agent_name: currentConvAgent.value?.name || 'Agent', question: '本次任务需要协作，请选择允许参与的 Agent。',
+    options: [...(session.goalCandidates || []).map(agent => `${agent.name}${agent.role ? ` · ${agent.role}` : ''}`), '不邀请其他 Agent，继续独立执行'],
+    multi_select: true, allow_free_text: false }
+})
+const answerQuestion = async decision => {
+  if (!collaborationQuestion.value || decision.question_id !== collaborationQuestion.value.id) return sendMessage(decision)
+  const session = curSession.value
+  const refuse = decision.selected_indices.includes(session.goalCandidates.length)
+  if (refuse && decision.selected_indices.length > 1) { session.streamError = '请选择允许参与的 Agent，或仅选择不邀请。'; return }
+  session.goalSelection = refuse ? [] : decision.selected_indices.map(i => session.goalCandidates[i].id)
+  await approveGoal()
+}
 const collaborationModeLabels = { EXPLICIT_ONLY: '不主动', ASK_BEFORE_COLLABORATION: '询问', AUTONOMOUS: '主动' }
 const collaborationModeHints = {
   EXPLICIT_ONLY: '仅用户主动 @ 的 Agent 可以协作',
@@ -896,6 +990,13 @@ const saveCollaborationMode = async (selected) => {
   const convId = activeTabId.value
   const session = curSession.value
   if (session.modeSaving || session.sending || session.streaming) return
+  if (session.isDraft) {
+    if (session.allowedCollaborationModes.includes(selected)) {
+      session.collaborationMode = selected
+      session.draftModeDirty = true
+    }
+    return
+  }
   session.modeSaving = true
   session.draftError = ''
   try {
@@ -989,21 +1090,6 @@ const switchTab = (convId) => {
   scrollToBottom()
 }
 
-const createChat = async () => {
-  if (creatingChat.value || !agents.value.some(agent => agent.id === newChatAgentId.value)) return
-  creatingChat.value = true
-  try {
-    const { data } = await conversationApi.create({ agent_id: newChatAgentId.value })
-    await loadConversations()
-    closeNewChat()
-    // Auto-open new conversation as tab
-    await selectConversation(data.id)
-  } catch (e) {
-    alert('创建失败: ' + (e.response?.data?.detail || e.message))
-  } finally {
-    creatingChat.value = false
-  }
-}
 
 const deleteConversation = async (convId) => {
   if (!confirm('确定删除此对话？')) return
@@ -1024,32 +1110,106 @@ const previewSource = ref(null)
 const controllers = new Map()
 const followBottom = ref(true)
 const hasNewContent = ref(false)
-const stopGeneration = () => controllers.get(activeTabId.value)?.abort()
+const stopGeneration = async () => {
+  const convId = activeTabId.value
+  const session = curSession.value
+  try {
+    if ((session?.goalMode || session?.goal?.status === 'RUNNING') && session.goal?.goal_id) {
+      const { data } = await goalApi.stop(convId, session.goal.goal_id)
+      session.goal = data
+    }
+    controllers.get(convId)?.abort()
+  } catch (error) { session.streamError = error.response?.data?.detail || '停止请求未确认，请刷新任务状态。' }
+}
 const showSourceModal = ref(false)
 const selectedSources = ref([])
 const selectedSourceIdx = ref(null)
 
+const memorySourceDetail = ref(null)
+const memorySourceLoading = ref(false)
+const memorySourceError = ref('')
+let memorySourceVersion = 0
+const sourceConversationId = ref(null)
+const loadMemorySource = async () => {
+  const version = ++memorySourceVersion
+  memorySourceDetail.value = null
+  memorySourceError.value = ''
+  memorySourceLoading.value = false
+  const source = selectedSources.value[selectedSourceIdx.value]
+  if (source?.type !== 'memory') return
+  if (!source.memory_id) { memorySourceError.value = '历史记录未保存记忆标识，无法定位详情。'; return }
+  memorySourceLoading.value = true
+  try {
+    const { data } = await conversationApi.memorySource(sourceConversationId.value, source.memory_id)
+    if (version === memorySourceVersion) memorySourceDetail.value = data
+  } catch (error) {
+    if (version === memorySourceVersion) memorySourceError.value = error.response?.data?.detail || '记忆详情加载失败，请重试。'
+  } finally {
+    if (version === memorySourceVersion) memorySourceLoading.value = false
+  }
+}
 const showSources = (msg, index = 0) => {
+  const projectSource = msg.metadata_json?.sources?.[index]
+  if (projectSource?.type === 'project' && projectSource.project_id) { window.open(`/projects/${projectSource.project_id}`, '_blank', 'noopener'); return }
   selectedSources.value = msg.metadata_json?.sources || []
   selectedSourceIdx.value = index
+  sourceConversationId.value = activeTabId.value
   showSourceModal.value = true
+  loadMemorySource()
 }
 
-const selectSource = (idx) => { selectedSourceIdx.value = idx }
+const selectSource = (idx) => { selectedSourceIdx.value = idx; loadMemorySource() }
 
 const toggleSources = (msg) => { msg._sourcesExpanded = !msg._sourcesExpanded }
 
 
-const sendMessage = async () => {
-  const convId = activeTabId.value
+const sendMessage = async (decision = null) => {
+  const isRecovery = Boolean(decision?.goal_recover)
+  const isDecision = Boolean(decision?.question_id)
+  let convId = activeTabId.value
   if (!convId) return
   const session = getOrCreateSession(convId)
-  const text = session.input.trim()
+  if (session.pendingQuestion && !isDecision && !isRecovery) { session.streamError = '请先回答 Agent 的问题。'; return }
+  const text = isRecovery ? '核实原会话结果并继续' : decision?.recover ? (session.pendingQuestion.answer || '核实原会话结果') : isDecision ? [...decision.selected_indices.map(i => session.pendingQuestion.options[i]), decision.text].filter(Boolean).join('\n') : session.input.trim()
   if (session.unavailable) { session.streamError = sendErrorMessage(404); return }
   if ((!text && pendingFiles.value.length === 0) || session.sending || session.streaming || session.modeSaving) return
 
-  let goalMode = false
-  if (session.goalEnabled && text && !pendingFiles.value.length) {
+  if (session.isDraft) {
+    if (creatingChat.value || !agents.value.some(agent => agent.id === session.agentId)) return
+    creatingChat.value = true
+    session.sending = true
+    session.streamError = ''
+    const draftId = convId
+    try {
+      const { data } = await conversationApi.create({ agent_id: session.agentId })
+      convId = data.id
+      session.isDraft = false
+      sessions.value[convId] = session
+      delete sessions.value[draftId]
+      conversations.value.unshift(data)
+      openTabs.value.push(convId)
+      if (activeTabId.value === draftId) activeTabId.value = convId
+      showNewChat.value = false
+      newChatAgentId.value = ''
+      const draftMode = session.collaborationMode
+      await loadGoalSession(convId, session)
+      if (session.draftModeDirty && session.goalEnabled) {
+        const { data: options } = await goalApi.saveCollaborationMode(convId, draftMode)
+        session.collaborationMode = options.collaboration_mode
+        session.allowedCollaborationModes = options.allowed_collaboration_modes
+        session.draftModeDirty = false
+      }
+    } catch (error) {
+      session.streamError = (session.isDraft ? '新建对话失败，请重试：' : '对话已创建，发送前设置失败，请检查协作方式：') + (error.response?.data?.detail || error.message)
+      return
+    } finally {
+      creatingChat.value = false
+      session.sending = false
+    }
+  }
+
+  let goalMode = (isDecision || isRecovery) && Boolean(session.goal?.goal_id)
+  if (!isDecision && !isRecovery && session.goalEnabled && text && !pendingFiles.value.length) {
     session.sending = true
     try {
       const { data } = await goalApi.route(convId, {
@@ -1066,15 +1226,15 @@ const sendMessage = async () => {
     session.sending = false
   }
   const newTopic = /^(?:另一个|另外|新问题|新任务|重新开始)/.test(text)
-  const continuing = session.goalEnabled && !pendingFiles.value.length && session.goal?.status === 'WAITING' && !newTopic
+  const continuing = !isDecision && session.goalEnabled && !pendingFiles.value.length && session.goal?.status === 'WAITING' && !newTopic
   if (continuing) goalMode = true
   session.goalMode = goalMode
   if (session.goal?.status === 'WAITING' && newTopic) {
     session.goal = null
     session.goalCandidates = []
   }
-  if (goalMode && session.goal?.reason === 'collaboration_approval_required') { session.draftError = '请先选择本次允许协作的 Agent。'; return }
-  if (goalMode && ['COMPLETE', 'BLOCKED', 'FAILED'].includes(session.goal?.status)) {
+  if (!isDecision && goalMode && session.goal?.reason === 'collaboration_approval_required') { session.draftError = '请先选择本次允许协作的 Agent。'; return }
+  if (goalMode && !isRecovery && ['COMPLETE', 'BLOCKED', 'FAILED'].includes(session.goal?.status)) {
     session.goal = null
     session.goalCandidates = []
     session.pendingGoalRequest = null
@@ -1086,7 +1246,7 @@ const sendMessage = async () => {
       return
     }
   }
-  const drafts = session.collaborationDrafts || []
+  const drafts = isRecovery ? [] : session.collaborationDrafts || []
   const mentioned = [...text.matchAll(/@([^\s@]+)/g)].map(m => m[1])
   if (currentConvAgent.value?.agent_type !== 'proxy' && mentioned.some(name => !drafts.some(d => d.name === name))) {
     session.draftError = '请从 @ 候选列表选择协作 Agent，确认每个 Agent 都有任务卡。'; return
@@ -1121,7 +1281,7 @@ const sendMessage = async () => {
   const submittedFiles = [...pendingFiles.value]
   // Upload pending files first
   let attachments = []
-  if (pendingFiles.value.length > 0) {
+  if (!isDecision && !isRecovery && pendingFiles.value.length > 0) {
     session.sending = true
     attachments = await uploadPendingFiles(convId)
     // Filter out failed uploads
@@ -1133,33 +1293,48 @@ const sendMessage = async () => {
   if (!displayText && attachments.length === 0) return
 
   let endpoint = `/api/conversations/${convId}/messages/stream`
-  let body = { content: displayText, collaboration_drafts: collaborationDrafts, attachments: attachments.length ? attachments : undefined }
+  const projectIds = (session.projectRefs || []).map(p=>p.id)
+  let body = { content: displayText, project_ids: projectIds, collaboration_drafts: collaborationDrafts, attachments: attachments.length ? attachments : undefined }
   if (goalMode) {
     if (session.goal?.status === 'WAITING' || session.goal?.recovery_allowed) {
       endpoint = `/api/conversations/${convId}/goals/${session.goal.goal_id}/resume`
       body = { content: displayText, revision: session.goal.revision, participants: goalParticipants }
     } else {
       const participants = goalParticipants
-      const signature = JSON.stringify([displayText, participants])
+      const signature = JSON.stringify([displayText, participants, projectIds])
       if (session.pendingGoalRequest && session.pendingGoalRequest.signature !== signature) {
         session.streamError = '上次目标是否接收尚未确认，请重试原请求，或刷新页面读取已保存的目标。'
         return
       }
       session.pendingGoalRequest ||= { signature, key: globalThis.crypto?.randomUUID?.() || `goal-${Date.now()}-${Math.random().toString(36).slice(2)}` }
       endpoint = `/api/conversations/${convId}/goals/stream`
-      body = { content: displayText, idempotency_key: session.pendingGoalRequest.key, participants }
+      body = { content: displayText, project_ids:projectIds, idempotency_key: session.pendingGoalRequest.key, participants }
     }
   }
+  if (isRecovery) {
+    endpoint = `/api/conversations/${convId}/goals/${session.goal.goal_id}/reconcile`
+    body = {}
+  }
+  if (isDecision) {
+    endpoint = `/api/conversations/${convId}/question/${decision.question_id}/${decision.recover ? 'recover' : 'answer'}`
+    body = decision.recover ? {} : { selected_indices: decision.selected_indices, text: decision.text }
+    session.goalMode = Boolean(session.goal?.goal_id)
+  }
   const attempt = {id: ++sendSequence, text: displayText, drafts: JSON.parse(JSON.stringify(drafts))}
-  session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
-  session.lastUserMessage = displayText
-  session.lastDrafts = JSON.parse(JSON.stringify(drafts))
+  if (!decision?.recover && !isRecovery) session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {project_ids:projectIds, project_refs:[...session.projectRefs], collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
+  if (!isRecovery && !decision?.recover) {
+    session.lastUserMessage = displayText
+    session.lastDrafts = JSON.parse(JSON.stringify(drafts))
+    session.lastProjectRefs = [...session.projectRefs]
+    session.projectRefs = []
+    session.input = ''
+    session.collaborationDrafts = []
+  }
   session.sending = true
-  session.input = ''
-  session.collaborationDrafts = []
   session.streamContent = ''
   session.streamError = ''
   session.statusSteps = []
+  session.runtimeUsage = {}
   session.liveDebug = []
   session.liveDebugPrompt = displayText
   scrollToBottom(true)
@@ -1210,7 +1385,33 @@ const sendMessage = async () => {
         if (!line.startsWith('data: ')) continue
         try {
           const event = JSON.parse(line.slice(6))
-          if (event.type === 'goal_status') {
+          if (event.type === 'user_question') {
+            session.pendingQuestion = event.question
+            scrollToBottom()
+          } else if (event.type === 'runtime_progress') {
+            if (event.heartbeat) continue
+            const name = event.agent_name || (event.runtime_role === 'CHILD' ? '协作 Agent' : '主 Agent')
+            const existing = event.action_id && event.status === 'running' && session.statusSteps.findLast(item => item.tool === event.action_id && !item._done)
+            if (existing) existing.message = `${name} · ${event.message}`
+            else appendStatusStep(session.statusSteps, { status: event.status === 'error' ? 'runtime_error' : event.status === 'completed' ? 'runtime_done' : 'runtime_start', tool: event.action_id, agent_name: name, sources: event.sources || [], data_result: event.data_result, icon: event.status === 'error' ? 'error' : 'thinking' }, `${name} · ${event.message}`)
+            scrollToBottom()
+          } else if (event.type === 'runtime_prompt') {
+            const step = session.statusSteps.findLast(item => item.tool === event.action_id)
+            if (step && event.prompt_ref) (step.prompts ||= []).push(event.prompt_ref)
+          } else if (event.type === 'runtime_draft') {
+            let step = session.statusSteps.findLast(item => item.tool === event.action_id)
+            if (!step) {
+              step = { tool: event.action_id, status: 'runtime_start', agent_name: event.agent_name || 'Agent', message: `${event.agent_name || 'Agent'} · 正在生成回复` }
+              session.statusSteps.push(step)
+            }
+            step.draft = (step.draft || '') + (event.content || '')
+            scrollToBottom()
+          } else if (event.type === 'runtime_usage') {
+            const key = `${event.agent_id}:${event.action_id}`
+            session.runtimeUsage[key] = { agent_name: event.agent_name || 'Agent', agent_id: event.agent_id, ...(event.stats || {}) }
+            const step = session.statusSteps.findLast(item => item.tool === event.action_id)
+            if (step) step.usage = event.stats
+          } else if (event.type === 'goal_status') {
             session.goal = { ...(session.goal || {}), ...event }
           } else if (event.type === 'user_message') {
             if (event.conversation_title) {
@@ -1288,6 +1489,7 @@ const sendMessage = async () => {
             session.sending = goalMode
             session.streaming = goalMode
             const meta = {}
+            if (event.user_question) { meta.user_question = event.user_question; session.pendingQuestion = event.user_question }
             if (goalMode) {
               session.goal = { ...(session.goal || {}), ...event }
               session.pendingGoalRequest = null
@@ -1296,6 +1498,10 @@ const sendMessage = async () => {
             }
             if (event.sources?.length) meta.sources = event.sources
             if (event.stats) meta.stats = event.stats
+            if (event.budget_notices) meta.budget_notices = event.budget_notices
+            meta.project_ids = event.project_ids || (projectIds.length ? projectIds : (event.sources || []).filter(s=>s.type==='project').map(s=>s.project_id))
+            meta.execution_goal = displayText
+            meta.execution_usage = Object.values(session.runtimeUsage || {})
             if (event.collaborations?.length) meta.collaborations = event.collaborations
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
             else if (session.liveDebug.length) meta.debug_trace = [...session.liveDebug]
@@ -1345,6 +1551,7 @@ const sendMessage = async () => {
         session.pendingGoalRequest = null
       } catch { session.streamError ||= '目标状态读取失败，请刷新状态后继续。' }
     }
+    try { await loadQuestion(convId, session) } catch { session.streamError ||= '问题状态读取失败，请刷新后继续。' }
     session.sending = false
     session.streaming = false
     session.streamContent = ''
@@ -1381,6 +1588,7 @@ const recoverConversation = async () => {
 
 const retryMessage = async () => {
   const session = curSession.value
+  if (session?.isDraft && (session.input.trim() || pendingFiles.value.length)) { await sendMessage(); return }
   if (!session || !session.lastUserMessage || !activeTabId.value) return
   session.streamError = ''
   if (session.goalMode && session.goal?.goal_id) {
@@ -1391,6 +1599,7 @@ const retryMessage = async () => {
     session.input = session.lastUserMessage
     await nextTick()
     session.collaborationDrafts = JSON.parse(JSON.stringify(session.lastDrafts || []))
+    session.projectRefs = [...(session.lastProjectRefs || [])]
   }
   session.lastUserMessage = ''
   await sendMessage()
@@ -2110,7 +2319,7 @@ onBeforeUnmount(() => {
 .chat-input-row { display:flex; align-items:flex-end; gap:4px; min-width:0; }
 .chat-input-wrap:focus-within { border-color: var(--primary); background: var(--surface); }
 .chat-input {
-  flex: 1; border: none; background: transparent; font-size: 14px;
+  flex: 1; min-width: 0; width: 0; height: 38px; box-sizing: border-box; border: none; background: transparent; font-size: 14px;
   color: var(--text); resize: none; min-height: 38px; max-height: 120px;
   padding: 8px 0; outline: none; line-height: 1.5;
 }
@@ -2122,9 +2331,6 @@ onBeforeUnmount(() => {
 }
 .chat-send:hover { background: var(--primary-hover); }
 .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
-.chat-input-hint {
-  font-size: 11px; color: var(--text3); text-align: center; margin-top: 6px;
-}
 .send-loading {
   width: 16px; height: 16px;
   border: 2px solid color-mix(in srgb, var(--primary-text) 40%, transparent);
@@ -2351,6 +2557,8 @@ onBeforeUnmount(() => {
 .new-content-button { align-self: center; margin: 0 0 8px; }
 .agent-status-panel summary, .completed-process summary { cursor: pointer; font-size: 12px; color: var(--text2); padding: 6px 0; }
 .completed-process { margin: 10px 0; font-size: 12px; line-height: 1.8; color: var(--text2); }
+.memory-evidence-heading { font-size: 13px; margin: 18px 0 8px; color: var(--text); }
+.memory-evidence { padding: 10px 0; border-top: 1px solid var(--border); }
 .preview-desc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .source-open { margin: 12px 0; }
 .chat-header-text { min-width: 0; }
@@ -2411,10 +2619,12 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-.chat-collaboration-mode { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; color:var(--text2); font-size:12px; padding:4px 0 8px }
+.chat-collaboration-mode { display:flex; align-items:center; flex-shrink:0; align-self:flex-end; height:36px; color:var(--text2); font-size:12px; margin-left:8px; padding:0 }
 .chat-collaboration-mode label { display:flex; align-items:center; gap:8px; white-space:nowrap }
-.chat-collaboration-mode .search-select { width:112px; flex-shrink:0 }
-.chat-collaboration-mode span { overflow-wrap:anywhere }
+.chat-collaboration-mode .search-select { width:96px; flex-shrink:0 }
+.chat-collaboration-mode :deep(.search-select-trigger) { box-sizing:border-box; height:36px; min-height:36px; padding:0 10px; border-radius:10px; font-size:12px; }
+.stop-generation { box-sizing:border-box; height:36px; padding:0 14px; display:flex; align-items:center; justify-content:center; gap:6px; flex-shrink:0; }
+@media(max-width: 760px) { .collaboration-mode-label { display:none; } .chat-collaboration-mode { margin-left:4px; } .chat-collaboration-mode .search-select { width:84px; } }
 .goal-mode-select { display:flex; align-items:center; gap:6px; color:var(--text2); font-size:12px; margin-left:auto }
 .goal-mode-select select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px }
 .goal-panel { padding:10px 16px; border-top:1px solid var(--border); color:var(--text2); background:var(--surface); font-size:13px; max-height:35vh; overflow-y:auto; flex-shrink:0 }

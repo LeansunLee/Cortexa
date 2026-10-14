@@ -22,7 +22,7 @@ def bind_tools_for_first_response(model: Any, tools: Sequence[Any], required_too
     if required_tools:
         # Expose only matched business tools on the forced turn. Otherwise an
         # unrelated optional tool could satisfy the provider's requirement.
-        return model.bind_tools(list(required_tools))
+        return model.bind_tools([*required_tools, *[tool for tool in tools if tool.name == "ask_user"]])
     return model.bind_tools(list(tools))
 
 
@@ -32,7 +32,7 @@ def called_required_tool(response: Any, required_tools: Sequence[Any]) -> bool:
         return True
     required_names = {str(tool.name) for tool in required_tools}
     return any(
-        call.get("name") in required_names
+        call.get("name") in required_names or call.get("name") == "ask_user"
         for call in (getattr(response, "tool_calls", None) or [])
     )
 

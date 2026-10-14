@@ -116,8 +116,7 @@ async def create_agent(
         role=(payload.role or "").strip() or None,
         personality=payload.personality,
         responsibilities=payload.responsibilities,
-        boundaries=payload.boundaries,
-        behavior=payload.behavior,
+        work_rules=payload.work_rules,
         model=model_name,
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
@@ -394,8 +393,7 @@ async def _create_version_impl(
         "role": agent.role,
         "personality": agent.personality,
         "responsibilities": agent.responsibilities,
-        "boundaries": agent.boundaries,
-        "behavior": agent.behavior,
+        "work_rules": agent.work_rules,
         "model": agent.model,
         "temperature": agent.temperature,
         "max_tokens": agent.max_tokens,
@@ -598,11 +596,8 @@ def _build_system_prompt(agent: Agent) -> str:
     if agent.responsibilities:
         parts.append(f"\n## 职责\n{agent.responsibilities}")
 
-    if agent.boundaries:
-        parts.append(f"\n## 工作边界\n{agent.boundaries}")
-
-    if agent.behavior:
-        parts.append(f"\n## 工作方式\n{agent.behavior}")
+    if agent.work_rules:
+        parts.append(f"\n## 工作规则\n{agent.work_rules}")
 
     if agent.system_prompt:
         parts.append(f"\n## 补充说明\n{agent.system_prompt}")

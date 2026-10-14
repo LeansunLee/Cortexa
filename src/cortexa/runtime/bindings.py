@@ -21,7 +21,7 @@ class RetrievalInput(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 
 
-async def prepare_bindings(agent, query, sources, db):
+async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, project_ids=None):
     from cortexa.api.conversations import _build_data_tools, _load_agent_capabilities
 
     caps = await _load_agent_capabilities(agent.id, db, query)
@@ -31,9 +31,15 @@ async def prepare_bindings(agent, query, sources, db):
     web = await load_search_tools(agent, db, query, sources)
     cap_map = {f"query_{item['capability'].id.hex}": item["capability"] for item in caps}
     bindings = []
-    for tool in [*business, *web]:
+    from cortexa.projects.runtime import tools as project_tools
+    project = project_tools(agent.id, project_ids or [], sources)
+    for tool in [*business, *web, *project]:
         capability = cap_map.get(tool.name)
         adapter = tool_adapter(tool, str(agent.workspace_id), capability=capability)
+        if tool.name == "project_read":
+            adapter.descriptor.risk_level = "low"
+            adapter.descriptor.requires_confirmation = False
+            adapter.descriptor.timeout = 10
         if capability is not None:
             from cortexa.data.sql_drafts import validate_sql
 
@@ -62,6 +68,11 @@ async def prepare_bindings(agent, query, sources, db):
                     )
                     if granted is None:
                         raise PermissionError("capability_revoked")
+                elif tool.name == "project_read":
+                    from cortexa.projects.service import get
+                    import uuid
+                    for ident in project_ids or []:
+                        await get(check_db, uuid.UUID(str(ident)))
                 else:
                     fresh_web = await load_search_tools(fresh, check_db, query, sources)
                     if not any(t.name == tool.name for t in fresh_web):
@@ -72,6 +83,19 @@ async def prepare_bindings(agent, query, sources, db):
             return InvocationResult(adapter.observe(raw, action_id), str(raw), raw)
 
         bindings.append(Binding(tool, adapter, invoke, check_access))
+    from cortexa.conversation.questions import ask_user_tool, question
+    from cortexa.runtime.observations import Observation
+    tool = ask_user_tool()
+    adapter = tool_adapter(tool, str(agent.workspace_id))
+    adapter.descriptor.type = CapabilityType.TOOL
+    adapter.descriptor.risk_level = 'low'
+    adapter.descriptor.requires_confirmation = False
+    adapter.descriptor.availability = 'available'
+    async def ask(args, action_id, adapter=adapter):
+        public = question(args, agent)
+        return InvocationResult(Observation('TOOL', adapter.descriptor.id, action_id, 'NOT_READY',
+            summary=public['question'], metadata={'user_question':public}), public['question'], {})
+    bindings.append(Binding(tool, adapter, ask))
     plan = plan_retrieval(query)
     for kind in (CapabilityType.KNOWLEDGE, CapabilityType.MEMORY):
         if not getattr(plan, kind.lower()):
@@ -83,7 +107,7 @@ async def prepare_bindings(agent, query, sources, db):
                 fresh = await require_agent_use(retrieval_db, agent.id)
                 if kind == CapabilityType.KNOWLEDGE:
                     evidence, stats = [], {}
-                    raw = await retrieve_knowledge(fresh, args["query"], retrieval_db, sources=evidence, stats=stats)
+                    raw = await retrieve_knowledge(fresh, args["query"], retrieval_db, sources=evidence, stats=stats, context_budget=context_budget)
                     sources.extend(evidence)
                     return InvocationResult(
                         adapter.observe(raw, action_id, evidence=evidence, metadata=stats), raw, raw
@@ -104,10 +128,11 @@ async def prepare_bindings(agent, query, sources, db):
         tool = StructuredTool.from_function(
             coroutine=placeholder,
             name=kind.lower() + "_retrieve",
-            description="检索当前 Agent 已授权的内部知识与来源"
+            description="检索当前 Agent 已授权的内部知识与来源。只有 DIRECT 支持其覆盖的目标事实；RELATED/BACKGROUND 仅用于标注用途的参考。Evidence Insufficient 时如实说明不足，不得把参考资料或未分级历史来源包装为真实案例。"
             if kind == CapabilityType.KNOWLEDGE
             else "检索当前 Agent 历史记忆，记忆仅作参考",
             args_schema=RetrievalInput,
         )
-        bindings.append(Binding(tool, adapter, retrieve))
+        bindings.append(Binding(tool, adapter, retrieve,
+                                cache_scope={"knowledge_relevance": "entity_evidence_v1"} if kind == CapabilityType.KNOWLEDGE else None))
     return bindings, business

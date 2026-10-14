@@ -48,6 +48,7 @@ class CapabilityAdapter:
                 {
                     "type": "memory",
                     "memory_id": str(item.id),
+                    "name": "记忆 · " + str(getattr(item, "subject_name", None) or getattr(item, "type", "业务记忆"))[:80],
                     "source_mode": getattr(item, "source_mode", None),
                     "confidence": getattr(item, "confidence", None),
                     "has_conflict": getattr(item, "has_conflict", False),
@@ -69,7 +70,14 @@ class CapabilityAdapter:
                     else Status.FAILED
                 )
                 observation.error = {"type": "knowledge_not_fully_readable"}
-            observation.summary = f"知识检索返回 {len(observation.evidence)} 个来源"
+            if observation.metadata.get("evidence_status") == "EVIDENCE_INSUFFICIENT":
+                if not (observation.metadata.get("pending_count") or observation.metadata.get("unreadable_count")):
+                    observation.status = Status.PARTIAL if observation.evidence else Status.EMPTY
+                observation.summary = "知识检索证据不足（Evidence Insufficient）；参考资料不能支持目标事实"
+            else:
+                observation.summary = f"知识检索返回 {len(observation.evidence)} 个来源"
+            if "direct_count" in observation.metadata:
+                observation.summary += f"；直接证据 {observation.metadata['direct_count']} 份"
             # A nonempty legacy text can consist solely of processing/read-failure notices.
             return observation
         if cap.type == CapabilityType.AGENT and hasattr(raw, "result"):

@@ -60,8 +60,22 @@ async def draft_options(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db))
     from cortexa.security.access import require_agent_use, actor_required
     agent = await require_agent_use(db, agent_id)
     can_read = actor_required().has("agent.read")
-    return {"agent_type": agent.agent_type, "can_read_config": can_read,
-            "supplemental_prompt": (agent.proxy_config or {}).get("supplemental_prompt", "") if can_read else None}
+    result = {"agent_type": agent.agent_type, "can_read_config": can_read,
+              "supplemental_prompt": (agent.proxy_config or {}).get("supplemental_prompt", "") if can_read else None}
+    from types import SimpleNamespace
+    from sqlalchemy import select
+    from cortexa.db.models import Workspace
+    from cortexa.api.goals import execution_config, conversation_mode_options
+    try:
+        config = execution_config()
+    except HTTPException as error:
+        if error.status_code != 503:
+            raise
+        config = {}
+    enabled = agent.agent_type == "llm" and config.get("features", {}).get("goal_collaboration_enabled") is True
+    policy = await db.scalar(select(Workspace.runtime_policy).where(Workspace.id == agent.workspace_id))
+    result.update(enabled=enabled, **conversation_mode_options(SimpleNamespace(metadata_json={}), agent, policy, config, enabled))
+    return result
 
 
 from pydantic import BaseModel

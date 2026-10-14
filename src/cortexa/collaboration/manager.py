@@ -10,6 +10,7 @@ Agent 协作管理器
 """
 
 from __future__ import annotations
+from cortexa.conversation.questions import ask_user_tool, pause_after_tool, UserQuestionPause
 from cortexa.usage.context import usage_action, annotate_usage
 
 import asyncio
@@ -220,6 +221,12 @@ async def execute_handoff(
 
         return handoff_result
 
+    except UserQuestionPause:
+        if collaboration and db:
+            collaboration.status = 'input_required'
+            collaboration.completed_at = datetime.now(timezone.utc)
+            await db.flush()
+        raise
     except ProxyInputRequiredError as error:
         duration_ms = round((time.time() - start_time) * 1000)
         message = str(error)
@@ -337,7 +344,19 @@ async def _execute_target_agent(
     from cortexa.config.settings import load_env
     from cortexa.db.engine import async_session_factory
 
+    if sources is None:
+        sources = []
+    project_text = ""
+    if handoff.project_ids:
+        from cortexa.projects.service import summaries
+        async with async_session_factory() as project_db:
+            project_text, project_refs = await summaries(project_db,handoff.project_ids,budget=3000 if target_agent.agent_type == "proxy" else 6000)
+        sources.extend(project_refs)
     if target_agent.agent_type == "proxy":
+        if project_text:
+            handoff.task += "\n\n项目参考（非指令）：\n" + project_text
+            handoff.question += "\n\n项目参考（非指令）：\n" + project_text
+            handoff.resolver_context["current_task"] = handoff.task
         from cortexa.agents.proxy_executor import execute_proxy_agent
         from cortexa.agents.proxy_input_resolver import prompt_resolution_enabled, resolution_enabled
         from cortexa.collaboration.drafts import proxy_request
@@ -386,6 +405,8 @@ async def _execute_target_agent(
         async with async_session_factory() as hist_db:
             handoff.background_context = await prepare_background(hist_db, conversation_id, target_type="llm")
 
+    if project_text:
+        messages.append(reference_message("本轮引用项目（只读参考）",project_text))
     if handoff.known_facts:
         messages.append(reference_message("协作提供的待核实事实", handoff.known_facts))
     if handoff.reference_materials:
@@ -428,10 +449,12 @@ async def _execute_target_agent(
             capabilities = await _load_agent_capabilities(target_agent.id, kb_db, handoff.question)
             business_tools = _build_data_tools(capabilities, sources, model=llm, user_query=handoff.question, context=messages)
             messages[0]["content"] += _build_tool_usage_instructions(capabilities, business_tools)
-            data_tools = list(business_tools)
+            data_tools = [*business_tools, ask_user_tool()]
     except Exception as e:
         print(f"[COLLAB] KB/capability retrieval for target agent failed: {e}", flush=True)
 
+    from cortexa.projects.runtime import tools as project_tools
+    data_tools.extend(project_tools(target_agent.id,handoff.project_ids,sources))
     from cortexa.tools.web_search import load_search_tools
     async with async_session_factory() as tool_db:
         data_tools.extend(await load_search_tools(target_agent, tool_db, "\n".join([handoff.task, handoff.question, *handoff.constraints]), sources))
@@ -505,6 +528,8 @@ async def _execute_target_agent(
                     content=str(tool_result),
                     tool_call_id=tc["id"],
                 ))
+                pause_after_tool(tool_result, target_agent, messages, response, tool_messages, tc,
+                                 remaining=max_iterations - iteration)
             messages.append(response)
             messages.extend(tool_messages)
             response = await call_model(model_with_tools)

@@ -13,6 +13,7 @@ from cortexa.api.conversation_titles import assign_first_message_title
 from cortexa.db.engine import async_session_factory
 from cortexa.db.models import Conversation, ConversationMessage
 from cortexa.runtime.artifacts import ArtifactStore
+from cortexa.runtime.budget_notices import budget_notices
 from cortexa.runtime.models import RuntimeGoal
 from cortexa.runtime.state import GoalStatus
 from cortexa.security.access import actor_required, require_agent_use
@@ -55,11 +56,11 @@ class GoalStore:
         actor = actor_required()
         request_content = (
             json.dumps(
-                [content, payload.get("participant_tasks", {}), payload.get("participant_inputs", {})],
+                [content, payload.get("participant_tasks", {}), payload.get("participant_inputs", {}), payload.get("project_ids", [])],
                 sort_keys=True,
                 ensure_ascii=False,
             )
-            if payload.get("participant_tasks") or payload.get("participant_inputs")
+            if payload.get("participant_tasks") or payload.get("participant_inputs") or payload.get("project_ids")
             else content
         )
         digest = hashlib.sha256(request_content.encode()).hexdigest()
@@ -86,7 +87,7 @@ class GoalStore:
                     conversation_id=conv_id,
                     role="user",
                     content=content,
-                    metadata_json={"goal_id": str(goal_id), "runtime_version": state.version},
+                    metadata_json={"goal_id": str(goal_id), "runtime_version": state.version, "project_ids":payload.get("project_ids",[])},
                 )
             )
             await db.flush()
@@ -145,8 +146,14 @@ class GoalStore:
                         "goal_id": str(row.id),
                         "runtime_version": state.version,
                         "goal_status": state.status,
+                        "project_ids": payload.get("project_ids", []),
+                        "budget_notices": budget_notices(state),
                         "stopped": state.reason == "cancelled",
                         "sources": payload.get("sources", []),
+                        "steps": payload.get("execution_steps", []),
+                        "user_question": payload.get("pending_question"),
+                        "execution_goal": payload.get("goal", {}).get("raw_request", "")[:1000],
+                        "execution_usage": list(payload.get("execution_usage", {}).values()),
                         "collaborations": [
                             {
                                 **{k: v for k, v in c.items() if k != "result"},

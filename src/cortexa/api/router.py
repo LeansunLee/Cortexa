@@ -51,3 +51,15 @@ api_router.include_router(sql_drafts_router, prefix="/data")
 
 from cortexa.usage.api import router as usage_router
 api_router.include_router(usage_router)
+
+from cortexa.api.user_questions import router as user_questions_router
+api_router.include_router(user_questions_router)
+
+from cortexa.api.prompt_requests import router as prompt_requests_router
+api_router.include_router(prompt_requests_router)
+
+from cortexa.api.data_results import router as data_results_router
+api_router.include_router(data_results_router)
+
+from cortexa.api.projects import router as projects_router
+api_router.include_router(projects_router)

@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from cortexa.collaboration.drafts import CollaborationDraft
 from cortexa.runtime.collaboration import CollaborationSettings
 
@@ -39,7 +39,21 @@ class WorkspaceOut(BaseModel):
 
 
 # -- Agent -----------------------------------------------------------------
-class AgentCreate(BaseModel):
+class AgentRulesInput(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def merge_legacy_rules(cls, values):
+        if isinstance(values, dict) and ("behavior" in values or "boundaries" in values):
+            from cortexa.agents.rules import merge_work_rules
+            values = dict(values)
+            if "work_rules" not in values:
+                values["work_rules"] = merge_work_rules(values.get("behavior"), values.get("boundaries"))
+            values.pop("behavior", None)
+            values.pop("boundaries", None)
+        return values
+
+
+class AgentCreate(AgentRulesInput):
     collaboration: CollaborationSettings = Field(default_factory=CollaborationSettings)
     name: str
     description: str | None = None
@@ -49,8 +63,7 @@ class AgentCreate(BaseModel):
     role: str | None = None
     personality: str | None = None
     responsibilities: str | None = None
-    boundaries: str | None = None
-    behavior: str | None = None
+    work_rules: str | None = None
     model: str | None = None
     temperature: float = 0.2
     max_tokens: int = 4096
@@ -63,7 +76,7 @@ class AgentCreate(BaseModel):
     web_search_enabled: bool = False
 
 
-class AgentUpdate(BaseModel):
+class AgentUpdate(AgentRulesInput):
     collaboration: CollaborationSettings | None = None
     name: str | None = None
     description: str | None = None
@@ -73,8 +86,7 @@ class AgentUpdate(BaseModel):
     role: str | None = None
     personality: str | None = None
     responsibilities: str | None = None
-    boundaries: str | None = None
-    behavior: str | None = None
+    work_rules: str | None = None
     model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -100,8 +112,7 @@ class AgentOut(BaseModel):
     role: str | None
     personality: str | None
     responsibilities: str | None
-    boundaries: str | None
-    behavior: str | None
+    work_rules: str | None
     model: str | None
     temperature: float
     max_tokens: int
@@ -384,6 +395,7 @@ class ConversationListOut(BaseModel):
 
 
 class ConversationMessageCreate(BaseModel):
+    project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
     model_config = {"str_strip_whitespace": True}
     collaboration_drafts: list[CollaborationDraft] | None = Field(default=None, max_length=3)
     content: str = Field(min_length=1, max_length=64000)

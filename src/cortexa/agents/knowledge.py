@@ -74,7 +74,7 @@ def _score_text(doc_name: str, text: str, ctx: dict) -> int:
     return jieba_score + normalized_score + family_bonus + title_bonus
 
 
-async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = None, stats: dict | None = None) -> str:
+async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = None, stats: dict | None = None, *, context_budget: int = 6000) -> str:
     """Retrieve relevant knowledge in two stages.
 
     Stage 1 locates candidate documents by matching the query against the
@@ -120,14 +120,27 @@ async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = 
     )
     all_docs = list(result.scalars().all())
 
+    from cortexa.agents.retrieval import parse_knowledge_query
+    from cortexa.rag.relevance import entity_relation
+    analysis = parse_knowledge_query(query_text, all_docs)
     if not all_docs:
-        return ""
+        if stats is not None:
+            stats.update(matched_count=0, selected_count=0, direct_count=0,
+                         evidence_status="EVIDENCE_INSUFFICIENT",
+                         retrieval_trace={"query": query_text, "query_analysis": analysis.trace(),
+                                          "candidate_count": 0, "ranking": [], "injected_context": "",
+                                          "evidence_status": "EVIDENCE_INSUFFICIENT"})
+        from cortexa.runtime.loop import token_upper_bound
+        notice = "Evidence Insufficient：当前授权知识库中没有可用直接证据，不得编造目标事实或案例。"
+        return notice if token_upper_bound(notice) <= context_budget else ""
 
     ctx = _build_query_context(query_text)
 
     def name_matches(doc) -> bool:
         lowered = doc.name.lower()
-        return any(token in lowered for token in ctx["keywords"]) or any(f in doc.name for f in ctx["families"])
+        if analysis.entities or analysis.ambiguous_entity:
+            return entity_relation(doc, "", analysis)[0] == 'EXACT'
+        return any(token in lowered for token in ctx["keywords"])
 
     processing: list[str] = []
     unreadable: list[str] = []
@@ -151,62 +164,89 @@ async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = 
         return full_texts[key]
 
     from starlette.concurrency import run_in_threadpool
-    from cortexa.rag.document_selection import rank_documents
+    from cortexa.rag.relevance import select_documents, passage_supports_entity, entity_key
+    from cortexa.runtime.loop import token_upper_bound
     for doc in readable:
         await run_in_threadpool(load_full, doc)
-    scored = await run_in_threadpool(rank_documents, readable, query_text, full_texts)
-
-    # Diversity: cap how many documents of the same product family are kept.
-    max_per_family = MAX_DOCS if ctx["families"] else MAX_PER_FAMILY_WITHOUT_FOCUS
-    family_counts: dict[str, int] = {}
-    top_docs = []
-    for score, doc in scored:
-        if len(top_docs) >= MAX_DOCS:
-            break
-        family = next((f for f in PRODUCT_FAMILIES if f in doc.name), "")
-        count = family_counts.get(family, 0)
-        if family and count >= max_per_family:
+    analysis, ranked = await run_in_threadpool(select_documents, readable, query_text, full_texts, analysis=analysis)
+    eligible = [(decision, doc) for decision, doc in ranked if decision['eligible']]
+    context_parts, injected = [], []
+    targets = [entity_key(e) for e in analysis.entities]
+    insufficient_notice = ('Evidence Insufficient：没有足够的直接证据支持目标事实；RELATED/BACKGROUND '
+                           '只能作标注用途的参考，不能包装为真实事实或案例。')
+    if targets:
+        insufficient_notice += ' 未覆盖的核心实体：' + '、'.join(targets)
+    notice_reserve = token_upper_bound(insufficient_notice) + 16
+    # Evidence gate, then bounded injection. Top K is a ceiling, not a quota.
+    reference_counts = {'RELATED': 0, 'BACKGROUND': 0}
+    for decision, doc in eligible:
+        if len(injected) >= MAX_DOCS:
+            decision['filter_reasons'].append('top_k_ceiling')
             continue
-        family_counts[family] = count + 1
-        top_docs.append((score, doc))
-    # Diversity changes ordering, not coverage when the context budget remains.
-    selected_ids = {str(doc.id) for _, doc in top_docs}
-    for item in scored:
-        if len(top_docs) >= MAX_DOCS:
-            break
-        if str(item[1].id) not in selected_ids:
-            top_docs.append(item)
-            selected_ids.add(str(item[1].id))
-    retrieval_stats = {'matched_count': len(scored), 'selected_count': len(top_docs),
-                       'truncated': len(scored) > len(top_docs)}
-    if stats is not None:
-        stats.update(retrieval_stats, pending_count=len(processing), unreadable_count=len(unreadable))
-
-    # Stage 2: extract relevant passages from each selected document.
-    context_parts = []
-    for _, doc in top_docs:
+        grade = decision['evidence_grade']
+        if grade != 'DIRECT' and reference_counts[grade] >= 2:
+            decision['filter_reasons'].append('reference_limit')
+            continue
         full_content = load_full(doc)
-        # Preserve short policies in full; for long manuals select relevant
-        # windows throughout the document instead of always truncating after
-        # page one.
         if len(full_content) <= FULL_CONTENT_LIMIT:
-            content_preview = full_content
+            previews = [full_content]
         else:
-            windows = [(start, full_content[start:start + WINDOW_SIZE]) for start in range(0, len(full_content), WINDOW_STEP)]
-            ranked = sorted(windows, key=lambda item: _score_text(doc.name, item[1], ctx), reverse=True)
-            chosen = sorted(ranked[:MAX_WINDOWS], key=lambda item: item[0])
-            content_preview = "\n[节选]\n".join(text for _, text in chosen)
-        context_parts.append(f"### {doc.name}\n{content_preview}")
+            windows = [(start, full_content[start:start + WINDOW_SIZE])
+                       for start in range(0, len(full_content), WINDOW_STEP)]
+            ranked_windows = sorted(windows, key=lambda item: _score_text(doc.name, item[1], ctx), reverse=True)
+            chosen = sorted(ranked_windows[:MAX_WINDOWS], key=lambda item: item[0])
+            previews = ['\n[节选]\n'.join(text for _, text in chosen)]
+        # Reuse existing passage windows, explicitly labelled as excerpts;
+        # try the strongest windows first when the complete document cannot fit.
+        if token_upper_bound(previews[0]) > context_budget:
+            candidates = [full_content[i:i + WINDOW_SIZE]
+                          for i in range(0, len(full_content), WINDOW_STEP)]
+            candidates.sort(key=lambda text: _score_text(doc.name, text, ctx), reverse=True)
+            previews += ['[预算节选；未提供全文]\n' + text for text in candidates]
+        selected_preview = None
+        for preview in previews:
+            if grade == 'DIRECT' and not passage_supports_entity(preview, analysis):
+                continue
+            description = f"[{grade}] {decision['purpose']}\n{preview}"
+            block = f"### {doc.name}\n{description}"
+            # Reserve room for the mandatory evidence-status notice.
+            if token_upper_bound('\n\n'.join([*context_parts, block])) <= max(0, context_budget - notice_reserve):
+                selected_preview = preview
+                context_parts.append(block)
+                break
+        if selected_preview is None:
+            decision['filter_reasons'].append('context_budget')
+            continue
+        decision['injected'] = True
+        injected.append((decision, doc, selected_preview))
+        if grade != 'DIRECT':
+            reference_counts[grade] += 1
+    direct = [d for d, _, _ in injected if d['evidence_grade'] == 'DIRECT']
+    covered = {key for decision in direct for key in decision['evidence_scope']}
+    missing_entities = [key for key in targets if key not in covered]
+    sufficient = bool(direct) and not missing_entities
+    evidence_status = 'DIRECT_AVAILABLE' if sufficient else 'EVIDENCE_INSUFFICIENT'
+    notice = ("[DIRECT_AVAILABLE] 仅 DIRECT 可以支持其明确覆盖的实体与事实；RELATED/BACKGROUND 只作标注用途的参考。"
+              if sufficient else insufficient_notice)
+    if analysis.ambiguous_entity:
+        notice += " 核心实体别名有歧义，需要精确业务 ID 或名称。"
+    context_parts.insert(0, notice)
+    retrieval_stats = {'matched_count': len(eligible), 'selected_count': len(injected),
+                       'candidate_count': len(readable), 'direct_count': len(direct),
+                       'evidence_status': evidence_status, 'missing_entities': missing_entities, 'truncated': len(eligible) > len(injected)}
+    if stats is not None:
+        stats.update(retrieval_stats, pending_count=len(processing), unreadable_count=len(unreadable),
+                     retrieval_trace={'query': query_text, 'query_analysis': analysis.trace(),
+                                      'candidate_count': len(readable), 'eligible_count': len(eligible),
+                                      'ranking': [d for d, _ in ranked], 'evidence_status': evidence_status,
+                                      'injected_ids': [d['document_id'] for d, _, _ in injected],
+                                      'context_budget': context_budget})
+    for decision, doc, preview in injected:
         if sources is not None:
-            sources.append({
-                "type": "knowledge_base",
-                "name": doc.name,
-                "id": str(doc.knowledge_base_id),
-                "document_id": str(doc.id),
-                "description": content_preview,
-                "doc_count": 1,
-                **retrieval_stats,
-            })
+            sources.append({'type': 'knowledge_base', 'name': doc.name, 'id': str(doc.knowledge_base_id),
+                            'document_id': str(doc.id), 'description': f"[{decision['evidence_grade']}] {decision['purpose']}\n{preview}",
+                            'doc_count': 1, 'evidence_grade': decision['evidence_grade'], 'purpose': decision['purpose'],
+                            'entity_relation': decision['entity_relation'], 'evidence_scope': decision['evidence_scope'], **retrieval_stats})
     if processing:
         context_parts.append("### 文档正在识别\n" + "\n".join(processing)
                              + "\n这些文档已上传，系统正在进行文字识别。请告知用户稍后重试，无需重新上传；不得编造尚未识别的内容。")
@@ -216,4 +256,22 @@ async def retrieve_knowledge(agent, query_text: str, db, sources: list | None = 
             + "\n".join(f"- {name}" for name in unreadable)
             + "\n请告知用户需要补充可提取文字的原文件或 OCR 文本；不得据文件名或历史回复编造政策内容。"
         )
-    return "\n\n".join(context_parts)
+    output = "\n\n".join(context_parts)
+    if token_upper_bound(output) > context_budget:
+        # Optional extraction-status lists must not consume the evidence budget.
+        output = "\n\n".join([notice, *context_parts[1:1 + len(injected)]])
+    if token_upper_bound(output) > context_budget:
+        output = "Evidence Insufficient"
+        if token_upper_bound(output) > context_budget:
+            output = ""  # The caller cannot even fit a status message.
+        if sources is not None:
+            selected_ids = {str(doc.id) for _, doc, _ in injected}
+            sources[:] = [s for s in sources if s.get('document_id') not in selected_ids]
+        if stats is not None:
+            stats.update(budget_too_small=True, selected_count=0, direct_count=0,
+                         evidence_status='EVIDENCE_INSUFFICIENT')
+            stats['retrieval_trace'].update(injected_ids=[], evidence_status='EVIDENCE_INSUFFICIENT')
+    if stats is not None:
+        stats['retrieval_trace']['injected_context'] = output
+        stats['retrieval_trace']['missing_entities'] = missing_entities
+    return output

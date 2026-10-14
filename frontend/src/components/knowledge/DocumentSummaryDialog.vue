@@ -5,7 +5,7 @@
         <h3 id="summary-title">文档摘要</h3>
         <p class="document-title" :title="doc.name">{{ doc.name }}</p>
         <p class="source-badge" :class="sourceKey"><span class="source-dot" />{{ sourceLabel }}</p>
-        <p class="job-status" role="status">{{ documentStatus(doc) }}</p>
+        <p v-if="documentStatus(doc)" class="job-status" role="status">{{ documentStatus(doc) }}</p>
         <p v-if="extractionHint || documentErrors(doc)" class="job-error" role="alert">{{ extractionHint || documentErrors(doc) }}</p>
         <textarea
           v-if="editing"
@@ -96,10 +96,10 @@ async function regenerateSummary() {
 </script>
 <style scoped>
 .job-status,.job-error{font-size:12px;line-height:1.6;margin:0 0 10px;overflow-wrap:anywhere}.job-error{color:#b45309}:root[data-theme="dark"] .job-error{color:#fbbf24}
-.summary-overlay{position:fixed;inset:0;z-index:2600;background:var(--overlay);display:grid;place-items:center;padding:20px}
-.summary-dialog{width:560px;max-width:100%;box-sizing:border-box;background:var(--surface,#fff);color:var(--text,#334155);padding:26px;border-radius:16px;box-shadow:0 20px 70px #0003;max-height:90vh;display:flex;flex-direction:column}
+.summary-overlay{position:fixed;inset:0;z-index:2600;background:var(--overlay);display:grid;grid-template-columns:minmax(0,1fr);place-items:center;padding:20px;box-sizing:border-box}
+.summary-dialog{width:min(560px,100%);min-width:0;max-width:100%;box-sizing:border-box;background:var(--surface,#fff);color:var(--text,#334155);padding:26px;border-radius:16px;box-shadow:0 20px 70px #0003;max-height:calc(100dvh - 40px);overflow-y:auto;display:flex;flex-direction:column}
 .summary-dialog h3{font-size:18px;margin:0 0 8px}
-.document-title{font-size:13px;color:var(--text3,#64748b);margin:0 0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.document-title{font-size:13px;color:var(--text2,#475569);margin:0 0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .source-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;margin:0 0 14px;color:var(--text2,#475569)}
 .source-dot{width:8px;height:8px;border-radius:50%;background:var(--primary,#6366f1)}
 .source-badge.manual .source-dot{background:var(--success)}
@@ -108,9 +108,9 @@ async function regenerateSummary() {
 .summary-text.empty{color:var(--text3,#94a3b8)}
 .summary-editor{flex:1;min-height:160px;font:inherit;font-size:13px;line-height:1.7;border:1px solid var(--border,#ddd);border-radius:10px;padding:14px;background:var(--surface2,#f8fafc);color:inherit;resize:vertical}
 .summary-editor:focus-visible{outline:2px solid var(--primary,#6366f1);outline-offset:-2px}
-.hint-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0}
-.hint{font-size:12px;line-height:1.6;color:var(--text3,#64748b);margin:0;flex:1}
-.regen-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border,#ddd);border-radius:6px;background:transparent;color:var(--text3,#64748b);padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.hint-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0}
+.hint{font-size:12px;line-height:1.6;color:var(--text2,#475569);margin:0;flex:1 1 200px}
+.regen-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border,#ddd);border-radius:6px;background:transparent;color:var(--text2,#475569);padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .regen-btn:hover{background:var(--surface2,#f1f5f9);color:var(--primary,#6366f1);border-color:var(--primary,#6366f1)}
 .regen-btn:disabled{opacity:.5;cursor:default}
 .regen-btn .spinning{animation:spin 1s linear infinite}
@@ -118,5 +118,6 @@ async function regenerateSummary() {
 .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 
 
+@media(max-width:640px){.summary-overlay{padding:12px}.summary-dialog{padding:18px;max-height:calc(100dvh - 24px)}}
 .actions button:disabled{opacity:.5;cursor:default}
 </style>

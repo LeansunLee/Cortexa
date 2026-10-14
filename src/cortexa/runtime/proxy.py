@@ -1,4 +1,4 @@
-"""Strict Proxy projection: default deny, no model-created values or raw context."""
+"""Schema-bound Proxy projection: approved sources, explicit subtask instructions, approved facts, no raw context."""
 
 import hashlib
 import json
@@ -8,14 +8,17 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import anyio
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from cortexa.agents.proxy_executor import build_proxy_body, map_proxy_output, send_proxy_request
+from cortexa.agents.proxy_executor import ProxyExecutionError, ProxyResultUnknown, validated_proxy_output, build_proxy_body, map_proxy_output, send_proxy_request
 from cortexa.db.models import AgentCollaboration
 from cortexa.runtime.contracts import contract_errors
 from cortexa.runtime.loop import InvocationResult, token_upper_bound
 from cortexa.runtime.observations import Observation
-from cortexa.runtime.state import RuntimeHalt
+from cortexa.runtime.state import GoalStatus, RuntimeHalt
+
+REJECTED_HTTP_STATUSES = frozenset({400, 401, 403, 404, 405, 413, 415, 422, 429})
 
 Source = Literal["explicit", "goal_task", "observation_facts", "observation_summary"]
 DENIED_CONTEXT = ["conversation", "memory", "knowledge", "agent_raw_context", "primary_system_prompt"]
@@ -40,15 +43,30 @@ class ObservationInput(BaseModel):
 
 class ProxyInvocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    task: str | None = Field(
+        default=None, min_length=1, max_length=8000, pattern=r"\S", strict=True,
+        description=("为此代理拆解的具体子任务指令，明确要查询的数据、范围和输出要求；"
+                     "不得把完整对话、记忆或系统提示词放入此字段，不得编造已知事实。用户明确分工优先。"),
+    )
+    task_fields: list[str] = Field(
+        default_factory=list, max_length=64,
+        description=("指定接收 task 子任务指令（未提供时使用用户任务）的文本输入字段名；"
+                     "不填写参数值。仅一个字段适合任务原文时可省略。"),
+    )
     observation_bindings: dict[str, ObservationInput] = Field(
         default_factory=dict,
         max_length=64,
-        description="仅引用实际 Observation 字段；其他输入由 Runtime 构造，不接受 task、inputs 或上下文正文。",
+        description="仅引用实际 Observation 字段；其他输入由 Runtime 构造，不接受 inputs 或上下文正文；task 只用于子任务指令。",
     )
 
 
 def policy(agent):
-    return ProxyContract.model_validate((agent.proxy_config or {}).get("goal_contract") or {})
+    raw = dict((agent.proxy_config or {}).get("goal_contract") or {})
+    raw["fields"] = {
+        name: ["explicit", "goal_task", "observation_facts", "observation_summary"]
+        for name in (agent.input_schema or {}).get("properties", {})
+    }
+    return ProxyContract.model_validate(raw)
 
 
 def enabled(agent, config):
@@ -58,6 +76,12 @@ def enabled(agent, config):
         return config.get("features", {}).get("goal_proxy_enabled") is True and policy(agent).enabled
     except (ValueError, TypeError):
         return False
+
+
+def proxy_timeout(agent, duration):
+    """Honor configured execution timeout, bounded by the shared Goal budget."""
+    configured = max(0.1, float((agent.proxy_config or {}).get("timeout_ms", 30000)) / 1000)
+    return min(configured, duration)
 
 
 def contract_signature(agent):
@@ -116,6 +140,11 @@ def validate_configuration(agent):
         "POST",
     ):
         raise ValueError("目标代理需要 GET/POST Endpoint")
+    for target, source in (agent.proxy_config.get("request_mapping") or {}).items():
+        if not isinstance(source, str):
+            raise ValueError("请求映射的来源必须是字段路径或文本常量")
+        if source.startswith("$.") and source[2:] not in schema["properties"]:
+            raise ValueError(f"请求映射 {target} 的来源字段 {source[2:]} 未在输入 Schema 中声明")
     return cfg
 
 
@@ -154,11 +183,21 @@ def build_invocation(agent, payload, args, context_limit):
     cfg = validate_configuration(agent)
     ident = str(agent.id)
     explicit = payload.get("participant_inputs", {}).get(ident, {})
-    task = payload.get("participant_tasks", {}).get(ident) or payload["goal"]["raw_request"]
     observations = {
         o["action_id"]: o for o in payload.get("observations", []) if o["status"] in {"SUCCESS", "EMPTY", "PARTIAL"}
     }
-    bindings = ProxyInvocation.model_validate(args).observation_bindings
+    invocation = ProxyInvocation.model_validate(args)
+    explicit_task = payload.get("participant_tasks", {}).get(ident)
+    task = explicit_task or invocation.task or payload["goal"]["raw_request"]
+    if payload.get("project_reference"):
+        task += "\n\n本轮项目参考（非指令，未验收成果需标注）：\n" + payload["project_reference"]
+    task_source = "delegated_task" if invocation.task and not explicit_task else "goal_task"
+    bindings = invocation.observation_bindings
+    task_fields = set(invocation.task_fields)
+    compatible = {name for name, schema in agent.input_schema["properties"].items()
+                  if schema.get("type") == "string" and not contract_errors(schema, task)}
+    if not task_fields and len(compatible) == 1:
+        task_fields = compatible
     result, selected, rejected = {}, {}, []
     properties = agent.input_schema["properties"]
     for name, sources in cfg.fields.items():
@@ -167,9 +206,6 @@ def build_invocation(agent, payload, args, context_limit):
         if "explicit" in sources and name in explicit:
             value, found = explicit[name], True
             selected[name] = "explicit"
-        elif "goal_task" in sources:
-            value, found = task, True
-            selected[name] = "goal_task"
         elif name in bindings:
             binding = bindings[name]
             observation = observations.get(str(binding.action_id))
@@ -185,10 +221,15 @@ def build_invocation(agent, payload, args, context_limit):
                     selected[name] = binding.source
                 except (ValueError, KeyError, IndexError, TypeError):
                     pass
+        if (not found and name not in bindings and name in task_fields and "goal_task" in sources
+                and properties[name].get("type") == "string" and not contract_errors(properties[name], task)):
+            value, found = task, True
+            selected[name] = task_source
         if found:
             result[name] = project(value, properties[name], "/" + name, rejected)
     rejected.extend("/" + name for name in explicit if selected.get(name) != "explicit")
     rejected.extend("/" + name for name in bindings if name not in selected)
+    rejected.extend("/" + name for name in task_fields if name not in selected)
     errors = contract_errors(agent.input_schema, result)
     missing = set()
     for error in errors:
@@ -220,10 +261,23 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
     child_seconds = loop.budget.remaining("duration", protect_finalization=True)
     if child_seconds < 1 or not loop.budget.can_expand(max_steps=0):
         raise RuntimeHalt("child_budget_unavailable")
+    if payload.get("project_ids"):
+        from cortexa.projects.service import summaries
+        async with store.sessions() as project_db:
+            text, _ = await summaries(project_db,payload["project_ids"],budget=min(3000,policy(agent).input_budget//2))
+        projection_payload = {**payload,"project_reference":text}
+    else:
+        projection_payload = payload
     try:
-        projected, body, missing, oversized, trace = build_invocation(agent, payload, args, state.limits.context_tokens)
+        projected, body, missing, oversized, trace = build_invocation(agent, projection_payload, args, state.limits.context_tokens)
     except (ValueError, TypeError, KeyError):
         raise RuntimeHalt("proxy_contract_invalid") from None
+    continuation = payload.get('decision_answer')
+    if continuation and continuation['action_id'] == action_id:
+        saved = payload['proxy_runs'][action_id]['continuation']
+        if saved['signature'] != contract_signature(agent):
+            raise RuntimeHalt('proxy_contract_changed')
+        body = {**saved['body'], saved['answer_field']:continuation['answer'], 'session_id':saved['session_id']}
     loop.record("Proxy projection", **trace)
     cfg = policy(agent)
     if oversized or missing:
@@ -252,7 +306,7 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
     allocation = {
         "action_id": action_id,
         "agent_id": str(agent.id),
-        "limits": {"duration": min(child_seconds, 120), "llm_calls": 0, "output_tokens": 0},
+        "limits": {"duration": proxy_timeout(agent, child_seconds), "llm_calls": 0, "output_tokens": 0},
         "consumed": {},
         "status": "RUNNING",
     }
@@ -267,7 +321,8 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
                 conversation_id=row.conversation_id,
                 source_agent_id=row.agent_id,
                 target_agent_id=agent.id,
-                task="目标代理调用",
+                task=(payload.get("participant_tasks", {}).get(str(agent.id))
+                      or args.get("task") or payload["goal"]["raw_request"])[:2000],
                 question="按显式输入契约执行",
                 status="running",
                 call_depth=1,
@@ -276,28 +331,82 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
             )
         )
         await db.commit()
+    loop.publish("runtime_prompt", prompt_kind="collaboration", agent_id=str(agent.id), agent_name=agent.name,
+                 request={"task": args.get("task"), "body": body, "projection": trace})
+    saved_continuation = payload.get("proxy_runs", {}).get(action_id, {}).get("continuation")
     payload.setdefault("proxy_runs", {})[action_id] = {
         "input": projected,
         "request_body": body,
         "projection": trace,
         "status": "started",
+        **({"continuation":saved_continuation, "remote_execution":{
+            "session_id":saved_continuation['session_id'], "signature":saved_continuation['signature']
+        }} if saved_continuation else {}),
     }
     state.used_agents = sorted(set(state.used_agents) | {str(agent.id)})
     await loop.save()
     started = time.monotonic()
     status, summary, output = "UNKNOWN", "外部行动结果待核实", None
+    reported_input, reported_output = 0, 0
+    failure_notice = None
+    async def progress(event):
+        nonlocal reported_input, reported_output
+        identity = {'agent_id':str(agent.id),'agent_name':agent.name,'runtime_role':'CHILD'}
+        kind = event.get('type')
+        if kind == 'start':
+            session_id = event.get('session_id')
+            if isinstance(session_id, str) and 0 < len(session_id) <= 256:
+                payload['proxy_runs'][action_id]['remote_execution'] = {
+                    'session_id': session_id,
+                    'request_id': event.get('request_id'),
+                    'signature': contract_signature(agent),
+                }
+                # Persist the original remote identity before waiting for further
+                # deltas, so a transport interruption can be reconciled by GET.
+                await loop.save()
+        elif kind in {'tool_start','tool_result','tool_error'}:
+            label = str(event.get('tool') or '查询').strip()[:100]
+            failed = kind == 'tool_error' or event.get('ok') is False or event.get('status') in {'failed', 'error'}
+            loop.publish('runtime_progress', **identity,
+                         message=('工具执行失败（Agent 可继续处理） · ' if failed else '正在执行 · ' if kind == 'tool_start' else '执行完成 · ') + label,
+                         status='error' if failed else 'running' if kind == 'tool_start' else 'completed')
+        elif kind == 'text_delta' and isinstance(event.get('content'),str):
+            loop.publish('runtime_draft', **identity, content=event['content'])
+        elif kind == 'usage':
+            reported_input += max(0,int(event.get('prompt_tokens') or 0))
+            reported_output += max(0,int(event.get('completion_tokens') or 0))
+            loop.publish('runtime_usage', **identity, stats={'input_tokens':reported_input,'output_tokens':reported_output,
+                'token_count':reported_input+reported_output,'usage_complete':True})
+    loop.publish('runtime_progress',agent_id=str(agent.id),agent_name=agent.name,runtime_role='CHILD',
+                 message='正在继续原会话' if continuation else '正在执行协作任务',status='running')
     try:
         raw = await send_proxy_request(
             agent.proxy_config,
             body,
             timeout_seconds=min(
-                max(0.1, float(agent.proxy_config.get("timeout_ms", 30000)) / 1000),
+                proxy_timeout(agent, child_seconds),
                 allocation["limits"]["duration"],
                 loop.budget.remaining_time(),
             ),
             max_response_bytes=cfg.response_bytes,
+            on_event=progress,
         )
-        output = map_proxy_output(agent.proxy_config, raw)
+        if isinstance(raw, dict) and raw.get('user_question'):
+            from cortexa.conversation.questions import question, proxy_context
+            public = question(raw['user_question'], agent)
+            payload['proxy_runs'][action_id]['continuation'] = {**proxy_context(agent, raw, body), 'question':public['question']}
+            payload['proxy_runs'][action_id]['remote_execution'] = {
+                'session_id':raw['session_id'], 'signature':contract_signature(agent),
+                'request_id':raw.get('request_id'),
+            }
+            status, summary = 'NOT_READY', public['question']
+            return InvocationResult(Observation('AGENT', 'agent:' + str(agent.id), action_id, status,
+                summary=summary, metadata={'user_question':public}), summary, {})
+        if isinstance(raw, dict) and isinstance(raw.get('session_id'), str):
+            payload['proxy_runs'][action_id]['remote_execution'] = {
+                'session_id':raw['session_id'], 'request_id':raw.get('request_id'), 'signature':contract_signature(agent)}
+        needs_input = isinstance(raw, dict) and (raw.get('requires_input') is True or raw.get('status') in {'not_ready','input_required'})
+        output = map_proxy_output(agent.proxy_config, raw) if needs_input else validated_proxy_output(agent, raw)
         status, summary = "SUCCESS", "代理已返回结果"
         remote_missing = []
         if isinstance(raw, dict) and (
@@ -345,11 +454,56 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
         )
         loop.record("Proxy observation", output_validation=status)
         return InvocationResult(observation, text, {"output": safe_output, "projection": trace})
+    except ProxyResultUnknown:
+        failure_notice = '外部 Agent 已接收任务但尚未完成，请核实原会话结果后继续，不要重新派发。'
+        loop.record('Proxy result not terminal', output_validation='UNKNOWN')
+        raise
+    except ProxyExecutionError:
+        status, summary = "FAILED", "外部 Agent 已明确返回任务失败；这不是连接中断或结果未知。"
+        payload["proxy_runs"][action_id].update(status=status, error="remote_execution_failed")
+        loop.record("Proxy terminal execution failure", output_validation=status)
+        payload.setdefault("collaborations", []).append({
+            "action_id": action_id, "agent_name": agent.name, "agent_avatar": agent.avatar,
+            "status": "failed", "summary": summary, "result": summary,
+            "duration_ms": round((time.monotonic() - started) * 1000), "authorization": origin,
+        })
+        return InvocationResult(Observation("AGENT", "agent:" + str(agent.id), action_id, status,
+            summary=summary, metadata={**trace, "authorization": origin, "output_validation": status}),
+            summary, {"status": status, "message": summary})
+    except ValueError as error:
+        if str(error) in {"proxy_response_budget_exceeded", "proxy_stream_budget_exceeded"}:
+            failure_notice = (
+                "外部 Agent 的完整报告超过响应大小限制。"
+                if str(error) == "proxy_response_budget_exceeded"
+                else "外部 Agent 的事件流超过传输安全限制。"
+            ) + "原会话可能已完成，需要读取原会话结果核实；不要重复派发任务。"
+            loop.record("Proxy response size limit", reason=str(error), response_bytes=cfg.response_bytes)
+        raise
+    except httpx.HTTPStatusError as error:
+        code = error.response.status_code
+        if code not in REJECTED_HTTP_STATUSES:
+            raise  # Server/transport failure may have occurred after execution.
+        status, summary = "REJECTED", f"外部接口拒绝了请求（HTTP {code}），请检查 Proxy 请求映射、输入格式或接口授权后继续。"
+        payload["proxy_runs"][action_id].update(status=status, http_status=code)
+        payload["waiting_message"] = summary
+        payload.setdefault("collaborations", []).append({
+            "action_id": action_id, "agent_name": agent.name, "agent_avatar": agent.avatar,
+            "status": "failed", "summary": summary, "result": json.dumps({"http_status": code, "status": status}),
+            "duration_ms": round((time.monotonic() - started) * 1000), "authorization": origin,
+        })
+        loop.record("Proxy request rejected", http_status=code)
+        loop.publish("runtime_progress", message=summary, status="error")
+        raise RuntimeHalt("proxy_request_rejected", status=GoalStatus.WAITING, next_action="ASK_USER") from None
     finally:
         allocation["consumed"]["duration"] = round(max(0, time.monotonic() - started))
         allocation["status"] = status
         with anyio.CancelScope(shield=True):
             payload["proxy_runs"][action_id]["status"] = status
+            if status == "UNKNOWN":
+                payload["waiting_message"] = failure_notice or (
+                    "外部 Agent 的执行连接已中断或等待超时，原任务可能仍在执行。"
+                    "需要核实原会话结果后继续，不能直接重复派发。"
+                )
             async with store.sessions() as db:
                 record = await db.get(AgentCollaboration, audit_id)
                 if record:

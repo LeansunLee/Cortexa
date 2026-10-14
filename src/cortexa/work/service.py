@@ -82,7 +82,10 @@ async def member(db, ident):
     return row
 
 
-async def validate_people(db, data):
+async def validate_people(db, data, existing_project=None):
+    if data.get("project_id"):
+        from cortexa.projects.service import get
+        await get(db, data["project_id"], active=data["project_id"] != existing_project, lock=True)
     if data["assignee_type"] == "human":
         await member(db, data["assignee_id"])
     else:
@@ -118,6 +121,9 @@ async def create(db, payload, source=None):
     await db.flush()
     await event(db, w, "created")
     await event(db, w, "dispatched", {"assignee_type": w.assignee_type, "assignee_id": str(w.assignee_id)})
+    if w.project_id:
+        from cortexa.projects.service import get, activity
+        await activity(db, await get(db,w.project_id), "work_changed", {"work_id":str(w.id),"title":w.title})
     return w
 
 
@@ -144,7 +150,15 @@ def serialize(row):
 
 async def output(db, w):
     data = serialize(w)
+    data["project_name"] = None
+    if w.project_id:
+        from cortexa.projects.service import get
+        try:
+            data["project_name"] = (await get(db, w.project_id)).title
+        except HTTPException:
+            data["project_id"] = None
     data["permissions"] = permissions(w, actor())
+    data["permissions"]["project"] = w.creator_id == actor().user_id or actor().has("workspace.manage")
     ids = {w.creator_id, w.reviewer_id}
     if w.assignee_type == "human":
         ids.add(w.assignee_id)

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 class AgentHandoff(BaseModel):
     """Agent 协作请求 - 主 Agent 生成的结构化 Handoff"""
+    project_ids: list[str] = Field(default_factory=list,max_length=3)
     source_agent_id: str
     target_agent_id: str
     task: str

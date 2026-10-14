@@ -1,10 +1,27 @@
 import os
+import json
+import uuid
+from datetime import date
+from decimal import Decimal
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 
 from cortexa.api.conversations import _build_system_prompt
 from cortexa.db.models import Agent, Workspace
 from cortexa.agents.prompts import reference_message
+
+
+def test_live_database_scalars_survive_agent_projection_and_prompt_serialization():
+    from cortexa.runtime.agent_executor import project_agent_input
+    from cortexa.runtime.loop import serialize_messages
+    rows = [{"price": Decimal("16980.001234567890123456"), "date": date(2026, 10, 7), "id": uuid.uuid4()}]
+    observation = {"source_type": "DATA", "facts": rows, "evidence": [], "raw_result": {"data": rows}}
+    invocation = project_agent_input("plan", {}, ["query"], {"query": observation}, 8000)
+    reference = reference_message("live SQL result", invocation)
+    messages = serialize_messages([reference])
+    decoded = json.loads(messages[0]["data"]["content"].split("\n", 1)[1])
+    result = decoded["content"]["dependencies"][0]["result"]
+    assert result["rows"][0] == ["16980.001234567890123456", "2026-10-07", str(rows[0]["id"])]
 
 
 def test_prompt_accepts_workspace_and_keeps_agent_instructions():
@@ -45,7 +62,7 @@ def test_rule_order_and_reference_content_are_separate():
 def test_collaboration_uses_same_rules_as_normal_chat():
     from cortexa.collaboration.manager import _build_handoff_system_prompt
     from cortexa.collaboration.schemas import AgentHandoff
-    target = Agent(name="渠道部", boundaries="只处理渠道业务")
+    target = Agent(name="渠道部", work_rules="只处理渠道业务")
     workspace = Workspace(name="销售", system_prompt="遵循销售政策")
     handoff = AgentHandoff(source_agent_id="source", target_agent_id="target", task="分析", question="给出建议")
     assert _build_handoff_system_prompt(Agent(name="销售部"), target, handoff, workspace) == _build_system_prompt(target, workspace)

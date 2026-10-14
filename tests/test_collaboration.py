@@ -137,7 +137,7 @@ class TestHandoffPromptBuilding:
         source.personality = None
         source.role = None
         source.responsibilities = None
-        source.boundaries = None
+        source.work_rules = None
         source.system_prompt = None
 
         target = MagicMock()
@@ -145,7 +145,7 @@ class TestHandoffPromptBuilding:
         target.personality = "专业、数据驱动"
         target.role = "市场分析师"
         target.responsibilities = "负责市场调研和数据分析"
-        target.boundaries = None
+        target.work_rules = None
         target.system_prompt = None
 
         handoff = AgentHandoff(

@@ -46,7 +46,10 @@ class CollaborationPolicy(BaseModel):
 
 
 def settings(agent):
-    return CollaborationSettings.model_validate(getattr(agent, "collaboration", None) or {})
+    raw = dict(getattr(agent, "collaboration", None) or {})
+    if getattr(agent, "agent_type", None) == "proxy":
+        raw.update(allow_incoming=True, discoverable=True)
+    return CollaborationSettings.model_validate(raw)
 
 
 def effective_policy(source, *policies):

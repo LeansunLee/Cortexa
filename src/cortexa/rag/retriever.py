@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from typing import List, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +83,8 @@ async def retrieve_relevant_chunks(
         config.top_k = top_k
         config.min_score = min_score
 
+    requested_top_k = config.top_k
+    config = replace(config, top_k=min(50, max(requested_top_k, requested_top_k * 3)))
     try:
         if config.strategy == "hyde":
             results = await _retrieve_hyde(db, knowledge_base_ids, query_text, config)
@@ -96,6 +98,7 @@ async def retrieve_relevant_chunks(
             # Default: BM25
             results = await _retrieve_bm25(db, knowledge_base_ids, query_text, config)
 
+        results = await _gate_results(db, knowledge_base_ids, query_text, results, config.strategy)
         return [
             RetrievalResult(
                 chunk_id=r.chunk_id,
@@ -105,11 +108,40 @@ async def retrieve_relevant_chunks(
                 score=r.score,
                 metadata=r.metadata,
             )
-            for r in results
+            for r in results[:requested_top_k]
         ]
     except Exception as e:
         print(f"[RAG] Retrieval failed (strategy={config.strategy}): {e}")
         return []
+
+
+async def _gate_results(db, knowledge_base_ids, query, results, algorithm):
+    """Gate every strategy against the original query, after candidate recall."""
+    if not results:
+        return []
+    from sqlalchemy import select, or_, func
+    from cortexa.db.models import KnowledgeBase
+    from cortexa.rag.relevance import analyze_query, assess
+    documents = list((await db.scalars(select(Document).join(KnowledgeBase).where(
+        Document.knowledge_base_id.in_([uuid.UUID(str(k)) for k in knowledge_base_ids]),
+        Document.status == 'active', KnowledgeBase.status == 'active',
+        or_(Document.valid_until.is_(None), Document.valid_until >= func.date(func.timezone('Asia/Shanghai', func.now()))),
+    ))).all())
+    analysis = analyze_query(query, documents)
+    docs = {str(d.id): d for d in documents}
+    accepted = []
+    for result in results:
+        doc = docs.get(str(result.document_id))
+        if doc is None:
+            continue
+        decision = assess(doc, query, result.content, analysis, result.score, algorithm)
+        if decision['eligible']:
+            result.metadata = {**(result.metadata or {}), 'evidence_grade': decision['evidence_grade'],
+                               'purpose': decision['purpose'], 'relevance': decision}
+            accepted.append(result)
+    order = {'DIRECT': 0, 'RELATED': 1, 'BACKGROUND': 2}
+    return sorted(accepted, key=lambda r: (order[r.metadata['evidence_grade']],
+                  -r.metadata['relevance']['rerank_score'], -r.score))
 
 
 async def _retrieve_bm25(
@@ -141,37 +173,24 @@ async def _retrieve_hyde(
     config: RetrievalConfig,
 ) -> List[RetrievalResult]:
     """HyDE retrieval: generate hypothetical answer, then search."""
-    from cortexa.rag.hyde import generate_hypothetical_answer
+    # Preserve the configured vector path, but never expand an entity into
+    # a model-generated hypothetical answer. Only business synonyms are added.
+    from cortexa.rag.relevance import analyze_query
     from cortexa.rag.embedder import embed_query
-
-    # Generate hypothetical answer
-    hyde_result = generate_hypothetical_answer(query_text, prompt_template=config.hyde_prompt_template)
-    print(f"[HyDE] Original query: {query_text}")
-    print(f"[HyDE] Hypothetical answer: {hyde_result.hypothetical_answer[:100]}...")
-
-    # Try vector search first, fallback to BM25 on hypothetical answer
+    from cortexa.rag.bm25_search import bm25_retrieve
+    analysis = analyze_query(query_text)
+    constrained_query = query_text + " " + " ".join(analysis.expansion)
     try:
-        embedding = embed_query(hyde_result.hypothetical_answer)
+        embedding = embed_query(constrained_query)
         results = await _vector_search(db, knowledge_base_ids, embedding, config)
         if results:
             return results
     except Exception as e:
-        print(f"[HyDE] Vector search failed, falling back to BM25: {e}")
-
-    # Fallback: BM25 on hypothetical answer
-    from cortexa.rag.bm25_search import bm25_retrieve
-    results = await bm25_retrieve(db, knowledge_base_ids, hyde_result.hypothetical_answer, config.top_k, config.min_score)
-    return [
-        RetrievalResult(
-            chunk_id=r.chunk_id,
-            document_id=r.document_id,
-            document_name=r.document_name,
-            content=r.content,
-            score=r.score,
-            metadata={"hyde_hypothetical": hyde_result.hypothetical_answer[:200]},
-        )
-        for r in results
-    ]
+        print(f"[HyDE] Constrained vector search unavailable, falling back to BM25: {e}")
+    results = await bm25_retrieve(db, knowledge_base_ids, query_text, config.top_k, config.min_score)
+    return [RetrievalResult(chunk_id=r.chunk_id, document_id=r.document_id,
+                            document_name=r.document_name, content=r.content, score=r.score,
+                            metadata=r.metadata) for r in results]
 
 
 async def _retrieve_multi_query(
@@ -339,7 +358,6 @@ async def _vector_search(
     config: RetrievalConfig,
 ) -> List[RetrievalResult]:
     """Vector cosine similarity search using stored embeddings."""
-    import struct
     from sqlalchemy import text
     from cortexa.rag.embedder import embedding_to_bytes
 
@@ -481,7 +499,6 @@ async def index_document(
 
     Returns the number of chunks created.
     """
-    from cortexa.db.models import DocumentChunk
     from cortexa.rag.chunker import chunk_text
 
     # Load document
@@ -696,6 +713,8 @@ async def retrieve_with_priority(
             seen_contents[content_key] = r
 
     # Sort by score (public KB results will rank higher due to boost)
-    merged = sorted(seen_contents.values(), key=lambda x: x.score, reverse=True)
+    grades = {'DIRECT': 0, 'RELATED': 1, 'BACKGROUND': 2}
+    merged = sorted(seen_contents.values(), key=lambda x: (
+        grades.get((x.metadata or {}).get('evidence_grade'), 3), -x.score))
 
     return merged[:top_k]

@@ -10,6 +10,7 @@
         <SearchSelect v-model="currentWorkspace" class="workspace-select" aria-label="切换工作空间" placeholder="选择工作空间" :options="[{ value: '', label: '选择工作空间' }, ...workspaces.map(ws => ({ value: ws.id, label: ws.name }))]" @change="onWorkspaceChange" />
       </div>
       <nav class="sidebar-nav">
+        <router-link v-if="auth.workspaceId" to="/projects" class="nav-item" title="项目" aria-label="项目"><FolderKanban :size="20" /><span class="nav-text">项目</span></router-link>
         <router-link v-if="auth.workspaceId" to="/works" class="nav-item" title="工作" aria-label="工作"><ClipboardList :size="20" /><span class="nav-text">工作</span></router-link>
         <router-link v-if="can('agent.use')" to="/chat" class="nav-item" title="对话" aria-label="对话">
           <MessageSquare :size="18" />
@@ -108,7 +109,7 @@
 
 <script setup>
 import {
-  ChartNoAxesCombined, ClipboardList, LayoutDashboard, Bot, Workflow, Calendar, BookOpen, Database,
+  ChartNoAxesCombined, FolderKanban, ClipboardList, LayoutDashboard, Bot, Workflow, Calendar, BookOpen, Database,
   MessageSquare, Palette, Settings, ShieldCheck, KeyRound, LogOut, Bot as BotIcon, ChevronUp, X
 } from 'lucide-vue-next'
 
@@ -124,7 +125,7 @@ const tabBar = ref(null)
 let nextTabId = 0
 const pageTitles = {
   '/model-usage': '模型用量',
-  '/': '首页', '/works': '工作', '/chat': '对话', '/meetings': '会议',
+  '/': '首页', '/projects': '项目', '/works': '工作', '/chat': '对话', '/meetings': '会议',
   '/my-agents': '我的 Agent', '/workspaces': '工作空间', '/agents': '智能体',
   '/knowledge': '空间知识库', '/data-sources': '数据源', '/settings': '系统配置',
   '/personalization': '个性化设置', '/access': '用户与权限', '/workflows': '工作流', '/tasks': '任务',
@@ -136,7 +137,7 @@ function openCurrentTab() {
   if (!pageTabs.value.some(tab => tab.location.fullPath === route.fullPath)) {
     pageTabs.value.push({
       id: ++nextTabId,
-      title: pageTitles[route.path] || (route.path.startsWith('/agent-operations/') ? 'Agent 运维' : route.path.startsWith('/works/') ? '工作详情' : '页面'),
+      title: pageTitles[route.path] || (route.path.startsWith('/agent-operations/') ? 'Agent 运维' : route.path.startsWith('/projects/') ? '项目详情' : route.path.startsWith('/works/') ? '工作详情' : '页面'),
       location: markRaw(router.resolve(route.fullPath)),
     })
   }

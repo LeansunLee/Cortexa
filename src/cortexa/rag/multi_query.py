@@ -7,8 +7,7 @@ and merges them using RRF to improve recall.
 from __future__ import annotations
 from cortexa.usage.context import usage_action
 
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Callable, Any
 
 
@@ -46,37 +45,9 @@ def generate_query_variants(
     Returns:
         List of query variants including the original query.
     """
-    if config is None:
-        config = MultiQueryConfig()
-
-    if llm is None:
-        from cortexa.config.llm_providers import create_llm
-        llm = create_llm()
-
-    prompt = config.prompt_template.format(
-        num_variants=config.num_variants,
-        query=query,
-    )
-
-    response = llm.invoke(prompt)
-    content = response.content if hasattr(response, "content") else str(response)
-
-    # Parse variants from response
-    variants = [
-        line.strip()
-        for line in content.strip().split("\n")
-        if line.strip() and not line.strip().startswith(("#", "-", "*", "1.", "2.", "3."))
-    ]
-
-    # Ensure we have variants, fallback to original query
-    if not variants:
-        variants = [query]
-
-    # Always include original query
-    if query not in variants:
-        variants.insert(0, query)
-
-    return variants[:config.num_variants + 1]
+    from cortexa.rag.relevance import query_variants
+    count = config.num_variants if config else 3
+    return query_variants(query, limit=count)
 
 
 def reciprocal_rank_fusion(

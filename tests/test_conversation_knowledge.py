@@ -51,7 +51,7 @@ def test_binary_policy_is_reported_unreadable_not_cited(monkeypatch):
 
 def test_unrelated_document_is_not_a_fallback_citation(monkeypatch):
     context, sources, _, _ = retrieve(monkeypatch, [document("天气.txt", "明天晴天")], "黑旗600销售政策")
-    assert context == ""
+    assert "Evidence Insufficient" in context
     assert sources == []
 
 
@@ -64,7 +64,9 @@ def test_policy_content_beyond_summary_reaches_context(monkeypatch):
 def test_specific_product_query_does_not_hide_third_policy(monkeypatch):
     docs = [document('黑旗600' + name + '.pdf', '黑旗600政策补贴' + name) for name in ['产品手册', '定价申请', '价格签批']]
     _, sources, _, _ = retrieve(monkeypatch, docs, '黑旗600政策补贴')
-    assert len(sources) == 3
+    assert len(sources) == 2
+    assert all(source['evidence_grade'] == 'DIRECT' for source in sources)
+    assert not any('产品手册' in source['name'] for source in sources)
 
 
 def test_processing_pdf_reports_wait_instead_of_missing_upload(monkeypatch):

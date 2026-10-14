@@ -12,19 +12,21 @@ import anyio
 import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, messages_from_dict
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select, text
 from sqlalchemy.exc import ProgrammingError
 
 from cortexa.agents.prompts import build_system_prompt
 from cortexa.config.llm_providers import create_llm
-from cortexa.db.models import Conversation, ConversationMessage, Workspace
+from cortexa.db.models import AgentCollaboration, Conversation, ConversationMessage, Workspace
 from cortexa.runtime.bindings import prepare_bindings
+from cortexa.runtime.budget_notices import budget_notices
 from cortexa.runtime.collaboration import LEVEL, Autonomy
 from cortexa.runtime.goals import GapType, parse_goal
 from cortexa.runtime.loop import GoalLoop, serialize_messages
 from cortexa.runtime.policy import conversation_modes, resolve_effective_policy
+from cortexa.runtime.recovery import reset_unstarted_agent, unstarted_agent_action
 from cortexa.runtime.shadow import can_read_goal_trace
 from cortexa.runtime.state import BudgetLimits, GoalState, GoalStatus
 from cortexa.runtime.store import GoalStore, own_conversation
@@ -58,6 +60,7 @@ class ParticipantRequest(BaseModel):
 
 
 class GoalRequest(BaseModel):
+    project_ids: list[uuid.UUID] = Field(default_factory=list,max_length=3)
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(min_length=1, max_length=64000)
     idempotency_key: str = Field(min_length=1, max_length=128)
@@ -151,7 +154,11 @@ def execution_config():
 
 
 def public_status(row):
+    from cortexa.runtime.background import lease_expired
     state = GoalState.model_validate(row.state)
+    question = None
+    if row.status == GoalStatus.WAITING and state.reason == 'user_decision_required':
+        question = store.files.read(row.id, row.artifacts['snapshot']).get('pending_question')
     retryable_runtime_error = (
         row.status == GoalStatus.FAILED
         and state.reason == "runtime_error"
@@ -163,11 +170,15 @@ def public_status(row):
         "status": row.status,
         "revision": row.revision,
         "reason": state.reason,
+        "user_question": question,
+        "can_reconcile": bool(state.current_action and state.current_action.phase == "unknown"
+            and state.current_action.capability_id and state.current_action.capability_id.startswith("agent:")
+            and store.files.read(row.id, row.artifacts["snapshot"]).get("proxy_runs", {}).get(state.current_action.id, {}).get("remote_execution")),
         "next_action": state.next_action,
         "consumed": state.consumed,
         "pending_agents": state.pending_agents,
         "recovery_allowed": row.status == GoalStatus.RUNNING
-        and (datetime.now(UTC) - row.updated_at).total_seconds() > state.limits.duration + 60,
+        and (lease_expired(row.id) or (datetime.now(UTC) - row.updated_at).total_seconds() > state.limits.duration + 60),
         "elapsed_seconds": state.elapsed_seconds,
         "limits": state.limits.model_dump(),
         "budget_phase": state.budget_phase,
@@ -247,6 +258,29 @@ async def get_goal(conv_id: uuid.UUID, goal_id: uuid.UUID):
     return public_status(row)
 
 
+@router.post("/{conv_id}/goals/{goal_id}/reconcile")
+async def reconcile(conv_id: uuid.UUID, goal_id: uuid.UUID):
+    from cortexa.runtime.reconciliation import reconcile_goal
+    return await reconcile_goal(conv_id, goal_id)
+
+
+@router.post("/{conv_id}/goals/{goal_id}/stop")
+async def stop_goal(conv_id: uuid.UUID, goal_id: uuid.UUID):
+    from cortexa.runtime.background import request_stop
+    row = await store.get(conv_id, goal_id)
+    if row.status != GoalStatus.RUNNING:
+        return public_status(row)
+    worker = request_stop(goal_id)
+    if worker:
+        await asyncio.gather(worker, return_exceptions=True)
+    current = await store.get(conv_id, goal_id)
+    saved = GoalState.model_validate(current.state)
+    if current.status == GoalStatus.RUNNING and saved.current_action is None and not saved.consumed:
+        saved.status, saved.reason, saved.next_action = GoalStatus.WAITING, 'cancelled', 'ASK_USER'
+        await store.checkpoint(current, saved, store.files.read(current.id, current.artifacts['snapshot']))
+    return public_status(current)
+
+
 @router.get("/{conv_id}/goals/{goal_id}/result")
 async def get_goal_result(conv_id: uuid.UUID, goal_id: uuid.UUID):
     row = await store.get(conv_id, goal_id)
@@ -266,6 +300,8 @@ async def collaboration_result(conv_id: uuid.UUID, goal_id: uuid.UUID, action_id
 
 @router.post("/{conv_id}/goals/stream")
 async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
+    from cortexa.conversation.questions import require_no_pending
+    await require_no_pending(conv_id, sessions=store.sessions)
     agent, workspace, policy = await environment(conv_id, request.budget)
     goal = parse_goal(request.content)
     state = GoalState(
@@ -290,6 +326,12 @@ async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
     if any(g.kind in {GapType.PARAMETER_GAP, GapType.SEMANTIC_GAP} for g in goal.uncertainties):
         state.status, state.reason, state.next_action = GoalStatus.WAITING, "clarify_goal", "ASK_USER"
     payload = {"goal": goal.model_dump(mode="json"), "messages": [], "sources": [], "observations": [], "cache": {}}
+    from cortexa.projects.service import summaries
+    async with store.sessions() as db:
+        project_text, project_refs = await summaries(db, request.project_ids, budget=min(6000, state.limits.context_tokens // 4))
+    payload["project_ids"] = [str(i) for i in request.project_ids]
+    payload["project_context"] = project_text
+    payload["sources"].extend(project_refs)
     payload["participant_tasks"] = {str(p.agent_id): p.task for p in request.participants}
     payload["participant_inputs"] = {str(p.agent_id): p.inputs for p in request.participants}
     payload["collaboration_runtime"] = enabled
@@ -322,12 +364,19 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
     state.policy_trace = policy.trace
     if row.revision != request.revision:
         raise HTTPException(409, "Goal 已更新，请重新读取状态")
+    payload = store.files.read(row.id, row.artifacts["snapshot"])
+    safe_initialization_retry = (
+        row.status == GoalStatus.WAITING
+        and state.reason == "action_result_unknown"
+        and unstarted_agent_action(state, payload)
+    )
     if row.status == GoalStatus.RUNNING:
         # An in-flight request owns its revision until its maximum duration plus
         # cleanup grace expires. After a process crash, explicit recovery records
         # uncertainty; it does not replay the previously started external action.
         age = (datetime.now(UTC) - row.updated_at).total_seconds()
-        if age <= state.limits.duration + 60:
+        from cortexa.runtime.background import lease_expired
+        if age <= state.limits.duration + 60 and not lease_expired(row.id):
             raise HTTPException(409, "Goal 正在执行")
         state.status, state.reason, state.next_action = GoalStatus.WAITING, "interrupted", "ASK_USER"
         if state.current_action and state.current_action.phase == "started":
@@ -341,16 +390,46 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         and state.current_action is None
         and all(state.consumed.get(name, 0) == 0 for name in ("llm_calls", "tool_calls", "agent_calls", "web_calls"))
     )
-    if not retryable_runtime_error and (row.status != GoalStatus.WAITING or state.reason not in {
+    if not retryable_runtime_error and not safe_initialization_retry and (row.status != GoalStatus.WAITING or state.reason not in {
         "missing_inputs",
+        "user_decision_required",
         "clarify_goal",
         "cancelled",
         "interrupted",
         "collaboration_authorized",
         "runtime_validation_error",
         "invalid_reasoning_action",
+        "agent_initialization_failed",
+        "proxy_request_rejected",
     }):
         raise HTTPException(409, "此 Goal 不能自动续跑，请检查停止原因")
+    if state.reason == 'user_decision_required':
+        from cortexa.conversation.questions import answered_question
+        public = payload.get('pending_question')
+        if not public or answered_question.get() != public['id']:
+            raise HTTPException(409, '请通过待你决策卡片回答问题')
+    if state.reason == "proxy_request_rejected":
+        from cortexa.runtime.proxy import REJECTED_HTTP_STATUSES
+        action = state.current_action
+        rejected = payload.get("proxy_runs", {}).get(action.id if action else "", {})
+        if not action or action.phase != "completed" or rejected.get("status") != "REJECTED" or rejected.get("http_status") not in REJECTED_HTTP_STATUSES:
+            raise HTTPException(409, "尚无明确的接口拒绝记录，不能自动重试")
+        state.used_agents = [ident for ident in state.used_agents if ident != action.capability_id.removeprefix("agent:")]
+    if safe_initialization_retry:
+        action_id = state.current_action.id
+        async with store.sessions() as db:
+            records = (await db.execute(select(AgentCollaboration).where(
+                AgentCollaboration.conversation_id == conv_id,
+                AgentCollaboration.status == "running",
+            ))).scalars().all()
+            for record in records:
+                runtime = (record.result_sources or {}).get("runtime", {})
+                if runtime.get("goal_id") == str(row.id) and runtime.get("action_id") == action_id:
+                    record.status = "failed"
+                    record.result_summary = "协作初始化中断；尚未启动子模型，允许安全重试。"
+                    record.completed_at = datetime.now(UTC)
+            await db.commit()
+        reset_unstarted_agent(state)
     if state.current_action and state.current_action.kind == "CAPABILITY" and state.current_action.phase != "completed":
         raise HTTPException(409, "上次外部行动结果未知，禁止自动重试；请先人工核实结果")
     if execution_config().get("features", {}).get("goal_collaboration_enabled") is True:
@@ -377,6 +456,21 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
         if "task" in participant.model_fields_set:
             payload.setdefault("participant_tasks", {})[ident] = participant.task
     messages = messages_from_dict(payload.get("messages", []))
+    if state.reason == "proxy_request_rejected":
+        # A rejected first call can stop a batch before its remaining calls start.
+        # Close these tool-call records without executing them during recovery.
+        pending = {}
+        for message in messages:
+            for call in getattr(message, "tool_calls", []):
+                pending[call["id"]] = call
+            if isinstance(message, ToolMessage):
+                pending.pop(message.tool_call_id, None)
+        messages.extend(ToolMessage(content="本次调用未执行：协作接口拒绝请求后本批次已停止。", tool_call_id=ident) for ident in pending)
+    if state.reason == 'user_decision_required':
+        continuation = payload.get('decision_continuation')
+        if continuation:
+            payload['decision_answer'] = {**continuation, 'answer':request.content}
+    payload.pop('pending_question', None)
     messages.append(HumanMessage(content=request.content))
     payload["messages"] = serialize_messages(messages)
     payload["clarifications"] = [*payload.get("clarifications", []), request.content]
@@ -395,6 +489,7 @@ async def resume_goal(conv_id: uuid.UUID, goal_id: uuid.UUID, request: ResumeReq
 
 
 HALT_MESSAGES = {
+    "agent_initialization_failed": "协作初始化失败，尚未调用参与者。已保留查询结果；请在当前对话中继续重试。",
     "failure_limit": "协作或工具连续失败，目标已停止。请查看上方失败详情后调整任务或配置，再创建新目标。",
     "proxy_contract_invalid": "代理输入契约配置不适用于目标模式，请修正配置并发布。",
     "proxy_contract_changed": "代理契约已改变，请核对配置后新建目标。",
@@ -402,6 +497,7 @@ HALT_MESSAGES = {
     "capability_approval_required": "所选能力尚未通过当前自动执行策略。已停止调用，请管理员核查能力权限及只读约束。",
     "clarify_goal": "请说明希望处理的对象、具体任务和期望结果。",
     "missing_inputs": "执行需要补充或修正参数，请根据工具要求补充后继续。",
+    "proxy_request_rejected": "协作接口已明确拒绝请求，本次调用没有取得结果。请检查 Proxy 请求映射、输入格式或接口授权后继续。",
     "action_result_unknown": "上次行动的结果尚未确认，已停止自动执行。请先核实结果，避免重复调用。",
     "required_capability_not_used": "尚未取得所需业务数据，本轮不能提供可靠的数据结论。",
     "context_budget_exceeded": "当前上下文超过预算，已停止执行。请缩小任务范围。",
@@ -411,6 +507,12 @@ HALT_MESSAGES = {
     "model_output_incomplete": "模型回复未完成，目标已停止。请重试或提高输出预算。",
     "collaboration_denied": "所请求的协作 Agent 已被拒绝，本目标已停止。请新建目标调整参与者。",
     "child_budget_unavailable": "当前剩余预算不足以完成协作并汇总结果，目标已停止。",
+    "unresolved_capability_failure": "本轮协作或查询未取得可用结果，目标已停止。请查看协作详情中的失败原因，调整参与者配置或任务后重新发起。",
+    "capability_unavailable": "所需能力当前不可用，目标已停止。请检查能力或数据源配置后重试。",
+    "capability_not_authorized": "目标尝试调用未授权的能力，已停止执行。请为该 Agent 配置相应能力权限后重试。",
+    "collaboration_unavailable": "所选协作者不可用（可能是代理型 Agent 或协作深度超限），目标已停止。",
+    "dependency_not_ready": "协作依赖的上游结果尚未就绪，已停止执行。请重新发起目标。",
+    "agent_input_budget_exceeded": "派发给参与者的输入超过上下文预算，目标已停止。请精简任务或减少依赖结果。",
 }
 
 
@@ -440,6 +542,10 @@ def stream_response(row, state, payload, agent, workspace):
             # Middleware also watches revocation throughout the SSE stream.
             async with store.sessions() as db:
                 await own_conversation(db, row.conversation_id, use_agent=True)
+                if payload.get("project_ids"):
+                    from cortexa.projects.service import get
+                    for ident in payload["project_ids"]:
+                        await get(db, uuid.UUID(ident))
             _, _, current_policy = await environment(row.conversation_id)
             state.limits = preserve_saved_budget(current_policy, state.limits.model_dump())
             state.policy_trace = current_policy.trace
@@ -461,12 +567,63 @@ def stream_response(row, state, payload, agent, workspace):
                 }
             )
             yield event({"type": "goal_status", **public_status(row)})
-            loop = GoalLoop(state, payload, checkpoint, authorize)
+            live_events = asyncio.Queue()
+            last_progress = {"type": "runtime_progress", "agent_name": agent.name, "message": "正在准备任务上下文", "status": "running"}
+            yield event(last_progress)
+            def publish_live(value):
+                nonlocal last_progress
+                if value.get("type") == "runtime_retrieval":
+                    entry = value["entry"]
+                    if value.get("runtime_role") == "CHILD":
+                        entry = {**entry, "seq": len(loop.trace) + 1}
+                        loop.trace.append(entry)
+                    if can_read_goal_trace():
+                        live_events.put_nowait({"type": "debug", "entry": entry})
+                    return
+                if value.get("type") == "runtime_prompt":
+                    from cortexa.runtime.prompt_requests import save_prompt
+                    value = dict(value)
+                    request = value.pop("request")
+                    ref = save_prompt(row.conversation_id, value.get("agent_id") or row.agent_id,
+                                      value.get("agent_name") or agent.name, value["prompt_kind"], request)
+                    value["prompt_ref"] = ref
+                    step = next((s for s in reversed(payload.get("execution_steps", []))
+                                 if s.get("tool") == value.get("action_id")), None)
+                    if step is not None:
+                        step.setdefault("prompts", []).append(ref)
+                elif value.get("type") == "runtime_progress":
+                    last_progress = value
+                    steps = payload.setdefault("execution_steps", [])
+                    entry = {"status": "runtime_error" if value.get("status") == "error" else "runtime_done" if value.get("status") == "completed" else "runtime_start",
+                                  "message": f"{value.get('agent_name') or 'Agent'} · {value.get('message', '')}",
+                                  "tool": value.get("action_id"), "agent_name": value.get("agent_name"),
+                                  "sources": value.get("sources", []), "data_result": value.get("data_result", False)}
+                    previous = next((i for i in range(len(steps) - 1, -1, -1) if value.get("action_id") and steps[i].get("tool") == value["action_id"] and steps[i].get("status") == "runtime_start"), None)
+                    if previous is None:
+                        steps.append(entry)
+                    else:
+                        steps[previous] = {**steps[previous], **entry}
+                    payload["execution_steps"] = steps[-100:]
+                elif value.get("type") == "runtime_draft":
+                    step = next((s for s in reversed(payload.get("execution_steps", [])) if s.get("tool") == value.get("action_id")), None)
+                    if step is not None:
+                        step["draft"] = (step.get("draft", "") + value.get("content", ""))[:600]
+                elif value.get("type") == "runtime_usage":
+                    usage_key = f"{value.get('agent_id')}:{value.get('action_id')}"
+                    payload.setdefault("execution_usage", {})[usage_key] = {"agent_name": value.get("agent_name"), "agent_id": value.get("agent_id"), **value.get("stats", {})}
+                    step = next((s for s in reversed(payload.get("execution_steps", [])) if s.get("tool") == value.get("action_id")), None)
+                    if step is not None:
+                        step["usage"] = value.get("stats", {})
+                live_events.put_nowait(value)
+            loop = GoalLoop(state, payload, checkpoint, authorize, event_sink=publish_live, agent_name=agent.name)
             if state.status == GoalStatus.RUNNING:
                 query = payload["goal"]["raw_request"] + "\n" + "\n".join(payload.get("clarifications", []))
                 async with asyncio.timeout(loop.budget.remaining_time()):
                     async with store.sessions() as db:
-                        bindings, business = await prepare_bindings(agent, query, payload["sources"], db)
+                        bindings, business = await prepare_bindings(agent, query, payload["sources"], db,
+                                                                    context_budget=min(6000, state.limits.context_tokens // 4),
+                                                                    **({"project_ids":payload["project_ids"]} if payload.get("project_ids") else {}))
+                        bindings = list(bindings)
                         if not payload.get("prepared"):
                             messages = [
                                 {
@@ -500,6 +657,11 @@ def stream_response(row, state, payload, agent, workspace):
                             for item in reversed(history):
                                 if item.role in {"user", "assistant"} and item.id != row.initial_message_id:
                                     messages.append({"role": item.role, "content": item.content})
+                            if payload.get("project_ids"):
+                                from cortexa.projects.service import summaries
+                                from cortexa.agents.prompts import reference_message
+                                text, _ = await summaries(db, payload["project_ids"], budget=min(6000, state.limits.context_tokens // 4))
+                                messages.append(reference_message("本轮引用项目（仅可见内容，未验收成果需标注）", text))
                             messages.append({"role": "user", "content": payload["goal"]["raw_request"]})
                             messages.extend({"role": "user", "content": x} for x in payload.get("clarifications", []))
                             payload["messages"] = serialize_messages(messages)
@@ -522,14 +684,40 @@ def stream_response(row, state, payload, agent, workspace):
                     model = create_llm(agent.model)
                     if hasattr(model, "max_retries"):
                         model = model.model_copy(update={"max_retries": 0})
-                    async for value in loop.run(model, bindings, required_names=required):
-                        yield event(value)
+                    async def drive_loop():
+                        try:
+                            from cortexa.runtime.agent_executor import resume_binding
+                            await resume_binding(loop, bindings)
+                            async for value in loop.run(model, bindings, required_names=required):
+                                live_events.put_nowait(value)
+                        finally:
+                            live_events.put_nowait(None)
+                    worker = asyncio.create_task(drive_loop())
+                    try:
+                        while True:
+                            try:
+                                value = await asyncio.wait_for(live_events.get(), timeout=10)
+                            except TimeoutError:
+                                yield event({**last_progress, "heartbeat": True})
+                                continue
+                            if value is None:
+                                break
+                            yield event(value)
+                        await worker
+                    finally:
+                        if not worker.done():
+                            worker.cancel()
+                            with anyio.CancelScope(shield=True):
+                                try:
+                                    await worker
+                                except asyncio.CancelledError:
+                                    pass
             reply = loop.reply or payload.get("final_reply", "")
             if state.status == GoalStatus.COMPLETE and payload.get("explicit_invitation") and not state.used_agents:
                 reply += ("\n\n" if reply else "") + "本次未邀请协作 Agent；当前未找到适合此任务的参与者。"
             if state.status != GoalStatus.COMPLETE:
                 notice = (
-                    (payload.get("waiting_message") if state.reason in {"missing_inputs", "invalid_reasoning_action"} else None)
+                    (payload.get("waiting_message") if state.reason in {"missing_inputs", "invalid_reasoning_action", "user_decision_required", "action_result_unknown"} else None)
                     or budget_notice(state)
                     or HALT_MESSAGES.get(state.reason, "任务已停止：" + (state.reason or state.status))
                 )
@@ -541,6 +729,9 @@ def stream_response(row, state, payload, agent, workspace):
             message = await store.checkpoint(
                 row, state, payload, reply=reply, trace=loop.trace, stats=loop.usage.stats()
             )
+            if payload.get('pending_question') and state.reason == 'user_decision_required':
+                from cortexa.conversation.questions import save_question
+                await save_question(row.conversation_id, payload['pending_question'], {'engine':'goal', 'goal_id':str(row.id)}, sessions=store.sessions)
             finalized = True
             # Preserve existing post-runtime cognition, independently from Goal budget.
             if state.status == GoalStatus.COMPLETE:
@@ -556,7 +747,10 @@ def stream_response(row, state, payload, agent, workspace):
                     "type": "done",
                     "id": str(message.id),
                     "content": reply,
+                    "budget_notices": budget_notices(state),
+                    "project_ids": payload.get("project_ids", []),
                     "sources": payload["sources"],
+                    "user_question": payload.get("pending_question"),
                     "stats": loop.usage.stats(),
                     "collaborations": payload.get("collaborations", []),
                     **public_status(row),
@@ -656,9 +850,14 @@ def stream_response(row, state, payload, agent, workspace):
             log.warning("Goal stopped with %s", type(error).__name__)
             yield event({"type": "error", "error": "Goal 执行中止，请读取最新状态", "goal_id": str(row.id)})
 
-    return StreamingResponse(
+    response = StreamingResponse(
         generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
+    from cortexa.api.user_questions import wrap_completion
+    from cortexa.runtime.background import clear_stop
+    clear_stop(row.id)
+    return wrap_completion(response, row.conversation_id, goal_id=row.id)
+
 
 
 class AuthorizationRequest(BaseModel):
@@ -777,13 +976,22 @@ async def authorize_collaboration(conv_id: uuid.UUID, goal_id: uuid.UUID, reques
     state.reason, state.next_action = "collaboration_authorized", "CONTINUE"
     snapshot = store.files.read(row.id, row.artifacts["snapshot"])
     messages = messages_from_dict(snapshot.get("messages", []))
-    messages.append(
-        HumanMessage(content="本次目标的协作选择已保存。仅允许已授权的参与者；未选择者已拒绝，不得再次请求。")
-    )
-    messages.append(SystemMessage(
-        content="以下协作者已被用户明确拒绝。不要再要求用户提供其 Agent 标识，"
-                "也不要将拒绝解释为缺少标识。继续完成无需协作的部分，并明确说明未完成的协作部分。"
-    ))
+    messages.append(HumanMessage(content="本次目标的协作选择已保存，请按实际授权结果继续。"))
+    instructions = []
+    if state.approved_agents:
+        instructions.append(
+            "用户已明确允许以下协作工具："
+            + json.dumps(["agent_" + uuid.UUID(ident).hex for ident in state.approved_agents])
+            + "。根据任务依赖调用这些已授权工具，取得协作结果后完成目标；不得将已允许的参与者描述为被拒绝。"
+        )
+    if state.denied_agents:
+        instructions.append(
+            "用户已明确拒绝以下协作工具："
+            + json.dumps(["agent_" + uuid.UUID(ident).hex for ident in state.denied_agents])
+            + "。不得调用这些被拒绝的工具或再次索要其标识；拒绝不表示缺少标识。"
+            "继续完成其他可执行部分，如实说明拒绝造成的缺失。"
+        )
+    messages.append(SystemMessage(content="\n".join(instructions)))
     snapshot["messages"] = serialize_messages(messages)
     await store.checkpoint(row, state, snapshot)
     return public_status(row)

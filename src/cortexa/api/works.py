@@ -52,6 +52,7 @@ async def list_works(
     search: str = "",
     status: str = "",
     priority: str = "",
+    project_id: uuid.UUID | None = None,
     assignee_id: uuid.UUID | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -81,6 +82,10 @@ async def list_works(
         q = q.where(Work.status == status)
     if priority:
         q = q.where(Work.priority == priority)
+    if project_id:
+        from cortexa.projects.service import get
+        await get(db, project_id)
+        q = q.where(Work.project_id == project_id)
     if assignee_id:
         q = q.where(Work.assignee_id == assignee_id)
     rows = (await db.execute(q.order_by(Work.updated_at.desc(), Work.id).limit(limit).offset(offset))).scalars()
@@ -106,14 +111,24 @@ async def detail(work_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 async def edit(work_id: uuid.UUID, payload: WorkInput, db: AsyncSession = Depends(get_db)):
     w = await s.get_work(db, work_id, lock=True)
     s.allowed(w, "edit")
+    previous_project = w.project_id
     data = payload.model_dump()
+    if "project_id" not in payload.model_fields_set:
+        data["project_id"] = w.project_id
+    if w.project_id and data["project_id"] != w.project_id:
+        from cortexa.projects.service import get
+        await get(db,w.project_id,lock=True)
     data["reviewer_id"] = data["reviewer_id"] or w.creator_id
-    await s.validate_people(db, data)
+    await s.validate_people(db, data, existing_project=w.project_id)
     changes = {k: {"before": str(getattr(w, k)), "after": str(v)} for k, v in data.items() if getattr(w, k) != v}
     for k, v in data.items():
         setattr(w, k, v)
     w.status = "pending" if w.assignee_type == "agent" else "todo"
     await s.event(db, w, "edited", changes)
+    if previous_project != w.project_id:
+        from cortexa.projects.service import get, activity
+        for ident in {previous_project,w.project_id}-{None}:
+            await activity(db,await get(db,ident),"work_changed",{"work_id":str(w.id),"title":w.title})
     return await s.output(db, w)
 
 

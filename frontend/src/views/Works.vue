@@ -10,6 +10,7 @@
       <div class="work-tabs"><button v-for="t in tabs" :key="t[0]" :class="{selected:filters.view === t[0]}" @click="filters.view = t[0]">{{ t[1] }}</button></div>
       <div class="work-filters">
         <input v-model="filters.search" type="search" placeholder="搜索标题或执行目标" aria-label="搜索工作" />
+        <SearchSelect v-model="filters.project_id" :options="[{value:'',label:'所有项目'},...projects.map(p=>({value:p.id,label:p.title}))]" placeholder="所有项目" aria-label="项目筛选" />
         <SearchSelect v-model="filters.status" :options="statusFilterOptions" placeholder="所有状态" aria-label="状态筛选" />
         <SearchSelect v-model="filters.assignee_id" :options="assigneeFilterOptions" placeholder="所有负责人" aria-label="负责人筛选" />
         <SearchSelect v-model="filters.priority" :options="priorityFilterOptions" placeholder="所有优先级" aria-label="优先级筛选" />
@@ -52,7 +53,7 @@
           <WorkMemories v-if="work.permissions.memory" :work-id="work.id" :work-title="work.title" :agents="agents" :events="events" @changed="load" />
           <section class="work-panel"><h3>执行与验收记录</h3><ol class="timeline"><li v-for="a in auditEvents" :key="a.id"><div><strong>{{ a.actor_name }}</strong> {{ actions[a.action] || a.action }}<time>{{ format(a.created_at) }}</time></div><p v-if="a.data_json.comment || a.data_json.summary" class="preserve">{{ a.data_json.comment || a.data_json.summary }}</p><p v-if="a.data_json.filename" class="hint">{{ a.data_json.filename }}</p><p v-if="a.action === 'memory'" class="preserve">{{ a.data_json.source_deleted ? '来源已删除' : ('记忆治理：' + (a.data_json.outcome || '已提交') + ' · ' + a.data_json.memory_id) }}</p><details v-if="a.action === 'log_edited'"><summary>查看日志修改</summary><p class="preserve">修改前：{{ a.data_json.before }}</p><p class="preserve">修改后：{{ a.data_json.after }}</p></details><div v-if="a.action === 'edited'" class="hint"><p v-for="(change,key) in a.data_json" :key="key">{{ fieldLabels[key] || key }}：{{ change.before }} → {{ change.after }}</p></div></li></ol></section>
         </main>
-        <aside><section class="work-panel"><h3>工作信息</h3><dl><dt>负责人</dt><dd>{{ work.assignee_name }}</dd><dt>创建人</dt><dd>{{ work.creator_name }}</dd><dt>验收人</dt><dd>{{ work.reviewer_name }}</dd><dt>截止时间</dt><dd :class="{overdue:isOverdue(work)}">{{ format(work.due_at) }}</dd><dt>创建时间</dt><dd>{{ format(work.created_at) }}</dd><template v-if="work.completed_at"><dt>完成时间</dt><dd>{{ format(work.completed_at) }}</dd></template></dl></section>
+        <aside><section class="work-panel"><h3>工作信息</h3><dl><template v-if="work.project_id"><dt>所属项目</dt><dd><router-link :to="`/projects/${work.project_id}`">{{ work.project_name }}</router-link></dd></template><dt>负责人</dt><dd>{{ work.assignee_name }}</dd><dt>创建人</dt><dd>{{ work.creator_name }}</dd><dt>验收人</dt><dd>{{ work.reviewer_name }}</dd><dt>截止时间</dt><dd :class="{overdue:isOverdue(work)}">{{ format(work.due_at) }}</dd><dt>创建时间</dt><dd>{{ format(work.created_at) }}</dd><template v-if="work.completed_at"><dt>完成时间</dt><dd>{{ format(work.completed_at) }}</dd></template></dl></section>
           <section class="work-panel"><h3>来源 · {{ sourceLabels[work.source_type] }}</h3><p>{{ work.source_label }}</p><blockquote v-if="work.source_excerpt">{{ work.source_excerpt }}</blockquote><router-link v-if="work.can_view_source" :to="{path:'/chat',query:{conversation:work.source_id,message:work.source_message_id}}">查看来源消息 →</router-link><p class="hint" v-else-if="work.source_id">原始对话为私有或已删除，已保留来源摘要。</p></section>
         </aside>
       </div>
@@ -69,13 +70,15 @@ import WorkCard from '../components/WorkCard.vue'
 import WorkLogs from '../components/WorkLogs.vue'
 import WorkMemories from '../components/WorkMemories.vue'
 import WorkEditor from '../components/WorkEditor.vue'
-import { workApi, knowledgeApi, usableAgentApi } from '../api'
+import api, { workApi, knowledgeApi, usableAgentApi } from '../api'
 const route = useRoute(), router = useRouter()
 const setPageTabTitle = inject('setPageTabTitle', () => {})
 const hasLoaded = ref(false)
 const rows = ref([]), work = ref(null), members = ref([]), deliveries = ref([]), events = ref([]), kbs = ref([]), agents = ref([])
 watch(() => work.value?.title, title => { if (title) setPageTabTitle(title) })
-const filters = reactive({view:'assigned',search:'',status:'',priority:'',assignee_id:''}), offset = ref(0)
+const projects = ref([])
+onMounted(async()=>{try{projects.value=(await api.get('/projects')).data}catch{error.value='项目筛选加载失败'}})
+const filters = reactive({project_id:route.query.project_id || '',view:route.query.project_id ? 'all' : 'assigned',search:'',status:'',priority:'',assignee_id:''}), offset = ref(0)
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref(''), editing = ref(null), cancelOpen = ref(false)
 const submission = ref(''), file = ref(null), fileInput = ref(null), comment = ref(''), kbTargets = reactive({})
 const tabs = [['assigned','我负责的'],['created','我创建的'],['review','待我验收'],['all','全部']]
@@ -119,7 +122,7 @@ async function load() {
       if (work.value.permissions.knowledge) kbs.value = (await knowledgeApi.list({scope:'workspace'})).data
       if (work.value.permissions.memory) agents.value = (await usableAgentApi.list()).data
     } else {
-      const {data} = await workApi.list({...filters,assignee_id:filters.assignee_id || undefined,offset:offset.value})
+      const {data} = await workApi.list({...filters,project_id:filters.project_id || undefined,assignee_id:filters.assignee_id || undefined,offset:offset.value})
       if(current === revision) rows.value = data
     }
     if (current === revision) hasLoaded.value = true
@@ -136,6 +139,7 @@ async function saved() {
   editing.value = null
   await load()
 }
+watch(()=>route.query.project_id,id=>{filters.project_id=id || '';if(id)filters.view='all'})
 watch(filters,()=>{clearTimeout(timer);revision++;offset.value=0;timer=setTimeout(load,250)})
 onMounted(async()=>{await load();try{members.value=(await workApi.members()).data}catch{error.value='无法加载成员筛选，请刷新重试'}})
 onBeforeUnmount(()=>{clearTimeout(timer);revision++})

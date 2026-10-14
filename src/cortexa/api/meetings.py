@@ -621,8 +621,8 @@ def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachme
         parts.append(f"你的角色：{agent.role}")
     if agent.responsibilities:
         parts.append(f"你的职责：{agent.responsibilities}")
-    if agent.boundaries:
-        parts.append(f"工作边界：{agent.boundaries}")
+    if agent.work_rules:
+        parts.append(f"工作规则：{agent.work_rules}")
     if agent.personality:
         parts.append(f"性格特征：{agent.personality}")
 
@@ -660,6 +660,8 @@ def _build_agent_meeting_prompt(agent: Agent, topic: str, purpose: str, attachme
 
 def _build_host_summary_prompt(agent: Agent, topic: str, round_num: int, max_rounds: int) -> str:
     parts = [f"你是本次会议的主持人，业务角色是{agent.role or 'AI助手'}。"]
+    if agent.work_rules:
+        parts.append(f"工作规则：{agent.work_rules}")
 
     parts.append(f"\n会议议题：{topic}")
     parts.append(f"当前是第 {round_num}/{max_rounds} 轮讨论。")
