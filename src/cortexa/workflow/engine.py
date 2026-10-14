@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import uuid
 from datetime import datetime, timezone
@@ -85,7 +86,10 @@ async def run_task(db: AsyncSession, task: Task, steps: list[tuple[str, uuid.UUI
                 agent_id=agent.id,
                 agent_version_id=version.id,
                 owner_user_id=actor.user_id,
-                input_data=context.copy(),
+                # Deep-copy snapshots: the loop keeps mutating context["steps"],
+                # and an aliased dict both retro-edits earlier rows and defeats
+                # SQLAlchemy change detection (expire_on_commit=False).
+                input_data=copy.deepcopy(context),
                 status="running",
             )
             db.add(agent_run)
@@ -106,11 +110,11 @@ async def run_task(db: AsyncSession, task: Task, steps: list[tuple[str, uuid.UUI
             agent_run.completed_at = datetime.now(timezone.utc)
             agent_run.duration_ms = int((agent_run.completed_at - agent_run.created_at).total_seconds() * 1000)
             context["steps"][step_name] = output
-            run.output_data = dict(context)
+            run.output_data = copy.deepcopy(context)
             await db.commit()
             current_agent_run_id = None
         run.status = task.status = "completed"
-        task.output_data = dict(context)
+        task.output_data = copy.deepcopy(context)
         run.completed_at = datetime.now(timezone.utc)
         await db.commit()
     except Exception as error:
@@ -126,7 +130,7 @@ async def run_task(db: AsyncSession, task: Task, steps: list[tuple[str, uuid.UUI
                 agent_run.completed_at = datetime.now(timezone.utc)
         task.status = run.status = "failed"
         run.error_message = message
-        run.output_data = dict(context)
+        run.output_data = copy.deepcopy(context)
         run.completed_at = datetime.now(timezone.utc)
         await db.commit()
     await db.refresh(run)

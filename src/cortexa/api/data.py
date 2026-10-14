@@ -5,7 +5,8 @@ from __future__ import annotations
 import uuid
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -83,7 +84,29 @@ async def delete_data_source(ds_id: uuid.UUID, db: AsyncSession = Depends(get_db
     ds = await db.get(DataSource, ds_id)
     if not ds:
         raise HTTPException(404, "Data source not found")
+    # Query audit rows have no DB-level cascade; detach them (history is kept,
+    # dangling references are dropped) instead of failing after the 204.
+    cap_ids = (
+        await db.scalars(select(DataCapability.id).where(DataCapability.data_source_id == ds_id))
+    ).all()
+    if cap_ids:
+        await db.execute(
+            update(DataQuery)
+            .where(DataQuery.data_capability_id.in_(cap_ids))
+            .values(data_capability_id=None, data_source_id=None)
+        )
+        await db.execute(delete(AgentDataBinding).where(AgentDataBinding.data_capability_id.in_(cap_ids)))
+        await db.execute(delete(DataCapability).where(DataCapability.id.in_(cap_ids)))
+    await db.execute(
+        update(DataQuery).where(DataQuery.data_source_id == ds_id).values(data_source_id=None)
+    )
     await db.delete(ds)
+    # Complete deletion before a 204 lets the client reload the list.
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(409, "数据源仍被其他记录引用，删除未完成") from error
 
 
 # =========================================================================
@@ -195,7 +218,18 @@ async def delete_credential(cred_id: uuid.UUID, db: AsyncSession = Depends(get_d
     cred = await db.get(DataCredential, cred_id)
     if not cred:
         raise HTTPException(404, "Credential not found")
+    in_use = await db.scalar(
+        select(func.count()).select_from(DataSource).where(DataSource.credential_id == cred_id)
+    )
+    if in_use:
+        raise HTTPException(409, "该凭证仍被数据源使用，请先删除或改绑相关数据源")
     await db.delete(cred)
+    # Complete deletion before a 204 lets the client reload the list.
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(409, "凭证仍被其他记录引用，删除未完成") from error
 
 
 # =========================================================================
@@ -291,7 +325,18 @@ async def delete_capability(cap_id: uuid.UUID, db: AsyncSession = Depends(get_db
     cap = await db.get(DataCapability, cap_id)
     if not cap:
         raise HTTPException(404, "Data capability not found")
+    # Audit rows keep their history but lose the dangling capability reference;
+    # agent bindings cascade at the DB level.
+    await db.execute(
+        update(DataQuery).where(DataQuery.data_capability_id == cap_id).values(data_capability_id=None)
+    )
     await db.delete(cap)
+    # Complete deletion before a 204 lets the client reload the list.
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(409, "数据能力仍被其他记录引用，删除未完成") from error
 
 
 @router.put("/capabilities/{cap_id}", response_model=DataCapabilityOut)

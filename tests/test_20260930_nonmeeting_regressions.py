@@ -99,12 +99,13 @@ def test_manual_query_returns_rows_without_persisting_them(monkeypatch):
 
 
 class FakeConnection:
-    def __init__(self, reject=False):
+    def __init__(self, reject=False, error='password authentication failed'):
         self.reject = reject
+        self.error = error
 
     async def __aenter__(self):
         if self.reject:
-            raise RuntimeError('password authentication failed')
+            raise RuntimeError(self.error)
         return self
 
     async def __aexit__(self, *_):
@@ -115,23 +116,40 @@ class FakeConnection:
 
 
 class FakeEngine:
-    def __init__(self, reject=False):
+    def __init__(self, reject=False, error='password authentication failed'):
         self.reject = reject
+        self.error = error
 
     def connect(self):
-        return FakeConnection(self.reject)
+        return FakeConnection(self.reject, self.error)
 
     async def dispose(self):
         pass
 
 
-@pytest.mark.parametrize('probe_reject,expected', [(False, False), (True, True)])
-def test_postgres_test_rejects_unverifiable_password(monkeypatch, probe_reject, expected):
-    engines = [FakeEngine(), FakeEngine(probe_reject)]
-    monkeypatch.setattr(adapter, 'decrypt_dict', lambda _: {'username': 'test', 'password': 'wrong'})
+@pytest.mark.parametrize(
+    'probe_reject,probe_error,expected,verified',
+    [
+        # Trust-auth database: a random password also connects, so the real
+        # credential is unverifiable — a warning on a successful connection,
+        # not a failure that flips the source to error and blocks sync-schema.
+        (False, None, True, False),
+        # Password-auth database: the probe is rejected for its password, so
+        # the real credential was genuinely checked.
+        (True, 'password authentication failed', True, True),
+        # The probe failed for an unrelated reason: verification is impossible.
+        (True, 'connection refused', False, False),
+    ],
+)
+def test_postgres_test_connection_distinguishes_unverifiable_from_failed(
+    monkeypatch, probe_reject, probe_error, expected, verified
+):
+    engines = [FakeEngine(), FakeEngine(probe_reject, probe_error)]
+    monkeypatch.setattr(adapter, 'decrypt_dict', lambda _: {'username': 'test', 'password': 'secret'})
     monkeypatch.setattr(adapter, 'create_async_engine', lambda *_args, **_kwargs: engines.pop(0))
     result = asyncio.run(adapter.test_connection('postgres', {'host': '127.0.0.1', 'database': 'test'}, 'encrypted'))
     assert result['success'] is expected
+    assert result['password_verified'] is verified
     assert not engines
 
 
