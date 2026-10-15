@@ -42,6 +42,6 @@ export function renderCitationMarkers(html, sources) {
     const src = (sources || [])[Number(i)]
     if (!src) return m
     const name = escapeHtmlAttr(src.name || src.url)
-    return `<a class="cite-pill" href="${escapeHtmlAttr(src.url)}" target="_blank" rel="noopener" title="${name}">${GLOBE_SVG}<span class="cite-pill-name">${name}</span></a>`
+    return `<a class="cite-pill" href="${escapeHtmlAttr(src.url)}" target="_blank" rel="noopener" data-src-index="${Number(i)}">${GLOBE_SVG}<span class="cite-pill-name">${name}</span></a>`
   })
 }

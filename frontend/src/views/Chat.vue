@@ -162,38 +162,40 @@
 
                 <UserQuestionCard v-if="isActiveQuestionMessage(msg)" :key="curSession.pendingQuestion.id"
                   :question="curSession.pendingQuestion" :busy="sending || streaming" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" />
-                <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)"></div>
+                <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)" @mouseover="onCiteMove($event, msg)" @mouseleave="citePreview=null"></div>
                 <BudgetNotice :notices="msg.metadata_json?.budget_notices || []" />
                 <div v-if="msg.metadata_json?.stopped" class="preview-hint">已停止生成</div>
 
-                <!-- Sources -->
-                <div v-if="msg.metadata_json?.sources?.length" class="msg-sources">
-                  <div class="sources-title">参考来源</div>
-                  <ol class="sources-list">
-                    <li v-for="(src, j) in msg.metadata_json.sources" :key="j">
-                      <span class="source-row" tabindex="0" role="button" @click="showSources(msg, j)" @keydown.enter.prevent="showSources(msg, j)">
-                        <span class="cite-marker cite-marker-list">[{{ j + 1 }}]</span>
-                        <span class="source-chip-icon">
-                          <Globe v-if="src.type === 'web'" :size="13" />
-                          <BookOpen v-else-if="src.type === 'knowledge_base'" :size="13" />
-                          <Database v-else-if="src.type === 'data_source'" :size="13" />
-                          <FolderOpen v-else-if="src.type === 'project'" :size="13" />
-                          <Link v-else :size="13" />
-                        </span>
-                        <span class="source-row-name">{{ src.name }}</span>
-                        <span v-if="sourceRowMeta(src)" class="source-row-meta">{{ sourceRowMeta(src) }}</span>
-                        <span class="source-card" aria-hidden="true">
-                          <span class="source-card-head">
-                            <span class="source-card-type">{{ sourceTypeLabel(src.type) }}</span>
-                            <span v-if="sourceCardDate(src)" class="source-card-date">{{ sourceCardDate(src) }}</span>
-                          </span>
-                          <span class="source-card-name">{{ src.name }}</span>
-                          <span v-if="sourceCardMeta(src)" class="source-card-meta">{{ sourceCardMeta(src) }}</span>
-                          <span v-if="src.description" class="source-card-desc">{{ src.description }}</span>
-                        </span>
+                <!-- Sources (collapsed; sources already cited inline are omitted) -->
+                <div v-if="listSources(msg).length" class="msg-sources">
+                  <button class="sources-btn" @click="toggleSources(msg)">
+                    <BookOpen :size="13" />
+                    <span>参考 {{ listSources(msg).length }} 个来源</span>
+                    <ChevronDown :size="13" :class="['sources-chevron', { open: msg._sourcesExpanded }]" />
+                  </button>
+                  <div v-if="msg._sourcesExpanded" class="sources-panel">
+                    <div v-for="(row, j) in listSources(msg)" :key="row.idx" class="source-row" tabindex="0" role="button" @click="showSources(msg, row.idx)" @keydown.enter.prevent="showSources(msg, row.idx)">
+                      <span class="cite-marker-list">[{{ j + 1 }}]</span>
+                      <span class="source-chip-icon">
+                        <Globe v-if="row.src.type === 'web'" :size="13" />
+                        <BookOpen v-else-if="row.src.type === 'knowledge_base'" :size="13" />
+                        <Database v-else-if="row.src.type === 'data_source'" :size="13" />
+                        <FolderOpen v-else-if="row.src.type === 'project'" :size="13" />
+                        <Link v-else :size="13" />
                       </span>
-                    </li>
-                  </ol>
+                      <span class="source-row-name">{{ row.src.name }}</span>
+                      <span v-if="sourceRowMeta(row.src)" class="source-row-meta">{{ sourceRowMeta(row.src) }}</span>
+                      <span class="source-card" aria-hidden="true">
+                        <span class="source-card-head">
+                          <span class="source-card-type">{{ sourceTypeLabel(row.src.type) }}</span>
+                          <span v-if="sourceCardDate(row.src)" class="source-card-date">{{ sourceCardDate(row.src) }}</span>
+                        </span>
+                        <span class="source-card-name">{{ row.src.name }}</span>
+                        <span v-if="sourceCardMeta(row.src)" class="source-card-meta">{{ sourceCardMeta(row.src) }}</span>
+                        <span v-if="row.src.description" class="source-card-desc">{{ row.src.description }}</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
@@ -217,6 +219,18 @@
               </div>
             </div>
           </template>
+
+          <!-- Inline citation hover summary (viewport-fixed, shared) -->
+          <div v-if="citePreview" class="cite-pop" :style="citePopPos" aria-hidden="true">
+            <div class="source-card-head">
+              <Globe :size="14" />
+              <span class="source-card-type">{{ citePreview.label }}</span>
+              <span v-if="citePreview.date" class="source-card-date">{{ citePreview.date }}</span>
+            </div>
+            <div class="source-card-name">{{ citePreview.name }}</div>
+            <div v-if="citePreview.host" class="source-card-meta">{{ citePreview.host }}</div>
+            <div v-if="citePreview.description" class="source-card-desc">{{ citePreview.description }}</div>
+          </div>
 
           <!-- Collaboration Card (streaming) -->
           <div v-if="(curSession?.collabPending?.length > 0 || curSession?.collabResults?.length > 0) && streaming" class="msg-row msg-row-assistant">
@@ -1177,6 +1191,33 @@ const selectSource = (idx) => { selectedSourceIdx.value = idx; loadMemorySource(
 const SOURCE_TYPE_LABELS = { web: '网页', knowledge_base: '知识库文档', data_source: '数据源', project: '项目', memory: '记忆' }
 const sourceTypeLabel = (t) => SOURCE_TYPE_LABELS[t] || '来源'
 const assistantHtml = (msg) => renderCitationMarkers(formatMessage(applyCitationMarkers(msg.content, msg.metadata_json?.sources)), msg.metadata_json?.sources)
+const citePreview = ref(null)
+const citePopPos = ref({})
+const onCiteMove = (e, msg) => {
+  const pill = e.target.closest?.('.cite-pill')
+  if (!pill) { citePreview.value = null; return }
+  const src = msg.metadata_json?.sources?.[Number(pill.dataset.srcIndex)]
+  if (!src) { citePreview.value = null; return }
+  const rect = pill.getBoundingClientRect()
+  const width = Math.min(340, window.innerWidth * 0.76)
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 16))
+  const estH = 170
+  const top = rect.bottom + 10 + estH > window.innerHeight ? Math.max(8, rect.top - estH - 10) : rect.bottom + 10
+  citePreview.value = { name: src.name, description: src.description || '', host: sourceCardMeta(src), date: sourceCardDate(src), label: sourceTypeLabel(src.type) }
+  citePopPos.value = { left: left + 'px', top: top + 'px', width: width + 'px' }
+}
+const inlineSourceIdx = (msg) => {
+  try {
+    const text = applyCitationMarkers(msg.content || '', msg.metadata_json?.sources)
+    return new Set([...text.matchAll(/\u0001(\d+)\u0001/g)].map(m => Number(m[1])))
+  } catch { return new Set() }
+}
+const listSources = (msg) => {
+  const inline = inlineSourceIdx(msg)
+  return (msg.metadata_json?.sources || []).map((src, idx) => ({ src, idx }))
+    .filter(({ src, idx }) => !(src.type === 'web' && src.url) || !inline.has(idx))
+}
+const toggleSources = (msg) => { msg._sourcesExpanded = !msg._sourcesExpanded }
 const sourceRowMeta = (src) => {
   if (src.type === 'web') { try { return new URL(src.url).host } catch { return '' } }
   return sourceTypeLabel(src.type)
@@ -2216,11 +2257,26 @@ onBeforeUnmount(() => {
 }
 
 /* ===== Sources ===== */
-.msg-sources { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
-.sources-title { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
-.sources-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.sources-list li { margin: 0; }
+.msg-sources { margin-top: 12px; }
+.sources-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; background: transparent; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 12px; color: var(--text2);
+  cursor: pointer; transition: all 0.15s;
+}
+.sources-btn:hover { background: var(--surface2); border-color: var(--border); }
+.sources-chevron { transition: transform 0.2s; }
+.sources-chevron.open { transform: rotate(180deg); }
+.sources-panel { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .cite-marker-list { color: var(--text3); font-weight: 600; font-size: 12px; flex-shrink: 0; }
+.cite-pop {
+  position: fixed; z-index: 90; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-card); color: var(--text);
+  box-shadow: var(--shadow-md); font-size: 12px; text-align: left;
+  pointer-events: none;
+}
 .msg-content-assistant :deep(.cite-pill) {
   display: inline-flex; align-items: center; gap: 4px;
   max-width: 220px; padding: 1px 9px; margin: 0 3px; vertical-align: middle;
@@ -2253,7 +2309,7 @@ onBeforeUnmount(() => {
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.15s;
 }
 .source-row:hover .source-card, .source-row:focus-visible .source-card { opacity: 1; visibility: visible; }
-.sources-list li:last-child .source-card { left: auto; right: 0; }
+.sources-panel .source-row:last-child .source-card { left: auto; right: 0; }
 .source-card-head { display: flex; align-items: center; gap: 6px; color: var(--text3); font-size: 11px; }
 .source-card-type { font-weight: 500; }
 .source-card-date { margin-left: auto; }
