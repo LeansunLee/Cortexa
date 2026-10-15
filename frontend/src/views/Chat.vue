@@ -162,38 +162,38 @@
 
                 <UserQuestionCard v-if="isActiveQuestionMessage(msg)" :key="curSession.pendingQuestion.id"
                   :question="curSession.pendingQuestion" :busy="sending || streaming" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" />
-                <div v-else class="msg-content-assistant" v-html="formatMessage(msg.content)"></div>
+                <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)" @click="onCiteClick($event, msg)"></div>
                 <BudgetNotice :notices="msg.metadata_json?.budget_notices || []" />
                 <div v-if="msg.metadata_json?.stopped" class="preview-hint">已停止生成</div>
 
                 <!-- Sources -->
                 <div v-if="msg.metadata_json?.sources?.length" class="msg-sources">
-                  <div v-for="(src, j) in msg.metadata_json.sources" :key="j" class="source-chip" tabindex="0" @click="showSources(msg, j)" @keydown.enter.prevent="showSources(msg, j)">
-                    <span class="source-chip-icon">
-                      <Globe v-if="src.type === 'web'" :size="12" />
-                      <BookOpen v-else-if="src.type === 'knowledge_base'" :size="12" />
-                      <Database v-else-if="src.type === 'data_source'" :size="12" />
-                      <FolderOpen v-else-if="src.type === 'project'" :size="12" />
-                      <Link v-else :size="12" />
-                    </span>
-                    <span class="source-chip-name">{{ src.name }}</span>
-                    <span class="source-card" aria-hidden="true">
-                      <span class="source-card-head">
+                  <div class="sources-title">参考来源</div>
+                  <ol class="sources-list">
+                    <li v-for="(src, j) in msg.metadata_json.sources" :key="j">
+                      <span class="source-row" tabindex="0" role="button" @click="showSources(msg, j)" @keydown.enter.prevent="showSources(msg, j)">
+                        <span class="cite-marker cite-marker-list">[{{ j + 1 }}]</span>
                         <span class="source-chip-icon">
-                          <Globe v-if="src.type === 'web'" :size="14" />
-                          <BookOpen v-else-if="src.type === 'knowledge_base'" :size="14" />
-                          <Database v-else-if="src.type === 'data_source'" :size="14" />
-                          <FolderOpen v-else-if="src.type === 'project'" :size="14" />
-                          <Link v-else :size="14" />
+                          <Globe v-if="src.type === 'web'" :size="13" />
+                          <BookOpen v-else-if="src.type === 'knowledge_base'" :size="13" />
+                          <Database v-else-if="src.type === 'data_source'" :size="13" />
+                          <FolderOpen v-else-if="src.type === 'project'" :size="13" />
+                          <Link v-else :size="13" />
                         </span>
-                        <span class="source-card-type">{{ sourceTypeLabel(src.type) }}</span>
-                        <span v-if="sourceCardDate(src)" class="source-card-date">{{ sourceCardDate(src) }}</span>
+                        <span class="source-row-name">{{ src.name }}</span>
+                        <span v-if="sourceRowMeta(src)" class="source-row-meta">{{ sourceRowMeta(src) }}</span>
+                        <span class="source-card" aria-hidden="true">
+                          <span class="source-card-head">
+                            <span class="source-card-type">{{ sourceTypeLabel(src.type) }}</span>
+                            <span v-if="sourceCardDate(src)" class="source-card-date">{{ sourceCardDate(src) }}</span>
+                          </span>
+                          <span class="source-card-name">{{ src.name }}</span>
+                          <span v-if="sourceCardMeta(src)" class="source-card-meta">{{ sourceCardMeta(src) }}</span>
+                          <span v-if="src.description" class="source-card-desc">{{ src.description }}</span>
+                        </span>
                       </span>
-                      <span class="source-card-name">{{ src.name }}</span>
-                      <span v-if="sourceCardMeta(src)" class="source-card-meta">{{ sourceCardMeta(src) }}</span>
-                      <span v-if="src.description" class="source-card-desc">{{ src.description }}</span>
-                    </span>
-                  </div>
+                    </li>
+                  </ol>
                 </div>
 
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
@@ -423,7 +423,7 @@
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
-import { inlineFormat } from '../utils/messageFormatting'
+import { inlineFormat, applyCitationMarkers, renderCitationMarkers } from '../utils/messageFormatting'
 import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
@@ -1176,6 +1176,17 @@ const selectSource = (idx) => { selectedSourceIdx.value = idx; loadMemorySource(
 
 const SOURCE_TYPE_LABELS = { web: '网页', knowledge_base: '知识库文档', data_source: '数据源', project: '项目', memory: '记忆' }
 const sourceTypeLabel = (t) => SOURCE_TYPE_LABELS[t] || '来源'
+const assistantHtml = (msg) => renderCitationMarkers(formatMessage(applyCitationMarkers(msg.content, msg.metadata_json?.sources)))
+const onCiteClick = (event, msg) => {
+  const marker = event.target.closest('.cite-marker')
+  if (!marker) return
+  const idx = Number(marker.dataset.source)
+  if (Number.isInteger(idx) && msg.metadata_json?.sources?.[idx]) showSources(msg, idx)
+}
+const sourceRowMeta = (src) => {
+  if (src.type === 'web') { try { return new URL(src.url).host } catch { return '' } }
+  return sourceTypeLabel(src.type)
+}
 const sourceCardDate = (src) => src.type === 'web' && src.searched_at
   ? new Date(src.searched_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : ''
 const sourceCardMeta = (src) => {
@@ -2211,18 +2222,23 @@ onBeforeUnmount(() => {
 }
 
 /* ===== Sources ===== */
-.msg-sources { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-.source-chip {
-  position: relative; display: inline-flex; align-items: center; gap: 5px;
-  max-width: 240px; padding: 3px 10px; background: var(--surface2);
-  border: 1px solid var(--border); border-radius: 999px;
+.msg-sources { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.sources-title { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.sources-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sources-list li { margin: 0; }
+.cite-marker { color: var(--primary); font-weight: 600; font-size: 0.82em; vertical-align: super; line-height: 1; cursor: pointer; user-select: none; }
+.msg-content-assistant .cite-marker:hover { text-decoration: underline; }
+.cite-marker-list { vertical-align: baseline; font-size: 12px; flex-shrink: 0; }
+.source-row {
+  position: relative; display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
+  padding: 4px 8px; margin-left: -8px; border-radius: 8px;
   font-size: 12px; color: var(--text2); cursor: pointer;
-  transition: all 0.15s;
 }
-.source-chip:hover { border-color: var(--primary); background: var(--primary-light); color: var(--text); }
-.source-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.source-row:hover { background: var(--surface2); color: var(--text); }
+.source-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .source-chip-icon { flex-shrink: 0; display: inline-flex; color: var(--text3); }
-.source-chip-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-row-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-row-meta { color: var(--text3); flex-shrink: 0; }
 .source-card {
   position: absolute; z-index: 60; top: calc(100% + 8px); left: 0;
   width: 340px; max-width: 76vw; padding: 12px 14px;
@@ -2232,8 +2248,8 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-md); font-size: 12px; text-align: left;
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.15s;
 }
-.source-chip:hover .source-card, .source-chip:focus-visible .source-card { opacity: 1; visibility: visible; }
-.source-chip:last-child .source-card { left: auto; right: 0; }
+.source-row:hover .source-card, .source-row:focus-visible .source-card { opacity: 1; visibility: visible; }
+.sources-list li:last-child .source-card { left: auto; right: 0; }
 .source-card-head { display: flex; align-items: center; gap: 6px; color: var(--text3); font-size: 11px; }
 .source-card-type { font-weight: 500; }
 .source-card-date { margin-left: auto; }
@@ -2625,7 +2641,6 @@ onBeforeUnmount(() => {
 .chat-input-area { border-top: 0; padding: 14px 28px 18px; }
 .chat-input-wrap { border: 1px solid var(--border); background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-md); }
 .chat-input-wrap:focus-within { box-shadow: 0 0 0 3px var(--primary-light, #f4f4f5); }
-.source-chip { background: var(--surface2); }
 .new-content-button, .stop-generation, .source-open { border-color: var(--border); background: var(--surface); }
 @media(max-width: 760px) { .msg-row { padding-left: 18px; padding-right: 18px; } .chat-input-area { padding: 10px 16px; } .msg-bubble-user { max-width: 90%; } }
 .sidebar-header { gap: 8px; flex-wrap: wrap; }
