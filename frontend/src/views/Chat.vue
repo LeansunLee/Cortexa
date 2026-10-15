@@ -162,7 +162,7 @@
 
                 <UserQuestionCard v-if="isActiveQuestionMessage(msg)" :key="curSession.pendingQuestion.id"
                   :question="curSession.pendingQuestion" :busy="sending || streaming" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" />
-                <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)" @click="onCiteClick($event, msg)"></div>
+                <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)"></div>
                 <BudgetNotice :notices="msg.metadata_json?.budget_notices || []" />
                 <div v-if="msg.metadata_json?.stopped" class="preview-hint">已停止生成</div>
 
@@ -1176,13 +1176,7 @@ const selectSource = (idx) => { selectedSourceIdx.value = idx; loadMemorySource(
 
 const SOURCE_TYPE_LABELS = { web: '网页', knowledge_base: '知识库文档', data_source: '数据源', project: '项目', memory: '记忆' }
 const sourceTypeLabel = (t) => SOURCE_TYPE_LABELS[t] || '来源'
-const assistantHtml = (msg) => renderCitationMarkers(formatMessage(applyCitationMarkers(msg.content, msg.metadata_json?.sources)))
-const onCiteClick = (event, msg) => {
-  const marker = event.target.closest('.cite-marker')
-  if (!marker) return
-  const idx = Number(marker.dataset.source)
-  if (Number.isInteger(idx) && msg.metadata_json?.sources?.[idx]) showSources(msg, idx)
-}
+const assistantHtml = (msg) => renderCitationMarkers(formatMessage(applyCitationMarkers(msg.content, msg.metadata_json?.sources)), msg.metadata_json?.sources)
 const sourceRowMeta = (src) => {
   if (src.type === 'web') { try { return new URL(src.url).host } catch { return '' } }
   return sourceTypeLabel(src.type)
@@ -2226,9 +2220,19 @@ onBeforeUnmount(() => {
 .sources-title { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
 .sources-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .sources-list li { margin: 0; }
-.cite-marker { color: var(--primary); font-weight: 600; font-size: 0.82em; vertical-align: super; line-height: 1; cursor: pointer; user-select: none; }
-.msg-content-assistant .cite-marker:hover { text-decoration: underline; }
-.cite-marker-list { vertical-align: baseline; font-size: 12px; flex-shrink: 0; }
+.cite-marker-list { color: var(--text3); font-weight: 600; font-size: 12px; flex-shrink: 0; }
+.msg-content-assistant :deep(.cite-pill) {
+  display: inline-flex; align-items: center; gap: 4px;
+  max-width: 220px; padding: 1px 9px; margin: 0 3px; vertical-align: middle;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface2); color: var(--text2);
+  font-size: 12px; font-weight: 500; line-height: 1.6;
+  text-decoration: none; cursor: pointer; transition: all 0.15s;
+}
+.msg-content-assistant :deep(.cite-pill:hover) { border-color: var(--primary); background: var(--primary-light); color: var(--text); text-decoration: none; }
+.msg-content-assistant :deep(.cite-pill-icon) { width: 11px; height: 11px; flex-shrink: 0; color: var(--text3); }
+.msg-content-assistant :deep(.cite-pill:hover .cite-pill-icon) { color: var(--primary); }
+.msg-content-assistant :deep(.cite-pill-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-row {
   position: relative; display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
   padding: 4px 8px; margin-left: -8px; border-radius: 8px;

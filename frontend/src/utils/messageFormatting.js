@@ -33,7 +33,15 @@ export function applyCitationMarkers(content, sources) {
   return out
 }
 
-export function renderCitationMarkers(html) {
-  return String(html ?? '').replace(new RegExp(`${CITE_TOKEN}(\\d+)${CITE_TOKEN}`, 'g'),
-    (m, i) => `<sup class="cite-marker" data-source="${i}" role="button" tabindex="-1">[${Number(i) + 1}]</sup>`)
+const GLOBE_SVG = '<svg class="cite-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>'
+const escapeHtmlAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Inline citation pills embedded in the answer text; each opens the source in a new tab.
+export function renderCitationMarkers(html, sources) {
+  return String(html ?? '').replace(new RegExp(`${CITE_TOKEN}(\\d+)${CITE_TOKEN}`, 'g'), (m, i) => {
+    const src = (sources || [])[Number(i)]
+    if (!src) return m
+    const name = escapeHtmlAttr(src.name || src.url)
+    return `<a class="cite-pill" href="${escapeHtmlAttr(src.url)}" target="_blank" rel="noopener" title="${name}">${GLOBE_SVG}<span class="cite-pill-name">${name}</span></a>`
+  })
 }
