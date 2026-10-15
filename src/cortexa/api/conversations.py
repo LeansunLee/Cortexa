@@ -1087,7 +1087,7 @@ async def create_message_stream(
 
                 from cortexa.projects.service import summaries
                 project_context, project_refs = await summaries(db, payload.project_ids)
-                sources.extend(project_refs)
+                sources = list(project_refs)
                 # Save user message
                 attachments = payload.attachments or []
                 generated_title = await assign_first_message_title(db, conv_id, payload.content)
@@ -1239,7 +1239,6 @@ async def create_message_stream(
                 references = await organization_reference(agent, db)
                 if project_context:
                     references.append(reference_message("本轮引用项目（只读参考）", project_context))
-                sources = []
                 # Build recent messages for follow-up detection
                 recent_for_plan = []
                 try:
