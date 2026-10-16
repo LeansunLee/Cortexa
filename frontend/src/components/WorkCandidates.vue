@@ -1,9 +1,26 @@
 <template>
-  <section class="work-candidates" aria-label="可执行工作">
-    <p v-if="busy" class="hint">正在识别可执行工作…</p>
-    <p v-else-if="error" class="hint">{{ error }} <button @click="load">重试</button></p>
-    <h4><span class="heading-mark" aria-hidden="true"></span>{{ items.length ? `发现 ${items.length} 项可执行工作` : '创建可执行工作' }}</h4>
-    <div class="candidate-grid">
+  <section class="work-candidates" aria-label="可执行工作" :aria-busy="busy || undefined">
+    <p v-if="error" class="hint">{{ error }} <button @click="load">重试</button></p>
+    <h4 v-if="busy">
+      <span class="heading-mark" aria-hidden="true"></span>正在梳理对话中的可执行工作
+      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </h4>
+    <h4 v-else><span class="heading-mark" aria-hidden="true"></span>{{ items.length ? `发现 ${items.length} 项可执行工作` : '创建可执行工作' }}</h4>
+    <div v-if="busy" class="candidate-grid" aria-hidden="true">
+      <article v-for="n in 2" :key="n" class="skeleton-card">
+        <div class="sk sk-badges"></div>
+        <div class="sk-body">
+          <div class="sk sk-title"></div>
+          <div class="sk sk-line"></div>
+          <div class="sk sk-line short"></div>
+        </div>
+        <div class="sk-actions">
+          <div class="sk sk-btn"></div>
+          <div class="sk sk-btn primary"></div>
+        </div>
+      </article>
+    </div>
+    <div v-else class="candidate-grid">
       <article v-for="c in items" :key="c.id">
         <WorkCard :item="c.work || c">
           <template #actions>
@@ -77,6 +94,35 @@ h4 {
   border-radius: 999px;
   background: var(--primary);
 }
+.loading-dots { display: inline-flex; align-items: center; gap: 3px; margin-left: 2px; }
+.loading-dots i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--primary);
+  animation: dots-bounce 1.4s infinite ease-in-out;
+}
+.loading-dots i:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots i:nth-child(2) { animation-delay: -0.16s; }
+@keyframes dots-bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; } 40% { transform: scale(1); opacity: 1; } }
+.skeleton-card {
+  box-sizing: border-box; min-height: 240px; padding: 18px;
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+}
+.sk {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 45%, var(--surface2) 65%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+.sk-badges { width: 104px; height: 22px; }
+.sk-body { display: flex; flex-direction: column; gap: 8px; min-height: 96px; }
+.sk-title { width: 68%; height: 15px; }
+.sk-line { width: 94%; height: 12px; }
+.sk-line.short { width: 56%; }
+.sk-actions { margin-top: auto; display: flex; justify-content: flex-end; gap: 8px; }
+.sk-btn { width: 64px; height: 28px; }
+.sk-btn.primary { width: 96px; }
+@keyframes sk-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .loading-dots i, .sk { animation: none; } }
 .candidate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr)); gap:16px; }
 article { min-width:0; }
 .manual-card { box-sizing:border-box; min-height:240px; padding:18px; display:flex; flex-direction:column; align-items:flex-start; gap:12px; border:1px dashed var(--border); border-radius:14px; background:var(--surface); color:var(--text); }
