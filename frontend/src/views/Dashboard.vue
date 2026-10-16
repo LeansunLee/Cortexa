@@ -15,20 +15,6 @@
           <div class="stat-label">智能体</div>
         </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-icon"><AppIcon name="RefreshCw" /></div>
-        <div class="stat-info">
-          <div class="stat-value">{{ stats.workflows }}</div>
-          <div class="stat-label">工作流</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon"><FileText :size="24" /></div>
-        <div class="stat-info">
-          <div class="stat-value">{{ stats.tasks }}</div>
-          <div class="stat-label">任务</div>
-        </div>
-      </div>
     </div>
 
     <div class="section-header">
@@ -42,10 +28,6 @@
       <router-link v-if="can('agent.create')" to="/agents" class="action-card">
         <span class="action-icon"><Bot :size="18" /></span>
         <span class="action-text">创建智能体</span>
-      </router-link>
-      <router-link v-if="can('workflows.manage')" to="/workflows" class="action-card">
-        <span class="action-icon"><AppIcon name="RefreshCw" /></span>
-        <span class="action-text">创建工作流</span>
       </router-link>
       <router-link v-if="can('config.manage')" to="/settings" class="action-card">
         <span class="action-icon"><Settings :size="18" /></span>
@@ -151,7 +133,7 @@ import { can, auth } from '../auth'
 import { workspaceApi, configApi } from '../api'
 
 const workspaces = ref([])
-const stats = ref({ workspaces: 0, agents: 0, workflows: 0, tasks: 0 })
+const stats = ref({ workspaces: 0, agents: 0 })
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const editingWorkspace = ref(null)
