@@ -7,8 +7,6 @@ from cortexa.api.workspaces import router as workspaces_router
 from cortexa.api.conversations import router as conversations_router
 from cortexa.api.knowledge import router as knowledge_router
 from cortexa.api.tools import router as tools_router
-from cortexa.api.workflows import router as workflows_router
-from cortexa.api.tasks import router as tasks_router
 from cortexa.api.meetings import router as meetings_router
 from cortexa.api.data import router as data_router
 from cortexa.api.collaboration import router as collaboration_router
@@ -26,8 +24,6 @@ from cortexa.api.runtime_policy import router as runtime_policy_router
 api_router.include_router(runtime_policy_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(tools_router)
-api_router.include_router(workflows_router)
-api_router.include_router(tasks_router)
 api_router.include_router(meetings_router)
 api_router.include_router(data_router)
 api_router.include_router(collaboration_router)

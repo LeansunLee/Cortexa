@@ -5,7 +5,6 @@ export {
   MessageSquare,
   Settings,
   LayoutDashboard,
-  Workflow,
   Database,
   BookOpen,
   Users,
