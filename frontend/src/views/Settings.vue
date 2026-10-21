@@ -106,7 +106,7 @@
               <input id="provider-temperature" v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" />
             </div>
             <div class="form-group">
-              <label for="provider-max-tokens">最大输出词元</label>
+              <label for="provider-max-tokens">最大输出 Token</label>
               <input id="provider-max-tokens" v-model.number="form.max_tokens" type="number" min="256" max="128000" />
             </div>
           </div>

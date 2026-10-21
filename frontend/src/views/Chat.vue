@@ -1780,14 +1780,14 @@ watch(activeTabId, () => scrollToBottom(true))
 
 const cleanStatusText = (value = '') => value.replace(/^[\p{Extended_Pictographic}\uFE0F\u200D✓✗●⏱\s]+/u, '').trim()
 const usageLabel = (stats) => {
-  if (stats?.token_count == null) return '词元用量未返回'
+  if (stats?.token_count == null) return 'Token 用量未返回'
   const count = Number(stats.token_count).toLocaleString('zh-CN')
-  if (stats.usage_source !== 'provider') return count + ' 词元 · 历史统计'
-  return count + ' 词元' + (stats.usage_complete ? '' : ' · 部分统计')
+  if (stats.usage_source !== 'provider') return count + ' Token · 历史统计'
+  return count + ' Token' + (stats.usage_complete ? '' : ' · 部分统计')
 }
 const usageTitle = (stats) => stats?.usage_source === 'provider' && stats.token_count != null
-  ? '回复及工具调用：输入 ' + (stats.input_tokens || 0) + ' 词元，输出 ' + (stats.output_tokens || 0) + ' 词元。' + (stats.usage_complete ? '' : '部分模型调用未返回用量。')
-  : '历史记录或外部服务未提供可核实的词元用量；不将文字长度或流式片段数作为实际消耗。'
+  ? '回复及工具调用：输入 ' + (stats.input_tokens || 0) + ' Token，输出 ' + (stats.output_tokens || 0) + ' Token。' + (stats.usage_complete ? '' : '部分模型调用未返回用量。')
+  : '历史记录或外部服务未提供可核实的 Token 用量；不将文字长度或流式片段数作为实际消耗。'
 const formatDuration = (ms) => {
   if (!ms) return ''
   if (ms < 1000) return ms + 'ms'

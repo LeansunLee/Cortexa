@@ -443,7 +443,7 @@
                 <input v-model.number="editingAgent.temperature" type="number" step="0.1" min="0" max="2" />
               </div>
               <div class="form-group">
-                <label>最大输出词元</label>
+                <label>最大输出 Token</label>
                 <input v-model.number="editingAgent.max_tokens" type="number" min="256" max="128000" />
               </div>
             </div>
@@ -585,8 +585,8 @@ const runtimeBudgetFields = [
   { key: 'web_calls', label: 'Max Web Calls', zh: '网页调用次数', min: 0, suggest: 8 },
   { key: 'agent_calls', label: 'Max Agent Calls', zh: '协作调用次数', min: 0, suggest: 8 },
   { key: 'agent_depth', label: 'Max Agent Depth', zh: '协作层级', min: 0, suggest: 2 },
-  { key: 'context_tokens', label: 'Max Context Tokens', zh: '上下文词元', min: 256, suggest: 128000 },
-  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出词元', min: 0, suggest: 32768 },
+  { key: 'context_tokens', label: 'Max Context Tokens', zh: '上下文 Token', min: 256, suggest: 128000 },
+  { key: 'output_tokens', label: 'Max Output Tokens', zh: '累计输出 Token', min: 0, suggest: 32768 },
   { key: 'max_steps', label: 'Max Steps', zh: '目标步骤', min: 1, suggest: 64 },
   { key: 'max_replans', label: 'Max Replans', zh: '重新规划次数', min: 0, suggest: 3 },
   { key: 'max_failures', label: 'Max Failures', zh: '失败次数', min: 1, suggest: 5 },
