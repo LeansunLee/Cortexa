@@ -9,11 +9,11 @@
         </header>
         <div class="textdoc-body" :aria-busy="saving">
           <label class="name-field">
-            <span>文件名</span>
+            <span>文件名 <LlmContextHint text="文档名会作为检索结果标题注入 LLM 提示词，并显示在回答的引用来源中；建议使用能概括内容的业务名。" /></span>
             <input ref="nameInput" :value="name" :readonly="!creating" :disabled="saving" placeholder="例如：笔记.txt 或 说明.md" maxlength="100" @input="$emit('update:name', $event.target.value)" />
           </label>
           <div class="content-field" :inert="saving">
-            <label id="textdoc-content-label">正文</label>
+            <label id="textdoc-content-label">正文 <LlmContextHint text="正文会被知识库检索，并作为参考资料注入 LLM 提示词；请勿包含不可信指令或敏感凭证。" /></label>
             <MarkdownEditor v-if="markdown" :model-value="modelValue" aria-label="文本文档正文" aria-labelledby="textdoc-content-label" @update:model-value="$emit('update:modelValue', $event)" />
             <textarea v-else :value="modelValue" class="plain-editor" spellcheck="false" aria-labelledby="textdoc-content-label" @input="$emit('update:modelValue', $event.target.value)" />
           </div>
@@ -37,6 +37,7 @@
 import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FileText, X } from 'lucide-vue-next'
 import MarkdownEditor from './MarkdownEditor.vue'
+import LlmContextHint from '../LlmContextHint.vue'
 const props = defineProps({
   creating: Boolean, name: { type: String, default: '' },
   modelValue: { type: String, default: '' }, markdown: { type: Boolean, default: true },

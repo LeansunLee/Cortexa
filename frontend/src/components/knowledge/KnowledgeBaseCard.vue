@@ -81,7 +81,7 @@
             <button type="button" class="icon" aria-label="关闭" :disabled="editorBusy" @click="closeEditor"><X :size="18" /></button>
           </div>
           <label v-if="!['move-docs', 'move-resources', 'move-folder'].includes(editor.type)" class="editor-field">
-            名称
+            名称 <LlmContextHint v-if="editor.type === 'rename-doc'" text="文档名会作为检索结果标题注入 LLM 提示词，并显示在回答的引用来源中；建议使用能概括内容的业务名。" />
             <input v-model="editor.value" class="form-input" :placeholder="editor.type === 'create-folder' ? '请输入文件夹名称' : '请输入名称'" :readonly="editor.type === 'move-doc'" :disabled="editorBusy" maxlength="200" required />
           </label>
           <label v-if="editor.type === 'edit-kb'" class="editor-field">
@@ -106,6 +106,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, inject } fr
 import { PanelLeftOpen, PanelLeftClose, FolderOpen, Folder, FolderTree, FolderPlus, FolderInput, ChevronDown, ChevronUp, ChevronRight, Trash2, Search, RefreshCw, Files, Eye, Share2, Download, CalendarClock, ScrollText, FilePlus, Pencil, Power, Plus, MoreHorizontal, Copy, X } from 'lucide-vue-next'
 import { knowledgeApi } from '../../api'
 import KnowledgeUpload from './KnowledgeUpload.vue'
+import LlmContextHint from '../LlmContextHint.vue'
 import SearchSelect from '../SearchSelect.vue'
 import DocumentPreview from './DocumentPreview.vue'
 import ConfirmDialog from './ConfirmDialog.vue'

@@ -301,11 +301,11 @@
             <button type="button" class="modal-close" aria-label="关闭新建数据能力弹窗" @click="showCreateCap = false">×</button>
           </div>
           <div class="form-group">
-            <label>名称 *</label>
+            <label>名称 * <LlmContextHint text="会作为数据能力名称逐字注入 Agent 系统提示词（可用数据能力列表），模型据此选择工具；请使用清晰的业务名，避免指令式文案。" /></label>
             <input v-model="newCap.name" placeholder="例如：查询月度销售额" />
           </div>
           <div class="form-group">
-            <label>补充提示词</label>
+            <label>补充提示词 <LlmContextHint text="逐字注入 Agent 系统提示词，模型在选择工具、填写入参和组织回答时都会遵循；这是提示词注入面，请只写查询口径、字段含义与回答约束，勿粘贴不可信文本。" /></label>
             <textarea v-model="newCap.description" rows="3" placeholder="说明工具适用场景、默认筛选条件、业务值映射及回答要求；用户明确的条件优先于默认值。"></textarea>
             <small>调用该数据工具时会注入给 Agent，用于说明查询口径、字段含义和回答约束。</small>
           </div>
@@ -329,7 +329,7 @@
             <textarea aria-label="改写 SQL" v-model="newCap.query_template" rows="5" class="mono" placeholder="SELECT * FROM orders WHERE (:month IS NULL OR month = :month)"></textarea>
           </div>
           <div class="form-group">
-            <label>输入 Schema (JSON)</label>
+            <label>输入 Schema (JSON) <LlmContextHint text="参数名与参数说明会作为工具入参 Schema 提供给 LLM，模型据此理解并填写参数；说明请写业务含义与取值口径。" /></label>
             <textarea aria-label="输入 Schema (JSON)" v-model="newCap.input_schema_str" rows="3" class="mono" placeholder='{"type":"object","properties":{"month":{"type":"string"}}}'></textarea>
             <small>仅 SQL 中以 <code>:month</code> 形式实际引用的参数会暴露给 Agent；Schema 字段名需与 SQL 占位符一致。</small>
           </div>
@@ -363,11 +363,11 @@
             <button type="button" class="modal-close" aria-label="关闭编辑数据能力弹窗" @click="editingCap = null">×</button>
           </div>
           <div class="form-group">
-            <label>名称 *</label>
+            <label>名称 * <LlmContextHint text="会作为数据能力名称逐字注入 Agent 系统提示词（可用数据能力列表），模型据此选择工具；请使用清晰的业务名，避免指令式文案。" /></label>
             <input v-model="editingCap.name" />
           </div>
           <div class="form-group">
-            <label>补充提示词</label>
+            <label>补充提示词 <LlmContextHint text="逐字注入 Agent 系统提示词，模型在选择工具、填写入参和组织回答时都会遵循；这是提示词注入面，请只写查询口径、字段含义与回答约束，勿粘贴不可信文本。" /></label>
             <textarea v-model="editingCap.description" rows="3" placeholder="说明工具适用场景、默认筛选条件、业务值映射及回答要求；用户明确的条件优先于默认值。"></textarea>
             <small>调用该数据工具时会注入给 Agent，用于说明查询口径、字段含义和回答约束。</small>
           </div>
@@ -391,7 +391,7 @@
             <textarea aria-label="改写 SQL" v-model="editingCap.query_template" rows="5" class="mono" placeholder="SELECT * FROM orders WHERE (:month IS NULL OR month = :month)"></textarea>
           </div>
           <div class="form-group">
-            <label>输入 Schema (JSON)</label>
+            <label>输入 Schema (JSON) <LlmContextHint text="参数名与参数说明会作为工具入参 Schema 提供给 LLM，模型据此理解并填写参数；说明请写业务含义与取值口径。" /></label>
             <textarea aria-label="输入 Schema (JSON)" v-model="editingCap.input_schema_str" rows="3" class="mono" placeholder='{"type":"object","properties":{"month":{"type":"string"}}}'></textarea>
             <small>仅 SQL 中以 <code>:month</code> 形式实际引用的参数会暴露给 Agent；Schema 字段名需与 SQL 占位符一致。</small>
           </div>
@@ -449,6 +449,7 @@ import { Database, Plus, Trash2, Edit, Check, X, RefreshCw, Server, Key, Zap, Fi
 import { ref, computed, onMounted } from 'vue'
 import { dataApi } from '../api'
 import InputSchemaGenerator from '../components/InputSchemaGenerator.vue'
+import LlmContextHint from '../components/LlmContextHint.vue'
 
 const tabs = [
   { id: 'sources', icon: 'Server', name: '数据源' },

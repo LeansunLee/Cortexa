@@ -18,7 +18,7 @@
         </div>
 
         <div class="form-group">
-          <label>系统提示词</label>
+          <label>系统提示词 <LlmContextHint text="逐字注入本空间所有 Agent 的系统提示词（工作空间规则），统一空间口径与行为准则；这是提示词注入面，请勿粘贴不可信文本或敏感信息。" /></label>
           <p class="form-hint">配置空间级别的系统提示词，将注入到该空间内所有 Agent 的 prompt 中，用于统一空间目标和行为准则。</p>
           <textarea v-model="form.system_prompt" rows="6" placeholder="例如：你是一个专业的营销团队，负责品牌推广和渠道建设..."></textarea>
         </div>
@@ -72,6 +72,7 @@ import { ref, onMounted, computed } from 'vue'
 import { Gauge, SlidersHorizontal, UsersRound, Save, Clock3, BrainCircuit, Wrench, Repeat2, Globe2, Network, Layers3, MessagesSquare, ListChecks, RefreshCw, ShieldAlert } from 'lucide-vue-next'
 import { auth, can } from '../auth'
 import { workspaceApi } from '../api'
+import LlmContextHint from '../components/LlmContextHint.vue'
 
 const workspaceId = computed(() => auth.workspaceId)
 const workspace = ref(null)
