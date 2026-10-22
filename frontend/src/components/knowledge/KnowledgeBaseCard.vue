@@ -62,7 +62,7 @@
           </div>
           <button class="quiet preview-action" @click="preview = doc"><Eye :size="15" />预览</button>
           <button class="quiet summary-action" @click="summaryTarget = doc"><ScrollText :size="15" />摘要</button>
-          <div class="more-wrap" @click.stop><button class="icon" :aria-label="`更多文件操作 ${doc.name}`" title="更多" @click="toggleMenu('doc', doc.id)"><MoreHorizontal :size="18" /></button><div v-if="isMenuOpen('doc', doc.id)" class="resource-menu resource-menu-right" role="menu"><button @click="downloadDocuments(doc); closeMenu()"><Download :size="14" />下载</button><button v-if="canEdit(doc)" @click="openEditor('rename-doc', doc)"><Pencil :size="14" />重命名</button><button v-if="canEdit(doc)" @click="openEditor('move-doc', doc)"><FolderInput :size="14" />移动到</button><button v-if="canEdit(doc)" @click="validityTarget = doc; closeMenu()"><CalendarClock :size="14" />{{ isExpired(doc) ? '续期' : '修改有效期' }}</button><button v-if="canManage && canPush && kb.agent_id" @click="pushTarget = doc; closeMenu()"><Share2 :size="14" />推送到公共库</button><button v-if="canEdit(doc) && doc.metadata_json?.extraction_status === 'error'" @click="retryExtraction(doc); closeMenu()">重试识别</button><button v-if="canEdit(doc) && doc.metadata_json?.index_status === 'error'" @click="retryIndex(doc); closeMenu()">重试索引</button><div class="menu-divider"></div><button v-if="canEdit(doc)" class="danger" @click="confirmTarget = { type: 'doc', id: doc.id, name: doc.name }; closeMenu()"><Trash2 :size="14" />删除文件</button></div></div>
+          <div class="more-wrap" @click.stop><button class="icon" :aria-label="`更多文件操作 ${doc.name}`" title="更多" @click="toggleMenu('doc', doc.id)"><MoreHorizontal :size="18" /></button><div v-if="isMenuOpen('doc', doc.id)" class="resource-menu resource-menu-right" role="menu"><button @click="openDocInfo(doc); closeMenu()"><Info :size="14" />简介</button><button @click="downloadDocuments(doc); closeMenu()"><Download :size="14" />下载</button><button v-if="canEdit(doc)" @click="openEditor('rename-doc', doc)"><Pencil :size="14" />重命名</button><button v-if="canEdit(doc)" @click="openEditor('move-doc', doc)"><FolderInput :size="14" />移动到</button><button v-if="canEdit(doc)" @click="validityTarget = doc; closeMenu()"><CalendarClock :size="14" />{{ isExpired(doc) ? '续期' : '修改有效期' }}</button><button v-if="canManage && canPush && kb.agent_id" @click="pushTarget = doc; closeMenu()"><Share2 :size="14" />推送到公共库</button><button v-if="canEdit(doc) && doc.metadata_json?.extraction_status === 'error'" @click="retryExtraction(doc); closeMenu()">重试识别</button><button v-if="canEdit(doc) && doc.metadata_json?.index_status === 'error'" @click="retryIndex(doc); closeMenu()">重试索引</button><div class="menu-divider"></div><button v-if="canEdit(doc)" class="danger" @click="confirmTarget = { type: 'doc', id: doc.id, name: doc.name }; closeMenu()"><Trash2 :size="14" />删除文件</button></div></div>
         </div>
         <div v-if="currentDocuments.length > pageSize" class="list-pagination"><span>共 {{ currentDocuments.length }} 个文件 · 每页 {{ pageSize }} 个</span><button :disabled="listPage === 1" @click="listPage--">上一页</button><span>{{ listPage }} / {{ pageCount }}</span><button :disabled="listPage === pageCount" @click="listPage++">下一页</button></div>
         </div></div>
@@ -74,6 +74,26 @@
     <CreateTextDocDialog v-if="createTextDocTarget" :kb-id="kb.id" :folder-id="currentFolderId" @close="createTextDocTarget = false" @created="onTextDocCreated" />
     <ConfirmDialog v-if="confirmTarget" :title="confirmTarget.type === 'kb' ? '删除知识库？' : confirmTarget.type === 'batch' ? '批量删除资源？' : '删除文档？'" :message="confirmationMessage" :busy="deleting" @cancel="confirmTarget = null" @confirm="performDelete" />
     <Teleport v-if="pageTabActive" to="body">
+      <div v-if="infoTarget" class="editor-overlay" @click.self="infoTarget = null" @keydown.esc.stop="infoTarget = null">
+        <div class="resource-editor doc-info" role="dialog" aria-modal="true" :aria-label="`${infoTarget.name} 的简介`">
+          <div class="editor-heading">
+            <h3>文件简介</h3>
+            <button type="button" class="icon" aria-label="关闭" @click="infoTarget = null"><X :size="18" /></button>
+          </div>
+          <div class="doc-info-body">
+            <div class="doc-info-row"><span class="doc-info-label">文件名</span><span class="doc-info-value" :title="infoTarget.name">{{ infoTarget.name }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">类型</span><span class="doc-info-value">{{ extension(infoTarget.name).toUpperCase() || '未知' }}<template v-if="infoTarget.metadata_json?.content_type"> · {{ infoTarget.metadata_json.content_type }}</template></span></div>
+            <div class="doc-info-row"><span class="doc-info-label">大小</span><span class="doc-info-value">{{ formatSize(infoTarget.metadata_json?.size) || '—' }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">创建人</span><span class="doc-info-value">{{ creatorName(infoTarget) }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">创建时间</span><span class="doc-info-value">{{ formatDateTime(infoTarget.created_at) }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">更新时间</span><span class="doc-info-value">{{ formatDateTime(infoTarget.updated_at) }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">有效期</span><span class="doc-info-value">{{ validityLabel(infoTarget) }}<template v-if="infoTarget.valid_until">（至 {{ new Date(infoTarget.valid_until).toLocaleDateString('zh-CN') }}）</template></span></div>
+            <div class="doc-info-row"><span class="doc-info-label">位置</span><span class="doc-info-value" :title="documentPath(infoTarget)">{{ documentPath(infoTarget) }}</span></div>
+            <div class="doc-info-row"><span class="doc-info-label">来源</span><span class="doc-info-value">{{ sourceLabels[infoTarget.metadata_json?.source] || infoTarget.metadata_json?.source || '—' }}</span></div>
+            <div v-if="infoTarget.metadata_json?.extraction_status" class="doc-info-row"><span class="doc-info-label">识别状态</span><span class="doc-info-value">{{ infoTarget.metadata_json.extraction_status }}</span></div>
+          </div>
+        </div>
+      </div>
       <div v-if="editor" class="editor-overlay" @click.self="closeEditor" @keydown.esc.stop="closeEditor" @keydown.tab="trapEditorFocus">
         <form ref="editorForm" class="resource-editor" role="dialog" aria-modal="true" :aria-labelledby="'resource-editor-title-' + kb.id" @submit.prevent="submitEditor">
           <div class="editor-heading">
@@ -103,8 +123,8 @@
 </template>
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue'
-import { PanelLeftOpen, PanelLeftClose, FolderOpen, Folder, FolderTree, FolderPlus, FolderInput, ChevronDown, ChevronUp, ChevronRight, Trash2, Search, RefreshCw, Files, Eye, Share2, Download, CalendarClock, ScrollText, FilePlus, Pencil, Power, Plus, MoreHorizontal, Copy, X } from 'lucide-vue-next'
-import { knowledgeApi } from '../../api'
+import { PanelLeftOpen, PanelLeftClose, FolderOpen, Folder, FolderTree, FolderPlus, FolderInput, ChevronDown, ChevronUp, ChevronRight, Trash2, Search, RefreshCw, Files, Eye, Share2, Download, CalendarClock, ScrollText, FilePlus, Pencil, Power, Plus, MoreHorizontal, Copy, X, Info } from 'lucide-vue-next'
+import { knowledgeApi, workApi } from '../../api'
 import KnowledgeUpload from './KnowledgeUpload.vue'
 import LlmContextHint from '../LlmContextHint.vue'
 import SearchSelect from '../SearchSelect.vue'
@@ -124,6 +144,8 @@ const documents = ref([]), loading = ref(false), loadError = ref(''), expanded =
 const selectedIds = ref([]), selectedFolderIds = ref([]), pushTarget = ref(null), validityTarget = ref(null), downloading = ref(null)
 const summaryTarget = ref(null), uploadRef = ref(null)
 const createTextDocTarget = ref(false)
+const infoTarget = ref(null)
+const memberNames = ref({})
 const folders = ref([]), currentFolderId = ref(null), expandedFolderIds = ref(new Set()), moreOpen = ref(null), editor = ref(null), editorBusy = ref(false)
 import { auth } from '../../auth'
 const canManage = computed(() => !props.readonly && props.canManage)
@@ -400,7 +422,19 @@ async function performDelete() {
 }
 function handleDocumentClick() { closeMenu() }
 function handleKeydown(event) { if (event.key === 'Escape' && totalSelectedCount.value && !editor.value && !confirmTarget.value) clearSelection() }
-onMounted(() => { loadDocs(); document.addEventListener('click', handleDocumentClick); document.addEventListener('keydown', handleKeydown) })
+const sourceLabels = { upload: '上传导入', work: '工作交付物', meeting: '会议纪要', text: '在线创建' }
+function openDocInfo(doc) { infoTarget.value = doc }
+function creatorName(doc) {
+  if (!doc.created_by) return '未知成员'
+  if (memberNames.value[doc.created_by]) return memberNames.value[doc.created_by]
+  if (doc.created_by === auth.user?.id) return auth.user?.display_name || '我'
+  return '未知成员'
+}
+function formatDateTime(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+onMounted(() => { loadDocs(); document.addEventListener('click', handleDocumentClick); document.addEventListener('keydown', handleKeydown); workApi.members().then(({ data }) => { memberNames.value = Object.fromEntries((data || []).map(m => [m.id, m.name])) }).catch(() => {}) })
 onBeforeUnmount(() => { document.removeEventListener('click', handleDocumentClick); document.removeEventListener('keydown', handleKeydown) })
 </script>
 <style scoped>
@@ -422,6 +456,12 @@ onBeforeUnmount(() => { document.removeEventListener('click', handleDocumentClic
 @media(max-width:640px){.documents-toolbar{flex-wrap:wrap}.documents-toolbar .search{flex:1 1 180px;max-width:none}.file-type-filters{flex:1 1 100%;order:3;overflow:auto}.refresh-action{margin-left:auto}.toolbar-actions{flex:1 1 100%;order:4;justify-content:flex-end}.folder-breadcrumbs{margin-bottom:6px}}
 .folder-kind{margin-left:auto;color:var(--text3,#94a3b8);font-size:11px}.resource-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:18px;align-items:stretch}.folder-tree{border-right:1px solid var(--border,#eef2f7);padding-right:10px;min-height:180px}.tree-title{display:flex;justify-content:space-between;align-items:center;padding:4px 10px 9px;color:var(--text3,#64748b);font-size:11px;font-weight:600}.tree-count{font-weight:400;color:var(--text3,#94a3b8)}.tree-root,.tree-item{width:100%;display:flex;align-items:center;gap:7px;border:0;background:transparent;color:var(--text2,#475569);border-radius:7px;padding:7px 9px;text-align:left;font:inherit;font-size:12px;cursor:pointer}.tree-root:hover,.tree-item:hover,.tree-root.selected,.tree-item.selected{background:var(--navigation-background,var(--primary-light,#eef2ff));color:var(--navigation-color,var(--primary,#4f46e5))}.tree-root span:last-child,.tree-file-count{display:inline-flex;align-items:center;justify-content:center;width:24px;flex:0 0 24px;margin-left:auto;color:var(--text3,#94a3b8);font-size:11px;font-variant-numeric:tabular-nums}.tree-item svg:first-child{transition:transform .16s ease;flex-shrink:0}.tree-item svg.rotated{transform:rotate(90deg)}.tree-spacer{width:20px;flex-shrink:0}.tree-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.more-wrap{position:relative;display:inline-flex;flex-shrink:0}.resource-menu{position:absolute;right:0;top:calc(100% + 5px);z-index:20;min-width:154px;padding:5px;border:1px solid var(--border,#e2e8f0);border-radius:9px;background:var(--surface,#fff);box-shadow:0 12px 28px #1720331f}.resource-menu button{width:100%;display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:6px;padding:8px 9px;color:var(--text,#334155);font:inherit;font-size:12px;text-align:left;cursor:pointer;white-space:nowrap}.resource-menu button:hover{background:var(--surface2,#f1f5f9);color:var(--primary,#4f46e5)}.resource-menu button.danger{color:var(--danger,#dc2626)}.resource-menu button.danger:hover{background:var(--danger-bg,#fef2f2);color:var(--danger,#dc2626)}.menu-divider{height:1px;background:var(--border,#eef2f7);margin:4px 2px}.editor-overlay{position:fixed;inset:0;z-index:2500;display:grid;place-items:center;padding:20px;background:var(--overlay)}
 .resource-editor{box-sizing:border-box;width:min(400px,calc(100vw - 40px));max-width:100%;max-height:calc(100dvh - 40px);overflow-y:auto;padding:24px;border:1px solid var(--border);border-radius:var(--radius,12px);background:var(--surface);box-shadow:0 20px 60px #0003;color:var(--text)}
+.resource-editor.doc-info{width:min(460px,calc(100vw - 40px))}
+.doc-info-body{display:flex;flex-direction:column}
+.doc-info-row{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--border,#eef2f7);font-size:13px;line-height:1.5}
+.doc-info-row:last-child{border-bottom:0}
+.doc-info-label{flex:0 0 76px;color:var(--text3,#64748b)}
+.doc-info-value{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--text,#334155)}
 .editor-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;gap:12px}
 .editor-heading h3{margin:0;font-size:18px;font-weight:600}
 .editor-field{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text2)}
