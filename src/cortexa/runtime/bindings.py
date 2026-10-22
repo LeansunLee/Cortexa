@@ -48,6 +48,13 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
             adapter.descriptor.risk_level = "low"
             adapter.descriptor.requires_confirmation = False
             adapter.descriptor.timeout = 10
+        if tool.name == "save_document":
+            # Conversation-scoped write into the requester's own artifact store;
+            # ownership and turn limits are enforced inside the tool itself.
+            adapter.descriptor.risk_level = "low"
+            adapter.descriptor.requires_confirmation = False
+            adapter.descriptor.availability = "available"
+            adapter.descriptor.timeout = 15
         if capability is not None:
             from cortexa.data.sql_drafts import validate_sql
 
@@ -76,11 +83,14 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
                     )
                     if granted is None:
                         raise PermissionError("capability_revoked")
-                elif tool.name == "project_read":
-                    from cortexa.projects.service import get
-                    import uuid
-                    for ident in project_ids or []:
-                        await get(check_db, uuid.UUID(str(ident)))
+                elif tool.name in {"project_read", "save_document"}:
+                    if tool.name == "project_read":
+                        from cortexa.projects.service import get
+                        import uuid
+                        for ident in project_ids or []:
+                            await get(check_db, uuid.UUID(str(ident)))
+                    # save_document is inherently scoped: it writes only into the
+                    # requester's own conversation artifact store.
                 else:
                     fresh_web = await load_search_tools(fresh, check_db, query, sources)
                     if not any(t.name == tool.name for t in fresh_web):
