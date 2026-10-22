@@ -1,10 +1,14 @@
 <template>
   <router-view v-if="route.path === '/login' || route.path === '/change-password'" />
   <div v-else class="app-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="sidebar-brand">
         <span class="logo"><Bot :size="24" /></span>
         <span class="brand-text">Cortexa</span>
+        <button type="button" class="sidebar-toggle" :aria-label="sidebarCollapsed ? '展开导航栏' : '收起导航栏'" :aria-expanded="!sidebarCollapsed" :title="sidebarCollapsed ? '展开导航栏' : '收起导航栏'" @click="toggleSidebar">
+          <PanelLeftClose v-if="!sidebarCollapsed" :size="18" />
+          <PanelLeftOpen v-else :size="18" />
+        </button>
       </div>
       <div class="sidebar-workspace">
         <SearchSelect v-model="currentWorkspace" class="workspace-select" aria-label="切换工作空间" placeholder="选择工作空间" :options="[{ value: '', label: '选择工作空间' }, ...workspaces.map(ws => ({ value: ws.id, label: ws.name }))]" @change="onWorkspaceChange" />
@@ -108,7 +112,8 @@
 <script setup>
 import {
   ChartNoAxesCombined, FolderKanban, ClipboardList, LayoutDashboard, Bot, Calendar, BookOpen, Database,
-  MessageSquare, Palette, Settings, ShieldCheck, KeyRound, LogOut, Bot as BotIcon, ChevronUp, X
+  MessageSquare, Palette, Settings, ShieldCheck, KeyRound, LogOut, Bot as BotIcon, ChevronUp, X,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-vue-next'
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, markRaw } from 'vue'
@@ -121,6 +126,11 @@ import PageTabPanel from './components/PageTabPanel.vue'
 const pageTabs = ref([])
 const tabBar = ref(null)
 let nextTabId = 0
+const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('sidebarCollapsed', sidebarCollapsed.value ? '1' : '0')
+}
 const pageTitles = {
   '/model-usage': '模型用量',
   '/': '首页', '/projects': '项目', '/works': '工作', '/chat': '对话', '/meetings': '会议',
@@ -364,6 +374,7 @@ a { text-decoration: none; color: inherit; }
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width var(--transition);
 }
 .sidebar-brand {
   display: flex;
@@ -373,6 +384,22 @@ a { text-decoration: none; color: inherit; }
   padding: 0 20px;
   flex-shrink: 0;
 }
+.sidebar-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sidebar-toggle:hover { background: var(--surface2); color: var(--text); }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .logo { font-size: 24px; }
 .brand-text { font-weight: 700; font-size: 16px; color: var(--text); }
 .sidebar-workspace {
@@ -661,6 +688,21 @@ a { text-decoration: none; color: inherit; }
   .user-menu-trigger { justify-content: center; padding: 8px; }
   .nav-divider { margin: 8px 4px; }
 }
+
+/* Manually collapsed sidebar: icon-only entries, same click targets as expanded. */
+.sidebar.collapsed { width: 72px; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0; gap: 8px; }
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .nav-text,
+.sidebar.collapsed .user-name,
+.sidebar.collapsed .user-menu-trigger > svg { display: none; }
+.sidebar.collapsed .sidebar-workspace { padding: 8px 4px; }
+.sidebar.collapsed .workspace-select { font-size: 11px; }
+.sidebar.collapsed .sidebar-nav,
+.sidebar.collapsed .sidebar-footer { padding: 8px; }
+.sidebar.collapsed .nav-item { padding: 10px; justify-content: center; }
+.sidebar.collapsed .user-menu-trigger { justify-content: center; padding: 8px; }
+.sidebar.collapsed .nav-divider { margin: 8px 4px; }
 
 /* Global Toast - Top Right */
 .global-toast {
