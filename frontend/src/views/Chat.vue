@@ -102,15 +102,15 @@
             </div>
           </div>
           <div class="chat-header-actions">
-            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
-              <PanelRightOpen :size="15" />
-              <span>产出物</span>
-              <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
-            </button>
             <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
               <Bug :size="15" />
               <span>调试</span>
               <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
+            </button>
+            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
+              <PanelRightOpen :size="15" />
+              <span>产出物</span>
+              <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
             </button>
           </div>
         </div>
@@ -206,6 +206,10 @@
                 </div>
 
                 <MessageArtifacts v-if="msg.metadata_json?.artifacts?.length" :conversation-id="activeTabId" :artifacts="msg.metadata_json.artifacts" @open="openArtifact" />
+                <div v-if="i === messages.length - 1 && msg.role === 'assistant' && !sending && !streaming && !curSession?.pendingQuestion && conversationArtifacts.length" class="msg-artifact-summary">
+                  <span class="mas-title"><FileText :size="13" /> 本对话产出物（{{ conversationArtifacts.length }}）</span>
+                  <a v-for="a in conversationArtifacts" :key="a.id" class="mas-link" href="#" :title="`查看 ${a.title}`" @click.prevent="openArtifact(a)">{{ a.title }}</a>
+                </div>
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
@@ -1589,7 +1593,7 @@ const sendMessage = async (decision = null) => {
             meta.execution_goal = displayText
             meta.execution_usage = Object.values(session.runtimeUsage || {})
             if (event.collaborations?.length) meta.collaborations = event.collaborations
-            if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshArtifactCount(); artifactsPanelRef.value?.load() }
+            if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshArtifacts(); artifactsPanelRef.value?.load() }
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
             else if (session.liveDebug.length) meta.debug_trace = [...session.liveDebug]
             session.messages.push({
@@ -1763,19 +1767,20 @@ const copiedIdx = ref(null)
 const artifactsOpen = ref(false)
 const dialogArtifact = ref(null)
 const artifactsPanelRef = ref(null)
-const artifactCount = ref(0)
+const conversationArtifacts = ref([])
+const artifactCount = computed(() => conversationArtifacts.value.length)
 function toggleArtifactsPanel() { artifactsOpen.value = !artifactsOpen.value }
 function openArtifact(a) { dialogArtifact.value = a }
 function onArtifactSaved(data) {
   if (dialogArtifact.value) dialogArtifact.value = { ...dialogArtifact.value, ...data }
   artifactsPanelRef.value?.load()
-  refreshArtifactCount()
+  refreshArtifacts()
 }
-async function refreshArtifactCount() {
-  if (!currentConvId.value) { artifactCount.value = 0; return }
-  try { artifactCount.value = (await artifactApi.list(currentConvId.value)).data.length } catch { /* keep previous count */ }
+async function refreshArtifacts() {
+  if (!currentConvId.value) { conversationArtifacts.value = []; return }
+  try { conversationArtifacts.value = (await artifactApi.list(currentConvId.value)).data } catch { /* keep previous list */ }
 }
-watch(currentConvId, v => { artifactCount.value = 0; if (v && artifactsOpen.value) artifactsPanelRef.value?.load() })
+watch(currentConvId, v => { conversationArtifacts.value = []; if (v) refreshArtifacts(); if (v && artifactsOpen.value) artifactsPanelRef.value?.load() })
 function exportMessage(msg) {
   const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -2235,6 +2240,20 @@ onBeforeUnmount(() => {
 }
 .chat-header-info { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .chat-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.msg-artifact-summary {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px; padding: 8px 10px;
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  background: var(--surface2);
+}
+.mas-title { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--text2); }
+.mas-link {
+  display: inline-flex; align-items: center; max-width: 240px; height: 24px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  font-size: 12px; line-height: 17px; color: var(--primary); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none;
+}
+.mas-link:hover { border-color: var(--primary); background: var(--primary-light); text-decoration: underline; }
 .chat-agent-badge {
   width: 32px; height: 32px; border-radius: 10px; background: var(--surface2);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
