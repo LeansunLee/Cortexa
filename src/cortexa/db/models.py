@@ -1296,6 +1296,53 @@ class ConversationMessage(Base):
     )
 
 
+class ConversationArtifact(Base):
+    """
+    对话产出物 - Agent 在对话中生成的可交付文档（方案/报告/清单等）。
+    全文存文件系统，DB 只存元数据；编辑覆盖原文件。
+    """
+    __table_args__ = {'comment': '对话产出物 - Agent 生成的文档附件'}
+    __tablename__ = "t_conversation_artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_uuid,
+        comment="产出物唯一标识符"
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True,
+        comment="所属工作空间 ID"
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("t_conversations.id", ondelete="CASCADE"), nullable=False, index=True,
+        comment="所属对话 ID"
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("t_conversation_messages.id", ondelete="SET NULL"),
+        comment="来源助手消息 ID；流式期间生成时先空，回复落盘后回填"
+    )
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True,
+        comment="会话所有者（可见与下载范围）"
+    )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        comment="生成该产出物的 Agent ID"
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, comment="文档标题")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, comment="下载文件名")
+    format: Mapped[str] = mapped_column(String(20), default="markdown", comment="格式：markdown / text")
+    byte_size: Mapped[int] = mapped_column(Integer, default=0, comment="内容字节数")
+    content_sha256: Mapped[str | None] = mapped_column(String(64), comment="内容 SHA-256")
+    path: Mapped[str] = mapped_column(Text, nullable=False, comment="文件系统相对路径（相对产出物根目录）")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, comment="扩展元数据")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), comment="更新时间"
+    )
+
+
 # =============================================================================
 # 记忆 (Memory)
 # =============================================================================

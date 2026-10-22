@@ -21,7 +21,7 @@ class RetrievalInput(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 
 
-async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, project_ids=None):
+async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, project_ids=None, conversation_id=None):
     from cortexa.api.conversations import _build_data_tools, _load_agent_capabilities
 
     caps = await _load_agent_capabilities(agent.id, db, query)
@@ -33,6 +33,14 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
     bindings = []
     from cortexa.projects.runtime import tools as project_tools
     project = project_tools(agent.id, project_ids or [], sources)
+    if conversation_id is not None:
+        from cortexa.conversation import artifacts as artifacts_store
+        from cortexa.security.access import actor_required
+        try:
+            project = [*project, *artifacts_store.save_document_tool(
+                conversation_id, agent.workspace_id, actor_required().user_id, agent.id)]
+        except Exception:
+            pass
     for tool in [*business, *web, *project]:
         capability = cap_map.get(tool.name)
         adapter = tool_adapter(tool, str(agent.workspace_id), capability=capability)

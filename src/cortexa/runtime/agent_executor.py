@@ -247,6 +247,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 )
                 child_payload = {
                     "goal_id": str(row.id),
+                    "conversation_id": str(row.conversation_id),
                     "project_ids": payload.get("project_ids", []),
                     "sources": [],
                     "messages": serialize_messages(
@@ -369,7 +370,9 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             try:
                 async with store.sessions() as db:
                     child_bindings, business = await prepare_bindings(fresh, task, child_payload["sources"], db,
-                                                                   context_budget=min(6000, child_state.limits.context_tokens // 4), **({"project_ids":child_payload["project_ids"]} if child_payload.get("project_ids") else {}))
+                                                                   context_budget=min(6000, child_state.limits.context_tokens // 4),
+                                                                   **({"conversation_id": child_payload["conversation_id"]} if child_payload.get("conversation_id") else {}),
+                                                                   **({"project_ids":child_payload["project_ids"]} if child_payload.get("project_ids") else {}))
                 try:
                     model = create_llm(fresh.model)
                 except Exception as error:

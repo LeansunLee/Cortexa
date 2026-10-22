@@ -101,6 +101,11 @@
               <span v-if="renameError" class="chat-rename-error" role="alert">{{ renameError }}</span>
             </div>
           </div>
+          <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
+            <PanelRightOpen :size="15" />
+            <span>产出物</span>
+            <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
+          </button>
           <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
             <Bug :size="15" />
             <span>调试</span>
@@ -198,6 +203,7 @@
                   </div>
                 </div>
 
+                <MessageArtifacts v-if="msg.metadata_json?.artifacts?.length" :conversation-id="activeTabId" :artifacts="msg.metadata_json.artifacts" @open="openArtifact" />
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
@@ -210,6 +216,9 @@
                   <button class="action-btn" @click="copyMessage(msg.content, i)" title="复制">
                     <Check v-if="copiedIdx === i" :size="14" class="copy-ok" />
                     <Copy v-else :size="14" />
+                  </button>
+                  <button v-if="msg.role === 'assistant' && msg.content" class="action-btn" title="导出为 Markdown 文档" @click="exportMessage(msg)">
+                    <Download :size="14" />
                   </button>
                   <button v-if="i === messages.length - 1 && msg.role === 'assistant' && !sending && !streaming && !curSession?.pendingQuestion && !curSession?.goal?.can_reconcile" class="action-btn" @click="regenerateMessage(i)" title="重新生成">
                     <RefreshCw :size="14" />
@@ -356,6 +365,8 @@
       </template>
     </div>
 
+    <ArtifactsPanel v-if="artifactsOpen && currentConvId" ref="artifactsPanelRef" :conversation-id="currentConvId" @close="artifactsOpen = false" @open="openArtifact" />
+
     <ConversationDebugPanel
       v-if="debugEnabled && showDebugPanel && currentConvId"
       :key="currentConvId"
@@ -432,17 +443,22 @@
     </div>
   </div>
   </div>
+
+  <ArtifactDialog :conversation-id="currentConvId" :artifact="dialogArtifact" @close="dialogArtifact = null" @saved="onArtifactSaved" />
 </template>
 
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
 import { inlineFormat, applyCitationMarkers, renderCitationMarkers } from '../utils/messageFormatting'
-import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen } from 'lucide-vue-next'
+import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen, Download, PanelRightOpen } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
 import CollaborationComposer from '../components/CollaborationComposer.vue'
+import MessageArtifacts from '../components/chat/MessageArtifacts.vue'
+import ArtifactsPanel from '../components/chat/ArtifactsPanel.vue'
+import ArtifactDialog from '../components/chat/ArtifactDialog.vue'
 import ConversationDebugPanel from '../components/ConversationDebugPanel.vue'
 import { restoreRejectedSend, filterAvailableConversations, sendErrorMessage } from '../utils/chatRecovery.js'
 import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaborationDrafts.js'
@@ -455,7 +471,7 @@ import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
 import { useRoute } from 'vue-router'
 const route = useRoute()
-import { conversationApi, usableAgentApi, chatUploadApi, collaborationApi, debugPreferenceApi, goalApi } from '../api'
+import { conversationApi, usableAgentApi, chatUploadApi, collaborationApi, debugPreferenceApi, goalApi, artifactApi } from '../api'
 
 const isCollaborationOnlyMessage = (msg) =>
   Boolean(msg.metadata_json?.collaboration_drafts?.length) &&
@@ -1571,6 +1587,7 @@ const sendMessage = async (decision = null) => {
             meta.execution_goal = displayText
             meta.execution_usage = Object.values(session.runtimeUsage || {})
             if (event.collaborations?.length) meta.collaborations = event.collaborations
+            if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshArtifactCount(); artifactsPanelRef.value?.load() }
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
             else if (session.liveDebug.length) meta.debug_trace = [...session.liveDebug]
             session.messages.push({
@@ -1739,6 +1756,33 @@ const regenerateMessage = async (msgIdx) => {
 }
 
 const copiedIdx = ref(null)
+
+// Conversation artifacts (产出物)
+const artifactsOpen = ref(false)
+const dialogArtifact = ref(null)
+const artifactsPanelRef = ref(null)
+const artifactCount = ref(0)
+function toggleArtifactsPanel() { artifactsOpen.value = !artifactsOpen.value }
+function openArtifact(a) { dialogArtifact.value = a }
+function onArtifactSaved(data) {
+  if (dialogArtifact.value) dialogArtifact.value = { ...dialogArtifact.value, ...data }
+  artifactsPanelRef.value?.load()
+  refreshArtifactCount()
+}
+async function refreshArtifactCount() {
+  if (!currentConvId.value) { artifactCount.value = 0; return }
+  try { artifactCount.value = (await artifactApi.list(currentConvId.value)).data.length } catch { /* keep previous count */ }
+}
+watch(currentConvId, v => { artifactCount.value = 0; if (v && artifactsOpen.value) artifactsPanelRef.value?.load() })
+function exportMessage(msg) {
+  const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${currentConvTitle.value.slice(0, 50) || '回复'}.md`
+  link.click()
+  URL.revokeObjectURL(url)
+}
 const copyMessage = async (content, idx) => {
   if (!content) return
   try {

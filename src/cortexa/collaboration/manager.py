@@ -454,7 +454,15 @@ async def _execute_target_agent(
         print(f"[COLLAB] KB/capability retrieval for target agent failed: {e}", flush=True)
 
     from cortexa.projects.runtime import tools as project_tools
+    from cortexa.conversation import artifacts as artifacts_store
     data_tools.extend(project_tools(target_agent.id,handoff.project_ids,sources))
+    if conversation_id is not None:
+        from cortexa.security.access import actor_required
+        try:
+            data_tools.extend(artifacts_store.save_document_tool(
+                conversation_id, target_agent.workspace_id, actor_required().user_id, target_agent.id))
+        except Exception:
+            pass
     from cortexa.tools.web_search import load_search_tools
     async with async_session_factory() as tool_db:
         data_tools.extend(await load_search_tools(target_agent, tool_db, "\n".join([handoff.task, handoff.question, *handoff.constraints]), sources))

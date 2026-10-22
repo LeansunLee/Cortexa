@@ -59,3 +59,6 @@ api_router.include_router(data_results_router)
 
 from cortexa.api.projects import router as projects_router
 api_router.include_router(projects_router)
+
+from cortexa.api.artifacts import router as artifacts_router
+api_router.include_router(artifacts_router)

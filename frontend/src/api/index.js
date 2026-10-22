@@ -88,6 +88,16 @@ export const chatApi = {
   send: (data) => api.post('/chat', data)
 }
 
+// Conversation Artifact API
+export const artifactApi = {
+  list: convId => api.get(`/conversations/${convId}/artifacts`),
+  get: (convId, id) => api.get(`/conversations/${convId}/artifacts/${id}`),
+  update: (convId, id, data) => api.patch(`/conversations/${convId}/artifacts/${id}`, data),
+  downloadUrl: (convId, id) => `/api/conversations/${convId}/artifacts/${id}/download`,
+  toDeliverable: (convId, id, workId) => api.post(`/conversations/${convId}/artifacts/${id}/deliverable`, { work_id: workId }),
+  toKnowledge: (convId, id, kbId) => api.post(`/conversations/${convId}/artifacts/${id}/knowledge`, { knowledge_base_id: kbId })
+}
+
 // Knowledge API
 export const knowledgeApi = {
   list: (params = {}) => api.get('/knowledge', { params }),

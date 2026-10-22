@@ -353,7 +353,10 @@ async def create_message(
                 cap_list = await _load_agent_capabilities(agent.id, db, payload.content)
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=llm_messages, agent_id=agent.id) if cap_list else []
                 from cortexa.projects.runtime import tools as project_tools
-                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources)]
+                from cortexa.conversation import artifacts as artifacts_store
+                artifact_created: list = []
+                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources),
+                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 
@@ -453,6 +456,8 @@ async def create_message(
                 metadata = {}
                 if sources:
                     metadata["sources"] = sources
+                if artifact_created:
+                    metadata["artifacts"] = await artifacts_store.summaries(artifact_created)
 
                 reply_msg = ConversationMessage(
                     conversation_id=conv_id,
@@ -461,6 +466,9 @@ async def create_message(
                     metadata_json=metadata,
                 )
                 db.add(reply_msg)
+                await db.flush()
+                if artifact_created:
+                    await artifacts_store.bind_to_message(artifact_created, reply_msg.id)
             except UserQuestionPause as pause:
                 await db.commit()
                 await persist_pause(conv_id, pause)
@@ -958,7 +966,10 @@ async def regenerate_message(
         from cortexa.tools.web_search import load_search_tools, invoke_with_tools
         cap_list = await _load_agent_capabilities(agent.id, db, last_user_content)
         business_tools = _build_data_tools(cap_list, sources, model=model, user_query=last_user_content, context=llm_messages, agent_id=agent.id) if cap_list else []
-        tools = [*business_tools, ask_user_tool()]
+        from cortexa.conversation import artifacts as artifacts_store
+        artifact_created: list = []
+        tools = [*business_tools, ask_user_tool(),
+                 *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
         tools.extend(await load_search_tools(agent, db, last_user_content, sources))
         if cap_list:
             capability_text = "\n".join(
@@ -984,10 +995,13 @@ async def regenerate_message(
         conversation_id=conv_id,
         role="assistant",
         content=reply_content,
-        metadata_json={"stats": {**usage.stats(), "model": agent.model}, "sources": sources},
+        metadata_json={"stats": {**usage.stats(), "model": agent.model}, "sources": sources,
+                       **({"artifacts": await artifacts_store.summaries(artifact_created)} if artifact_created else {})},
     )
     db.add(assistant_msg)
     await db.flush()
+    if artifact_created:
+        await artifacts_store.bind_to_message(artifact_created, assistant_msg.id)
     await db.refresh(assistant_msg)
     await db.commit()
 
@@ -1864,7 +1878,10 @@ async def create_message_stream(
                 cap_list = await _load_agent_capabilities(agent.id, db, payload.content, recent_for_plan)
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=tool_context, agent_id=agent.id) if cap_list else []
                 from cortexa.projects.runtime import tools as project_tools
-                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources)]
+                from cortexa.conversation import artifacts as artifacts_store
+                artifact_created: list = []
+                data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources),
+                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 
@@ -2188,6 +2205,8 @@ async def create_message_stream(
                 if debug_trace:
                     meta["debug_trace"] = debug_trace
                 meta["project_ids"] = [str(i) for i in payload.project_ids]
+                if artifact_created:
+                    meta["artifacts"] = await artifacts_store.summaries(artifact_created)
                 assistant_msg = ConversationMessage(
                     conversation_id=conv_id,
                     role="assistant",
@@ -2204,11 +2223,13 @@ async def create_message_stream(
                 db.add(assistant_msg)
                 await db.flush()
                 await db.commit()
+                if artifact_created:
+                    await artifacts_store.bind_to_message(artifact_created, assistant_msg.id)
                 reply_saved = True
                 from cortexa.memory.integration import register_extraction
                 await register_extraction(db,conv_id,user_msg.id)
 
-                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'artifacts': meta['artifacts']} if artifact_created else {}), **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
 
             except UserQuestionPause as pause:

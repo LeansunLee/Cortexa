@@ -622,6 +622,7 @@ def stream_response(row, state, payload, agent, workspace):
                     async with store.sessions() as db:
                         bindings, business = await prepare_bindings(agent, query, payload["sources"], db,
                                                                     context_budget=min(6000, state.limits.context_tokens // 4),
+                                                                    conversation_id=row.conversation_id,
                                                                     **({"project_ids":payload["project_ids"]} if payload.get("project_ids") else {}))
                         bindings = list(bindings)
                         if not payload.get("prepared"):
