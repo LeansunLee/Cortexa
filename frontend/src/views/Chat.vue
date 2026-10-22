@@ -101,16 +101,18 @@
               <span v-if="renameError" class="chat-rename-error" role="alert">{{ renameError }}</span>
             </div>
           </div>
-          <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
-            <PanelRightOpen :size="15" />
-            <span>产出物</span>
-            <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
-          </button>
-          <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
-            <Bug :size="15" />
-            <span>调试</span>
-            <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
-          </button>
+          <div class="chat-header-actions">
+            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
+              <PanelRightOpen :size="15" />
+              <span>产出物</span>
+              <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
+            </button>
+            <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
+              <Bug :size="15" />
+              <span>调试</span>
+              <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
+            </button>
+          </div>
         </div>
 
         <div class="chat-messages" ref="messagesContainer" @scroll="handleMessageScroll">
@@ -2232,6 +2234,7 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .chat-header-info { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.chat-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .chat-agent-badge {
   width: 32px; height: 32px; border-radius: 10px; background: var(--surface2);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
