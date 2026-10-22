@@ -20,7 +20,7 @@
             <button type="button" class="artifact-close" aria-label="关闭" @click="close"><X :size="18" /></button>
           </div>
         </header>
-        <div class="artifact-body" :class="{ fullscreen }" :aria-busy="loading">
+        <div class="artifact-body" :class="{ fullscreen, editing }" :aria-busy="loading">
           <p v-if="error" class="artifact-error" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
           <template v-else-if="loading">
             <p class="artifact-loading">加载中…</p>
@@ -201,6 +201,11 @@ function close() { emit('close') }
 .artifact-title-field input { height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); }
 .artifact-content-field { margin-bottom: 16px; }
 .artifact-plain { min-height: 380px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.6; resize: vertical; }
+/* Edit mode: editor fills the whole dialog body. */
+.artifact-body.editing { overflow: hidden; }
+.artifact-body.editing .artifact-content-field { flex: 1; min-height: 0; margin-bottom: 16px; }
+.artifact-body.editing .artifact-content-field :deep(.markdown-editor) { flex: 1; min-height: 0; }
+.artifact-body.editing .artifact-plain { flex: 1; min-height: 0; height: 100%; resize: none; }
 .artifact-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .artifact-import { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .artifact-import select { max-width: 210px; height: 30px; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 6px; }
