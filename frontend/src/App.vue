@@ -691,13 +691,14 @@ a { text-decoration: none; color: inherit; }
 
 /* Manually collapsed sidebar: icon-only entries, same click targets as expanded. */
 .sidebar.collapsed { width: 72px; }
-.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0; gap: 8px; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0; }
+.sidebar.collapsed .sidebar-toggle { margin-left: 0; }
+.sidebar.collapsed .logo,
 .sidebar.collapsed .brand-text,
+.sidebar.collapsed .sidebar-workspace,
 .sidebar.collapsed .nav-text,
 .sidebar.collapsed .user-name,
 .sidebar.collapsed .user-menu-trigger > svg { display: none; }
-.sidebar.collapsed .sidebar-workspace { padding: 8px 4px; }
-.sidebar.collapsed .workspace-select { font-size: 11px; }
 .sidebar.collapsed .sidebar-nav,
 .sidebar.collapsed .sidebar-footer { padding: 8px; }
 .sidebar.collapsed .nav-item { padding: 10px; justify-content: center; }
