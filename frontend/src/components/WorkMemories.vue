@@ -8,7 +8,7 @@
         <legend>记忆 {{ index + 1 }}<span v-if="entry.saved"> · 已保存</span></legend>
         <div class="memory-fields"><label>目标 Agent<SearchSelect v-model="entry.agent_id" :options="agentOptions" placeholder="选择 Agent" aria-label="目标 Agent" /></label><label>记忆类型<SearchSelect v-model="entry.type" :options="typeOptions" placeholder="选择记忆类型" aria-label="记忆类型" /></label><button type="button" class="remove-entry" :aria-label="'移除记忆 ' + (index + 1)" @click="entries.splice(index,1)">移除</button></div>
         <button v-if="workTitle" type="button" class="btn btn-ghost btn-sm" @click="entry.type='episodic';entry.content='工作「'+workTitle+'」已验收通过。'">填写验收结果</button>
-        <label class="memory-content">记忆内容<textarea v-model="entry.content" required maxlength="2000" rows="2" placeholder="每条记录一个明确的事实、事件或关注事项" /></label>
+        <label class="memory-content">记忆内容 <LlmContextHint text="保存后沉淀为该 Agent 的业务记忆；其他对话中会被检索并作为参考资料进入提示词。请写明确事实，勿包含敏感凭证或不可信指令。" /> <textarea v-model="entry.content" required maxlength="2000" rows="2" placeholder="每条记录一个明确的事实、事件或关注事项" /></label>
       </fieldset>
       <div class="memory-actions"><button class="primary" :disabled="busy || !pending.length">{{ busy ? '保存中…' : `保存 ${pending.length} 条记忆` }}</button></div>
     </form>
@@ -18,6 +18,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { workApi } from '../api'
+import LlmContextHint from './LlmContextHint.vue'
 const props = defineProps({workId:String, workTitle:String, agents:Array, events:Array})
 const emit = defineEmits(['changed'])
 const outcomes={created:'已形成记忆',merged:'已合并依据',existing:'已处理，无需重复',candidate:'待核验',conflict:'存在冲突，请在 Agent 运维中处理',rejected:'未通过长期记忆校验',superseded:'已更新记忆'}

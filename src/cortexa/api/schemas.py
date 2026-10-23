@@ -287,6 +287,7 @@ class ConversationListOut(BaseModel):
 
 class ConversationMessageCreate(BaseModel):
     project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
+    work_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5)
     model_config = {"str_strip_whitespace": True}
     collaboration_drafts: list[CollaborationDraft] | None = Field(default=None, max_length=3)
     content: str = Field(min_length=1, max_length=64000)

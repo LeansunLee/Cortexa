@@ -64,6 +64,33 @@ async def conversation_summary(db, conversation_id, *, budget=3000):
     return text, refs
 
 
+async def referenced_summary(db, ids, *, budget=6000):
+    """Summary of works the user explicitly referenced this turn; 404 when an id is not visible."""
+    if not ids:
+        return "", []
+    rows = [await service.get_work(db, ident) for ident in dict.fromkeys(ids)]
+    works_meta = [{
+        "id": str(w.id),
+        "title": w.title,
+        "status": w.status,
+        "priority": w.priority,
+        "goal": (w.goal or "")[:800],
+        "deliverable_requirement": (w.deliverable_requirement or "")[:600],
+        "description": (w.description or "")[:400],
+        "assignee_type": w.assignee_type,
+        "due_at": w.due_at.isoformat() if w.due_at else None,
+        "updated_at": w.updated_at.isoformat() if w.updated_at else None,
+    } for w in rows]
+    text = json.dumps({"referenced_works": works_meta,
+                       "notice": "用户本轮明确引用的工作；详情可用 work_read 按 work_id 读取"}, ensure_ascii=False)
+    if len(text.encode()) > budget:
+        text = json.dumps({"referenced_works": [{"id": w["id"], "title": w["title"], "status": w["status"],
+                                                "goal": w["goal"][:300]} for w in works_meta],
+                           "notice": "上下文预算限制：仅保留标题/状态/目标节选，详情用 work_read 读取"}, ensure_ascii=False)
+    refs = [{"type": "work", "work_id": str(w.id), "name": w.title} for w in rows]
+    return text, refs
+
+
 class ReadInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     work_id: uuid.UUID

@@ -5,8 +5,8 @@
         <header><h2 id="work-editor-title">{{ work ? '编辑工作' : candidate ? '确认并创建工作' : '新建工作' }}</h2><button type="button" @click="$emit('close')" aria-label="关闭">×</button></header>
         <p class="hint">明确目标、负责人和交付结果，确认后派发。</p>
         <label>所属项目<SearchSelect v-model="form.project_id" :options="projectOptions" placeholder="不属于项目" aria-label="所属项目" /></label>
-        <label>标题<input v-model="form.title" required maxlength="200" autofocus /></label>
-        <label>执行目标<textarea v-model="form.goal" required maxlength="2000" rows="3" /></label>
+        <label>标题 <LlmContextHint text="工作标题会随工作详情进入 Agent 上下文（本对话工作摘要、work_read），模型据此识别任务；请使用明确的业务名。" /> <input v-model="form.title" required maxlength="200" autofocus /></label>
+        <label>执行目标 <LlmContextHint text="逐字进入 Agent 上下文（工作摘要与 work_read），模型按目标推进；请写清业务口径与边界，勿粘贴不可信文本。" /> <textarea v-model="form.goal" required maxlength="2000" rows="3" /></label>
         <p v-if="recommending" class="hint" aria-live="polite">正在匹配推荐负责人…</p>
         <div class="form-grid">
           <label>负责人<SearchSelect v-model="form.assignee_id" :options="assigneeOptions" placeholder="选择空间成员" aria-label="负责人" /></label>
@@ -14,8 +14,8 @@
           <label>截止时间<input type="datetime-local" v-model="due" /></label>
           <label>优先级<SearchSelect v-model="form.priority" :options="priorityOptions" placeholder="选择优先级" aria-label="优先级" /></label>
         </div>
-        <label>交付要求<textarea v-model="form.deliverable_requirement" maxlength="2000" rows="3" placeholder="需要提交什么结果，如何判断完成？" /></label>
-        <label>补充说明<textarea v-model="form.description" maxlength="4000" rows="2" /></label>
+        <label>交付要求 <LlmContextHint text="逐字进入 Agent 上下文（工作摘要与 work_read），是模型判断交付结果的核心依据；请写明需要提交什么、如何验收。" /> <textarea v-model="form.deliverable_requirement" maxlength="2000" rows="3" placeholder="需要提交什么结果，如何判断完成？" /></label>
+        <label>补充说明 <LlmContextHint text="会随工作详情进入 Agent 上下文；只写补充口径与背景，勿粘贴不可信文本或敏感信息。" /> <textarea v-model="form.description" maxlength="4000" rows="2" /></label>
         <p v-if="error" role="alert" class="work-error">{{ error }}</p>
         <footer><button type="button" @click="$emit('close')">取消</button><button class="primary btn btn-primary" :disabled="busy || !members.length">{{ busy ? '保存中…' : work ? '保存修改' : '创建并派发' }}</button></footer>
       </form>
@@ -29,6 +29,7 @@ const pageTabActive = injectPageTab('pageTabActive', true)
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import api, { workApi } from '../api'
 import { auth } from '../auth'
+import LlmContextHint from './LlmContextHint.vue'
 const props = defineProps({ work: Object, candidate: Object, projectId: String, conversationId: String })
 const emit = defineEmits(['close', 'saved'])
 const base = props.work || props.candidate || {}

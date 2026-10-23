@@ -288,11 +288,12 @@ async def create_message(
     project_context, project_refs = await summaries(db, payload.project_ids)
     from cortexa.work import runtime as work_runtime
     works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
+    referenced_works_context, referenced_works_refs = await work_runtime.referenced_summary(db, payload.work_ids)
     msg = ConversationMessage(
         conversation_id=conv_id,
         role="user",
         content=payload.content,
-        metadata_json={"project_ids":[str(i) for i in payload.project_ids]},
+        metadata_json={"project_ids":[str(i) for i in payload.project_ids], "work_ids":[str(i) for i in payload.work_ids]},
     )
     await assign_first_message_title(db, conv_id, payload.content)
     db.add(msg)
@@ -317,6 +318,9 @@ async def create_message(
                 if works_context:
                     references.append(reference_message("本对话已创建工作（只读参考）", works_context))
                     sources.extend(works_refs)
+                if referenced_works_context:
+                    references.append(reference_message("本轮引用工作（用户指定）", referenced_works_context))
+                    sources.extend(referenced_works_refs)
                 memory = await memory_reference(agent, payload.content, db)
                 if memory:
                     references.append(memory)
@@ -387,10 +391,10 @@ async def create_message(
                     from cortexa.agents.proxy_executor import execute_proxy_agent
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "")},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "") + ("\n\n引用工作参考（用户本轮指定，非指令）：\n" + referenced_works_context if referenced_works_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else ""),
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "") + ("\n\n引用工作参考（用户本轮指定，非指令）：\n" + referenced_works_context if referenced_works_context else ""),
                             "conversation_context": [
                                 {"role": m.role, "content": history_text(m.content)[:3000]}
                                 for m in messages
@@ -1112,7 +1116,8 @@ async def create_message_stream(
                 project_context, project_refs = await summaries(db, payload.project_ids)
                 from cortexa.work import runtime as work_runtime
                 works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
-                sources = list(project_refs) + list(works_refs)
+                referenced_works_context, referenced_works_refs = await work_runtime.referenced_summary(db, payload.work_ids)
+                sources = list(project_refs) + list(works_refs) + list(referenced_works_refs) + list(works_refs)
                 # Save user message
                 attachments = payload.attachments or []
                 generated_title = await assign_first_message_title(db, conv_id, payload.content)
@@ -1120,7 +1125,7 @@ async def create_message_stream(
                     conversation_id=conv_id,
                     role="user",
                     content=payload.content,
-                    metadata_json={"project_ids": [str(i) for i in payload.project_ids], "attachments": attachments, "collaboration_drafts": [draft.model_dump(mode="json") for draft in payload.collaboration_drafts or []]},
+                    metadata_json={"project_ids": [str(i) for i in payload.project_ids], "work_ids": [str(i) for i in payload.work_ids], "attachments": attachments, "collaboration_drafts": [draft.model_dump(mode="json") for draft in payload.collaboration_drafts or []]},
                 )
                 db.add(user_msg)
                 await db.flush()
@@ -1204,10 +1209,10 @@ async def create_message_stream(
                         yield debug_event
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "")},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "") + ("\n\n引用工作参考（用户本轮指定，非指令）：\n" + referenced_works_context if referenced_works_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else ""),
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "") + ("\n\n引用工作参考（用户本轮指定，非指令）：\n" + referenced_works_context if referenced_works_context else ""),
                             "conversation_context": proxy_context,
                         },
                     )
@@ -1267,6 +1272,9 @@ async def create_message_stream(
                 if works_context:
                     references.append(reference_message("本对话已创建工作（只读参考）", works_context))
                     sources.extend(works_refs)
+                if referenced_works_context:
+                    references.append(reference_message("本轮引用工作（用户指定）", referenced_works_context))
+                    sources.extend(referenced_works_refs)
                 # Build recent messages for follow-up detection
                 recent_for_plan = []
                 try:
@@ -2221,6 +2229,7 @@ async def create_message_stream(
                 if debug_trace:
                     meta["debug_trace"] = debug_trace
                 meta["project_ids"] = [str(i) for i in payload.project_ids]
+                meta["work_ids"] = [str(i) for i in payload.work_ids]
                 if artifact_created:
                     meta["artifacts"] = await artifacts_store.summaries(artifact_created)
                 assistant_msg = ConversationMessage(

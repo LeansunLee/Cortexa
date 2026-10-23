@@ -347,11 +347,13 @@
           <div class="chat-input-wrap">
             <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
             <ProjectPicker ref="projectPickerRef" :key="currentConvId" :references="curSession?.projectRefs || []" :initial-project="route.query.project_id" :query="projectQuery" :disabled="sending || streaming" @update="refs => curSession.projectRefs=refs" @close="closeProjectQuery" />
+            <WorkPicker ref="workPickerRef" :key="currentConvId" :references="curSession?.workRefs || []" :disabled="sending || streaming" @update="refs => curSession.workRefs=refs" />
             <div class="chat-input-row">
             <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
               <Paperclip :size="18" />
             </button>
             <button class="chat-attach-btn" :disabled="sending || streaming" title="引用项目" aria-label="引用项目" @click="projectPickerRef?.openMenu()"><FileText :size="18" /></button>
+            <button class="chat-attach-btn" :disabled="sending || streaming" title="引用工作" aria-label="引用工作" @click="workPickerRef?.openMenu()"><ClipboardList :size="18" /></button>
             <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.zip,.rar" style="display:none" @change="handleFileSelect" />
             <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
               @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
@@ -473,6 +475,7 @@ import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaboration
 import UserQuestionCard from '../components/UserQuestionCard.vue'
 import RuntimeTimeline from '../components/RuntimeTimeline.vue'
 import ProjectPicker from '../components/ProjectPicker.vue'
+import WorkPicker from '../components/WorkPicker.vue'
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
@@ -666,7 +669,7 @@ const getOrCreateSession = (convId) => {
       messages: [], sending: false, streaming: false,
       streamContent: '', streamError: '', unread: false,
       goalEnabled: false, goalMode: false, goalLoaded: false, goal: null, goalCandidates: [], goalSelection: [], approvalBusy: false, pendingGoalRequest: null,
-      projectRefs: [], lastProjectRefs: [], collaborationDrafts: [], lastDrafts: null, draftError: '',
+      projectRefs: [], lastProjectRefs: [], workRefs: [], lastWorkRefs: [], collaborationDrafts: [], lastDrafts: null, draftError: '',
       collaborationMode: 'EXPLICIT_ONLY', allowedCollaborationModes: ['EXPLICIT_ONLY'], modeSaving: false,
       input: '', statusSteps: [], lastUserMessage: '',
       collabPending: [],  // in-progress collaborations
@@ -732,6 +735,7 @@ watch([input, currentConvId], () => {
 }, { flush: 'post' })
 
 const projectPickerRef = ref(null)
+const workPickerRef = ref(null)
 const projectQuery = computed(()=>{const match=(input.value || '').match(/(?:^|\s)#([^\s#]*)$/);return match ? match[1] : null})
 const closeProjectQuery = ()=>{input.value=(input.value || '').replace(/(?:^|\s)#[^\s#]*$/, '').trimEnd()}
 // ── @Agent Mention Handlers ──
@@ -1385,7 +1389,8 @@ const sendMessage = async (decision = null) => {
 
   let endpoint = `/api/conversations/${convId}/messages/stream`
   const projectIds = (session.projectRefs || []).map(p=>p.id)
-  let body = { content: displayText, project_ids: projectIds, collaboration_drafts: collaborationDrafts, attachments: attachments.length ? attachments : undefined }
+  const workIds = (session.workRefs || []).map(w=>w.id)
+  let body = { content: displayText, project_ids: projectIds, work_ids: workIds.length ? workIds : undefined, collaboration_drafts: collaborationDrafts, attachments: attachments.length ? attachments : undefined }
   if (goalMode) {
     if (session.goal?.status === 'WAITING' || session.goal?.recovery_allowed) {
       endpoint = `/api/conversations/${convId}/goals/${session.goal.goal_id}/resume`
@@ -1412,12 +1417,14 @@ const sendMessage = async (decision = null) => {
     session.goalMode = Boolean(session.goal?.goal_id)
   }
   const attempt = {id: ++sendSequence, text: displayText, drafts: JSON.parse(JSON.stringify(drafts))}
-  if (!decision?.recover && !isRecovery) session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {project_ids:projectIds, project_refs:[...session.projectRefs], collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
+  if (!decision?.recover && !isRecovery) session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {project_ids:projectIds, project_refs:[...session.projectRefs], work_ids:workIds, collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
   if (!isRecovery && !decision?.recover) {
     session.lastUserMessage = displayText
     session.lastDrafts = JSON.parse(JSON.stringify(drafts))
     session.lastProjectRefs = [...session.projectRefs]
     session.projectRefs = []
+    session.lastWorkRefs = [...(session.workRefs || [])]
+    session.workRefs = []
     session.input = ''
     session.collaborationDrafts = []
   }
