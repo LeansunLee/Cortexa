@@ -54,6 +54,7 @@ async def list_works(
     priority: str = "",
     project_id: uuid.UUID | None = None,
     assignee_id: uuid.UUID | None = None,
+    source_id: uuid.UUID | None = None,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -88,6 +89,8 @@ async def list_works(
         q = q.where(Work.project_id == project_id)
     if assignee_id:
         q = q.where(Work.assignee_id == assignee_id)
+    if source_id:
+        q = q.where(Work.source_id == source_id)
     rows = (await db.execute(q.order_by(Work.updated_at.desc(), Work.id).limit(limit).offset(offset))).scalars()
     return [await s.output(db, w) for w in rows]
 

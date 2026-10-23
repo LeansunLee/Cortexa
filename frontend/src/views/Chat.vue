@@ -107,9 +107,9 @@
               <span>调试</span>
               <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
             </button>
-            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="产出物面板" @click="toggleArtifactsPanel">
+            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="工作区面板" @click="toggleArtifactsPanel">
               <PanelRightOpen :size="15" />
-              <span>产出物</span>
+              <span>工作区</span>
               <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
             </button>
           </div>
@@ -146,7 +146,7 @@
             </div>
 
             <!-- Assistant Message -->
-            <div v-else :id="msg?.id ? `message-${msg.id}` : undefined" class="msg-row msg-row-assistant">
+            <div v-else :id="msg?.id ? `message-${msg.id}` : undefined" class="msg-row msg-row-assistant" :class="{ 'has-artifacts': msg.metadata_json?.artifacts?.length }">
               <div class="msg-col-assistant">
                 <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length || msg.metadata_json?.budget_notices?.length"
                   :steps="msg._steps || msg.metadata_json.steps" :goal="msg.metadata_json?.execution_goal || ''"
@@ -204,7 +204,14 @@
                   </div>
                 </div>
 
-                <MessageArtifacts v-if="artifactCardsFor(msg, i).length" :conversation-id="activeTabId" :artifacts="artifactCardsFor(msg, i)" :title="isFinalAssistant(msg, i) ? '本对话产出物' : '产出物'" @open="openArtifact" />
+                <div v-if="msg.role === 'assistant' && msg.metadata_json?.artifacts?.length" class="msg-artifact-flags">
+                  <button v-for="a in msg.metadata_json.artifacts" :key="a.id" type="button" class="msg-artifact-flag"
+                    :title="`打开产出物：${a.title}`" @click="openArtifact(a)">
+                    <FileText :size="13" />
+                    <span class="flag-label">产出物</span>
+                    <span class="flag-title">{{ a.title }}</span>
+                  </button>
+                </div>
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
@@ -457,7 +464,6 @@ import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
 import CollaborationComposer from '../components/CollaborationComposer.vue'
-import MessageArtifacts from '../components/chat/MessageArtifacts.vue'
 import ArtifactsPanel from '../components/chat/ArtifactsPanel.vue'
 import ArtifactDialog from '../components/chat/ArtifactDialog.vue'
 import ConversationDebugPanel from '../components/ConversationDebugPanel.vue'
@@ -1774,13 +1780,6 @@ async function refreshArtifacts() {
   if (!currentConvId.value) { conversationArtifacts.value = []; return }
   try { conversationArtifacts.value = (await artifactApi.list(currentConvId.value)).data } catch { /* keep previous list */ }
 }
-function isFinalAssistant(msg, i) {
-  return i === messages.length - 1 && msg.role === 'assistant' && !sending.value && !streaming.value && !curSession.value?.pendingQuestion
-}
-function artifactCardsFor(msg, i) {
-  if (isFinalAssistant(msg, i)) return conversationArtifacts.value
-  return msg.metadata_json?.artifacts || []
-}
 watch(currentConvId, v => { conversationArtifacts.value = []; if (v) refreshArtifacts(); if (v && artifactsOpen.value) artifactsPanelRef.value?.load() })
 function exportMessage(msg) {
   const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' })
@@ -2241,6 +2240,18 @@ onBeforeUnmount(() => {
 }
 .chat-header-info { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .chat-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* 产出物所在消息的主题色高亮与点击入口 */
+.msg-row-assistant.has-artifacts .msg-col-assistant { box-shadow: inset 3px 0 0 0 var(--primary); border-radius: 2px; }
+.msg-artifact-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.msg-artifact-flag {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 440px;
+  height: 28px; padding: 0 11px; border: 1px solid var(--primary);
+  border-radius: 999px; background: var(--primary-light); color: var(--primary);
+  font-size: 12px; line-height: 18px; cursor: pointer;
+}
+.msg-artifact-flag:hover { filter: brightness(0.97); box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 22%, transparent); }
+.msg-artifact-flag .flag-label { font-weight: 700; flex-shrink: 0; }
+.msg-artifact-flag .flag-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-agent-badge {
   width: 32px; height: 32px; border-radius: 10px; background: var(--surface2);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
