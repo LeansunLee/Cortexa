@@ -12,6 +12,14 @@
         <div v-for="agent in agentUsage" :key="agent.key" class="usage-row"><span>{{ agent.name }}</span><span>输入 {{ number(agent.input) }} / 输出 {{ number(agent.output) }}</span><strong>{{ number(agent.total) }}</strong></div>
         <p v-if="reported.length < usage.length" class="flow-note">部分模型未返回用量；仅统计供应商已报告的 Token。</p>
       </details>
+      <div v-if="notices.length" class="flow-budget" aria-label="本轮预算说明">
+        <span class="flow-budget-title">本轮预算说明</span>
+        <ul>
+          <li v-for="item in notices" :key="item.field">
+            {{ item.label }}：{{ number(item.used) }} / {{ number(item.limit) }} {{ item.unit }}。<template v-if="item.kind === 'limit'">已达到上限。</template><template v-else-if="item.kind === 'reserve'">剩余 {{ number(item.reserve) }} {{ item.unit }} 已预留给最终回复，停止新增执行。</template><template v-else>剩余预算不足以执行下一次调用<template v-if="item.requested">（需要 {{ number(item.requested) }} {{ item.unit }}）</template>。</template>
+          </li>
+        </ul>
+      </div>
       <ol class="flow-list">
         <li v-for="(step, index) in steps" :key="index" :class="['flow-step', outcome(step, index)]">
           <span class="flow-node"><Loader v-if="outcome(step, index) === 'running'" :size="14" class="flow-spinner" /><AlertCircle v-else-if="outcome(step, index) === 'error'" :size="14" /><Check v-else :size="14" /></span>
@@ -38,7 +46,7 @@ import { Activity, Target, FileText, MessageSquare, Check, Loader, AlertCircle }
 import PromptTag from './PromptTag.vue'
 import DataResultTag from './DataResultTag.vue'
 import { stepOutcome } from '../utils/statusSteps'
-const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, formatMessage: { type: Function, required: true } })
+const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, notices: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, formatMessage: { type: Function, required: true } })
 defineEmits(['source'])
 const reported = computed(() => props.usage.filter(item => item.token_count != null))
 const total = computed(() => reported.value.reduce((sum, item) => sum + item.token_count, 0))
@@ -72,6 +80,10 @@ const documents = sources => [...new Map(sources.map((source, i) => [source.memo
 .flow-label { font-size: 11px; color: var(--text3); }
 .flow-goal p { margin: 4px 0 0; color: var(--text); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .flow-usage { margin-bottom: 16px; font-size: 12px; color: var(--text2); }
+.flow-budget { margin-bottom: 16px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border)); border-radius: var(--radius-sm, 10px); background: color-mix(in srgb, var(--primary) 5%, var(--surface)); font-size: 12px; color: var(--text2); }
+.flow-budget-title { display: block; font-weight: 600; color: var(--primary); margin-bottom: 4px; }
+.flow-budget ul { list-style: none; margin: 0; padding: 0; }
+.flow-budget li + li { margin-top: 3px; }
 .flow-usage summary { cursor: pointer; }.flow-usage summary span { color: var(--text3); margin-left: 8px; }
 .usage-row { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }.usage-row strong { margin-left: auto; }
 .flow-note { color: var(--text3); font-size: 11px; }

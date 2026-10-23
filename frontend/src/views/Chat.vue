@@ -148,9 +148,9 @@
             <!-- Assistant Message -->
             <div v-else :id="msg?.id ? `message-${msg.id}` : undefined" class="msg-row msg-row-assistant">
               <div class="msg-col-assistant">
-                <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length"
+                <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length || msg.metadata_json?.budget_notices?.length"
                   :steps="msg._steps || msg.metadata_json.steps" :goal="msg.metadata_json?.execution_goal || ''"
-                  :usage="msg.metadata_json?.execution_usage || []" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
+                  :usage="msg.metadata_json?.execution_usage || []" :notices="msg.metadata_json?.budget_notices || []" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
                   @source="source => showSources({ metadata_json: { sources: [source] } })" />
                 <!-- Collaboration Card (completed) -->
                 <AgentCollaborationCard
@@ -170,7 +170,6 @@
                 <UserQuestionCard v-if="isActiveQuestionMessage(msg)" :key="curSession.pendingQuestion.id"
                   :question="curSession.pendingQuestion" :busy="sending || streaming" @answer="answerQuestion" @recover="id => sendMessage({ question_id:id, recover:true })" />
                 <div v-else class="msg-content-assistant" v-html="assistantHtml(msg)" @mouseover="onCiteMove($event, msg)" @mouseleave="citePreview=null"></div>
-                <BudgetNotice :notices="msg.metadata_json?.budget_notices || []" />
                 <div v-if="msg.metadata_json?.stopped" class="preview-hint">已停止生成</div>
 
                 <!-- Sources (collapsed; sources already cited inline are omitted) -->
@@ -205,11 +204,7 @@
                   </div>
                 </div>
 
-                <MessageArtifacts v-if="msg.metadata_json?.artifacts?.length" :conversation-id="activeTabId" :artifacts="msg.metadata_json.artifacts" @open="openArtifact" />
-                <div v-if="i === messages.length - 1 && msg.role === 'assistant' && !sending && !streaming && !curSession?.pendingQuestion && conversationArtifacts.length" class="msg-artifact-summary">
-                  <span class="mas-title"><FileText :size="13" /> 本对话产出物（{{ conversationArtifacts.length }}）</span>
-                  <a v-for="a in conversationArtifacts" :key="a.id" class="mas-link" href="#" :title="`查看 ${a.title}`" @click.prevent="openArtifact(a)">{{ a.title }}</a>
-                </div>
+                <MessageArtifacts v-if="artifactCardsFor(msg, i).length" :conversation-id="activeTabId" :artifacts="artifactCardsFor(msg, i)" :title="isFinalAssistant(msg, i) ? '本对话产出物' : '产出物'" @open="openArtifact" />
                 <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
@@ -470,7 +465,6 @@ import { restoreRejectedSend, filterAvailableConversations, sendErrorMessage } f
 import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaborationDrafts.js'
 import UserQuestionCard from '../components/UserQuestionCard.vue'
 import RuntimeTimeline from '../components/RuntimeTimeline.vue'
-import BudgetNotice from '../components/BudgetNotice.vue'
 import ProjectPicker from '../components/ProjectPicker.vue'
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
@@ -1780,6 +1774,13 @@ async function refreshArtifacts() {
   if (!currentConvId.value) { conversationArtifacts.value = []; return }
   try { conversationArtifacts.value = (await artifactApi.list(currentConvId.value)).data } catch { /* keep previous list */ }
 }
+function isFinalAssistant(msg, i) {
+  return i === messages.length - 1 && msg.role === 'assistant' && !sending.value && !streaming.value && !curSession.value?.pendingQuestion
+}
+function artifactCardsFor(msg, i) {
+  if (isFinalAssistant(msg, i)) return conversationArtifacts.value
+  return msg.metadata_json?.artifacts || []
+}
 watch(currentConvId, v => { conversationArtifacts.value = []; if (v) refreshArtifacts(); if (v && artifactsOpen.value) artifactsPanelRef.value?.load() })
 function exportMessage(msg) {
   const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' })
@@ -2240,20 +2241,6 @@ onBeforeUnmount(() => {
 }
 .chat-header-info { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .chat-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.msg-artifact-summary {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  margin-top: 10px; padding: 8px 10px;
-  border: 1px dashed var(--border); border-radius: var(--radius-sm);
-  background: var(--surface2);
-}
-.mas-title { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--text2); }
-.mas-link {
-  display: inline-flex; align-items: center; max-width: 240px; height: 24px; padding: 0 9px;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
-  font-size: 12px; line-height: 17px; color: var(--primary); cursor: pointer;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none;
-}
-.mas-link:hover { border-color: var(--primary); background: var(--primary-light); text-decoration: underline; }
 .chat-agent-badge {
   width: 32px; height: 32px; border-radius: 10px; background: var(--surface2);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
