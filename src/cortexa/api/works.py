@@ -97,7 +97,23 @@ async def list_works(
 
 @router.post("/works", status_code=201)
 async def create_work(payload: WorkInput, db: AsyncSession = Depends(get_db)):
-    return await s.output(db, await s.create(db, payload))
+    source = None
+    if payload.source_conversation_id:
+        from cortexa.db.models import Conversation
+        a = s.actor()
+        conv = (
+            await db.execute(
+                select(Conversation).where(
+                    Conversation.id == payload.source_conversation_id,
+                    Conversation.owner_user_id == a.user_id,
+                    Conversation.workspace_id == a.workspace_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if conv is None:
+            raise HTTPException(404, "来源对话不存在或无权访问")
+        source = {"source_type": "conversation", "source_id": conv.id, "source_label": conv.title or "Agent 对话"}
+    return await s.output(db, await s.create(db, payload, source))
 
 
 @router.post("/works/assignee-recommendations")

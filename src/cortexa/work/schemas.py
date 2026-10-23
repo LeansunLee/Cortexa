@@ -17,6 +17,7 @@ class WorkInput(BaseModel):
     reviewer_id: uuid.UUID | None = None
     priority: Literal["P0", "P1", "P2", "P3"] = "P2"
     due_at: datetime | None = None
+    source_conversation_id: uuid.UUID | None = Field(default=None, exclude=True)
 
     @field_validator("due_at")
     @classmethod

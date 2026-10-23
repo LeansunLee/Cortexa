@@ -29,7 +29,7 @@ const pageTabActive = injectPageTab('pageTabActive', true)
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import api, { workApi } from '../api'
 import { auth } from '../auth'
-const props = defineProps({ work: Object, candidate: Object, projectId: String })
+const props = defineProps({ work: Object, candidate: Object, projectId: String, conversationId: String })
 const emit = defineEmits(['close', 'saved'])
 const base = props.work || props.candidate || {}
 const form = ref({ project_id: base.project_id || props.projectId || '', title: base.title || '', goal: base.goal || '', description: base.description || '',
@@ -79,6 +79,7 @@ async function save() {
   busy.value = true; error.value = ''
   try {
     const payload = {...form.value, project_id: form.value.project_id || null, due_at: due.value ? new Date(due.value).toISOString() : null}
+    if (!props.work && !props.candidate && props.conversationId) payload.source_conversation_id = props.conversationId
     const { data } = props.work ? await workApi.update(props.work.id, payload) : props.candidate
       ? await workApi.accept(props.candidate.id, payload) : await workApi.create(payload)
     emit('saved', data)
