@@ -7,12 +7,7 @@
         <label>所属项目<SearchSelect v-model="form.project_id" :options="projectOptions" placeholder="不属于项目" aria-label="所属项目" /></label>
         <label>标题<input v-model="form.title" required maxlength="200" autofocus /></label>
         <label>执行目标<textarea v-model="form.goal" required maxlength="2000" rows="3" /></label>
-        <section v-if="form.goal.trim() || form.title.trim()" class="assignee-recommendations" aria-label="推荐负责人" aria-live="polite">
-          <strong>推荐负责人</strong>
-          <p v-if="recommending" class="hint">正在匹配职责…</p>
-          <p v-else-if="recommendationError" class="hint">{{ recommendationError }} <button type="button" @click="loadRecommendations">重试</button></p>
-          <template v-else><button v-for="r in recommendations" :key="r.user_id" type="button" :aria-pressed="form.assignee_id===r.user_id" @click="form.assignee_id=r.user_id"><strong>{{ r.display_name }} · {{ r.score }} 分</strong><span>{{ [r.org_unit_name,r.position_title].filter(Boolean).join(' · ') }}</span><small>{{ r.reason }}</small></button><p v-if="!recommendations.length" class="hint">暂无职责匹配，请手动选择负责人。</p></template>
-        </section>
+        <p v-if="recommending" class="hint" aria-live="polite">正在匹配推荐负责人…</p>
         <div class="form-grid">
           <label>负责人<SearchSelect v-model="form.assignee_id" :options="assigneeOptions" placeholder="选择空间成员" aria-label="负责人" /></label>
           <label>验收人<SearchSelect v-model="form.reviewer_id" :options="reviewerOptions" placeholder="选择验收人" aria-label="验收人" /></label>
@@ -56,7 +51,7 @@ const priorityOptions = [
 ]
 const assigneeOptions = computed(() => [
   { value: '', label: '选择空间成员', disabled: true },
-  ...members.value.map(u => ({ value: u.id, label: u.name })),
+  ...members.value.map(u => ({ value: u.id, label: u.name + (recommendations.value[0]?.user_id === u.id ? '（推荐）' : '') })),
 ])
 const reviewerOptions = computed(() => [
   { value: '', label: '选择验收人', disabled: true },
@@ -69,7 +64,7 @@ async function loadRecommendations(){
  const version=++recommendationVersion
  clearTimeout(recommendationTimer)
  recommending.value=true;recommendationError.value=''
- try {const {data}=await workApi.recommendations(Object.fromEntries(['title','goal','description','deliverable_requirement','priority'].map(k=>[k,form.value[k]])));if(version===recommendationVersion)recommendations.value=data}
+ try {const {data}=await workApi.recommendations(Object.fromEntries(['title','goal','description','deliverable_requirement','priority'].map(k=>[k,form.value[k]])));if(version===recommendationVersion){recommendations.value=data;if(data.length&&!form.value.assignee_id)form.value.assignee_id=data[0].user_id}}
  catch {if(version===recommendationVersion){recommendations.value=[];recommendationError.value='推荐暂不可用，可继续手动选择负责人。'}}
  finally {if(version===recommendationVersion)recommending.value=false}
 }
@@ -92,8 +87,6 @@ async function save() {
 }
 </script>
 <style>
-.assignee-recommendations{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:8px}.assignee-recommendations>strong{font-size:13px}.assignee-recommendations>button{display:grid;text-align:left;gap:5px}.assignee-recommendations>button[aria-pressed="true"]{border-color:var(--primary);background:var(--primary-light)}.assignee-recommendations span,.assignee-recommendations small{color:var(--text2);line-height:1.5}
-
 .work-overlay{position:fixed;inset:0;background:var(--overlay);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
 .work-editor{background:var(--surface-dialog);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:26px;width:min(620px,100%);max-height:90dvh;overflow:auto;box-shadow:var(--shadow-dialog);display:grid;gap:14px}
 .work-editor header,.work-editor footer{display:flex;justify-content:space-between;align-items:center;gap:12px}.work-editor h2{font-size:20px;margin:0}.work-editor footer{justify-content:flex-end;margin-top:8px}.work-editor label{display:grid;gap:7px;font-size:13px;font-weight:500}.work-editor input,.work-editor textarea{width:100%;box-sizing:border-box}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
