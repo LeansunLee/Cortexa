@@ -102,12 +102,12 @@
             </div>
           </div>
           <div class="chat-header-actions">
-            <button v-if="debugEnabled && !curSession?.isDraft" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
+            <button v-if="debugEnabled && !curSession?.isDraft && !showDebugPanel" :class="['debug-toggle', { active: showDebugPanel }]" type="button" @click="showDebugPanel = !showDebugPanel" :aria-pressed="showDebugPanel">
               <Bug :size="15" />
               <span>调试</span>
               <span v-if="debugEventCount" class="debug-count">{{ debugEventCount }}</span>
             </button>
-            <button v-if="!curSession?.isDraft" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="工作区面板" @click="toggleArtifactsPanel">
+            <button v-if="!curSession?.isDraft && !artifactsOpen" :class="['debug-toggle', { active: artifactsOpen }]" type="button" :aria-pressed="artifactsOpen" title="工作区面板" @click="toggleArtifactsPanel">
               <PanelRightOpen :size="15" />
               <span>工作区</span>
               <span v-if="artifactCount" class="debug-count">{{ artifactCount }}</span>
@@ -212,7 +212,7 @@
                     <span class="flag-title">{{ a.title }}</span>
                   </button>
                 </div>
-                <WorkCandidates v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
+                <WorkCandidates @saved="refreshWorkspace" v-if="msg.id && msg.role === 'assistant' && !msg.metadata_json?.user_question && !(i === messages.length - 1 && curSession?.pendingQuestion)" :key="msg.id" :conversation-id="activeTabId" :message="msg" :auto-extract="i === messages.length - 1 && !sending && !streaming" />
                 <!-- Actions (hover) -->
                 <div class="msg-actions">
                   <span class="action-time" v-if="msg.created_at">{{ formatMessageTime(msg.created_at) }}</span>
@@ -1593,7 +1593,7 @@ const sendMessage = async (decision = null) => {
             meta.execution_goal = displayText
             meta.execution_usage = Object.values(session.runtimeUsage || {})
             if (event.collaborations?.length) meta.collaborations = event.collaborations
-            if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshArtifacts(); artifactsPanelRef.value?.load() }
+            if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshWorkspace() }
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
             else if (session.liveDebug.length) meta.debug_trace = [...session.liveDebug]
             session.messages.push({
@@ -1775,6 +1775,11 @@ function onArtifactSaved(data) {
   if (dialogArtifact.value) dialogArtifact.value = { ...dialogArtifact.value, ...data }
   artifactsPanelRef.value?.load()
   refreshArtifacts()
+}
+function refreshWorkspace() {
+  // A work was created from this conversation; sync the workspace panel and count.
+  refreshArtifacts()
+  artifactsPanelRef.value?.load()
 }
 async function refreshArtifacts() {
   if (!currentConvId.value) { conversationArtifacts.value = []; return }
