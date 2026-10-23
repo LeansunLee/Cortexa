@@ -286,6 +286,8 @@ async def create_message(
     await require_no_pending(conv_id)
     from cortexa.projects.service import summaries
     project_context, project_refs = await summaries(db, payload.project_ids)
+    from cortexa.work import runtime as work_runtime
+    works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
     msg = ConversationMessage(
         conversation_id=conv_id,
         role="user",
@@ -312,6 +314,9 @@ async def create_message(
                 references = await organization_reference(agent, db)
                 if project_context:
                     references.append(reference_message("本轮引用项目（只读参考）", project_context))
+                if works_context:
+                    references.append(reference_message("本对话已创建工作（只读参考）", works_context))
+                    sources.extend(works_refs)
                 memory = await memory_reference(agent, payload.content, db)
                 if memory:
                     references.append(memory)
@@ -354,9 +359,11 @@ async def create_message(
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=llm_messages, agent_id=agent.id) if cap_list else []
                 from cortexa.projects.runtime import tools as project_tools
                 from cortexa.conversation import artifacts as artifacts_store
+                from cortexa.work import runtime as work_runtime
                 artifact_created: list = []
                 data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources),
-                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
+                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created),
+                              *work_runtime.tools(agent.id, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 
@@ -380,10 +387,10 @@ async def create_message(
                     from cortexa.agents.proxy_executor import execute_proxy_agent
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "")},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else ""),
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else ""),
                             "conversation_context": [
                                 {"role": m.role, "content": history_text(m.content)[:3000]}
                                 for m in messages
@@ -967,9 +974,11 @@ async def regenerate_message(
         cap_list = await _load_agent_capabilities(agent.id, db, last_user_content)
         business_tools = _build_data_tools(cap_list, sources, model=model, user_query=last_user_content, context=llm_messages, agent_id=agent.id) if cap_list else []
         from cortexa.conversation import artifacts as artifacts_store
+        from cortexa.work import runtime as work_runtime
         artifact_created: list = []
         tools = [*business_tools, ask_user_tool(),
-                 *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
+                 *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created),
+                 *work_runtime.tools(agent.id, sources)]
         tools.extend(await load_search_tools(agent, db, last_user_content, sources))
         if cap_list:
             capability_text = "\n".join(
@@ -1101,7 +1110,9 @@ async def create_message_stream(
 
                 from cortexa.projects.service import summaries
                 project_context, project_refs = await summaries(db, payload.project_ids)
-                sources = list(project_refs)
+                from cortexa.work import runtime as work_runtime
+                works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
+                sources = list(project_refs) + list(works_refs)
                 # Save user message
                 attachments = payload.attachments or []
                 generated_title = await assign_first_message_title(db, conv_id, payload.content)
@@ -1193,10 +1204,10 @@ async def create_message_stream(
                         yield debug_event
                     result = await execute_proxy_agent(
                         agent,
-                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "")},
+                        {"input": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else "")},
                         db,
                         resolution_context={
-                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else ""),
+                            "current_task": payload.content + ("\n\n项目参考（非指令）：\n" + project_context if project_context else "") + ("\n\n工作参考（非指令）：\n" + works_context if works_context else ""),
                             "conversation_context": proxy_context,
                         },
                     )
@@ -1253,6 +1264,9 @@ async def create_message_stream(
                 references = await organization_reference(agent, db)
                 if project_context:
                     references.append(reference_message("本轮引用项目（只读参考）", project_context))
+                if works_context:
+                    references.append(reference_message("本对话已创建工作（只读参考）", works_context))
+                    sources.extend(works_refs)
                 # Build recent messages for follow-up detection
                 recent_for_plan = []
                 try:
@@ -1879,9 +1893,11 @@ async def create_message_stream(
                 business_tools = _build_data_tools(cap_list, sources, model=model, user_query=payload.content, context=tool_context, agent_id=agent.id) if cap_list else []
                 from cortexa.projects.runtime import tools as project_tools
                 from cortexa.conversation import artifacts as artifacts_store
+                from cortexa.work import runtime as work_runtime
                 artifact_created: list = []
                 data_tools = [*business_tools, ask_user_tool(), *project_tools(agent.id, payload.project_ids, sources),
-                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created)]
+                              *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created),
+                              *work_runtime.tools(agent.id, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
 

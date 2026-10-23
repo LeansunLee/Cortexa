@@ -41,6 +41,8 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
                 conversation_id, agent.workspace_id, actor_required().user_id, agent.id)]
         except Exception:
             pass
+    from cortexa.work import runtime as work_runtime
+    project = [*project, *work_runtime.tools(agent.id, sources)]
     for tool in [*business, *web, *project]:
         capability = cap_map.get(tool.name)
         adapter = tool_adapter(tool, str(agent.workspace_id), capability=capability)
@@ -55,6 +57,13 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
             adapter.descriptor.requires_confirmation = False
             adapter.descriptor.availability = "available"
             adapter.descriptor.timeout = 15
+        if tool.name == "work_read":
+            # Read-only work lookup; visibility is enforced by the work service
+            # against the requesting user inside the tool.
+            adapter.descriptor.risk_level = "low"
+            adapter.descriptor.requires_confirmation = False
+            adapter.descriptor.availability = "available"
+            adapter.descriptor.timeout = 10
         if capability is not None:
             from cortexa.data.sql_drafts import validate_sql
 
@@ -83,14 +92,15 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
                     )
                     if granted is None:
                         raise PermissionError("capability_revoked")
-                elif tool.name in {"project_read", "save_document"}:
+                elif tool.name in {"project_read", "save_document", "work_read"}:
                     if tool.name == "project_read":
                         from cortexa.projects.service import get
                         import uuid
                         for ident in project_ids or []:
                             await get(check_db, uuid.UUID(str(ident)))
-                    # save_document is inherently scoped: it writes only into the
-                    # requester's own conversation artifact store.
+                    # save_document writes only into the requester's own
+                    # conversation store; work_read visibility is enforced by the
+                    # work service against the requesting user.
                 else:
                     fresh_web = await load_search_tools(fresh, check_db, query, sources)
                     if not any(t.name == tool.name for t in fresh_web):

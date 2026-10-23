@@ -330,6 +330,7 @@ async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
     async with store.sessions() as db:
         project_text, project_refs = await summaries(db, request.project_ids, budget=min(6000, state.limits.context_tokens // 4))
     payload["project_ids"] = [str(i) for i in request.project_ids]
+    payload["conversation_id"] = str(row.conversation_id)
     payload["project_context"] = project_text
     payload["sources"].extend(project_refs)
     payload["participant_tasks"] = {str(p.agent_id): p.task for p in request.participants}
@@ -637,6 +638,12 @@ def stream_response(row, state, payload, agent, workspace):
                                     "工具没有返回结果前不得引用或编造 observation_id。用户拒绝的参与者不得再请求。",
                                 }
                             ]
+                            from cortexa.work import runtime as work_runtime
+                            from cortexa.agents.prompts import reference_message as goal_reference
+                            works_text, works_refs = await work_runtime.conversation_summary(db, row.conversation_id)
+                            if works_text:
+                                messages.append(goal_reference("本对话已创建工作（只读参考）", works_text))
+                                payload["sources"].extend(works_refs)
                             # Reuse conversation ownership; retain whole recent turns,
                             # no LLM summarization and no partial-string truncation.
                             history = (

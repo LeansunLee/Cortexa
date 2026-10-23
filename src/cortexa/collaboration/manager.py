@@ -417,9 +417,15 @@ async def _execute_target_agent(
     data_tools = []
     memory_ids = set()
     try:
-        async with async_session_factory() as kb_db:
-            from cortexa.agents.context import organization_reference
-            messages.extend(await organization_reference(target_agent, kb_db))
+            async with async_session_factory() as kb_db:
+                from cortexa.agents.context import organization_reference
+                messages.extend(await organization_reference(target_agent, kb_db))
+                if conversation_id is not None:
+                    from cortexa.work import runtime as work_runtime
+                    works_text, works_refs = await work_runtime.conversation_summary(kb_db, conversation_id)
+                    if works_text:
+                        messages.append(reference_message("本对话已创建工作（只读参考）", works_text))
+                        sources.extend(works_refs)
             from cortexa.db.models import Document, KnowledgeBase, DataCapability, DataSource, AgentDataBinding, DataCredential
 
             try:
@@ -455,7 +461,9 @@ async def _execute_target_agent(
 
     from cortexa.projects.runtime import tools as project_tools
     from cortexa.conversation import artifacts as artifacts_store
+    from cortexa.work import runtime as work_runtime
     data_tools.extend(project_tools(target_agent.id,handoff.project_ids,sources))
+    data_tools.extend(work_runtime.tools(target_agent.id, sources))
     if conversation_id is not None:
         from cortexa.security.access import actor_required
         try:

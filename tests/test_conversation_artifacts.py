@@ -48,3 +48,17 @@ def test_resolve_path_scoped_under_root():
     row = type('Row', (), {'path': 'ab/cd.md'})()
     resolved = A.resolve_path(row)
     assert resolved == A.ROOT / 'ab' / 'cd.md'
+
+
+def test_work_summary_payload_trims_over_budget():
+    import json
+    from cortexa.work.runtime import _summary_payload
+    works = [{"id": "w1", "title": "标题", "status": "todo", "priority": "P2",
+              "goal": "目" * 300, "deliverable_requirement": "交" * 300,
+              "assignee": "张三", "updated_at": None}]
+    full = json.loads(_summary_payload(works, "conv-1", budget=100000))
+    assert full["works"][0]["deliverable_requirement"] == "交" * 300
+    trimmed = json.loads(_summary_payload(works, "conv-1", budget=80))
+    assert trimmed["works"][0]["title"] == "标题"
+    assert "goal" not in trimmed["works"][0]
+    assert "work_read" in trimmed["notice"]

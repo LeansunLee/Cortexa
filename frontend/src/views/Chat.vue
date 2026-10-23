@@ -187,6 +187,7 @@
                         <BookOpen v-else-if="row.src.type === 'knowledge_base'" :size="13" />
                         <Database v-else-if="row.src.type === 'data_source'" :size="13" />
                         <FolderOpen v-else-if="row.src.type === 'project'" :size="13" />
+                        <ClipboardList v-else-if="row.src.type === 'work'" :size="13" />
                         <Link v-else :size="13" />
                       </span>
                       <span class="source-row-name">{{ row.src.name }}</span>
@@ -459,7 +460,7 @@
 import AgentAvatar from '../components/AgentAvatar.vue'
 import { highlightKeyContent } from '../utils/chatHighlights'
 import { inlineFormat, applyCitationMarkers, renderCitationMarkers } from '../utils/messageFormatting'
-import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen, Download, PanelRightOpen } from 'lucide-vue-next'
+import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen, Download, PanelRightOpen, ClipboardList } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
@@ -1210,7 +1211,7 @@ const showSources = (msg, index = 0) => {
 
 const selectSource = (idx) => { selectedSourceIdx.value = idx; loadMemorySource() }
 
-const SOURCE_TYPE_LABELS = { web: '网页', knowledge_base: '知识库文档', data_source: '数据源', project: '项目', memory: '记忆' }
+const SOURCE_TYPE_LABELS = { web: '网页', knowledge_base: '知识库文档', data_source: '数据源', project: '项目', memory: '记忆', work: '工作' }
 const sourceTypeLabel = (t) => SOURCE_TYPE_LABELS[t] || '来源'
 const assistantHtml = (msg) => renderCitationMarkers(formatMessage(applyCitationMarkers(msg.content, msg.metadata_json?.sources)), msg.metadata_json?.sources)
 const citePreview = ref(null)

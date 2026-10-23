@@ -210,6 +210,12 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 async with store.sessions() as project_db:
                     project_text, _ = await summaries(project_db, payload["project_ids"], budget=min(6000,input_limit//4))
                 invocation["project_reference"] = project_text
+            if payload.get("conversation_id"):
+                from cortexa.work import runtime as work_runtime
+                async with store.sessions() as works_db:
+                    works_text, _ = await work_runtime.conversation_summary(works_db, uuid.UUID(payload["conversation_id"]), budget=min(3000, input_limit // 4))
+                if works_text:
+                    invocation["works_reference"] = works_text
             references = invocation["dependencies"]
             pending_explicit = set(state.explicit_agents) - set(state.used_agents)
             # Only explicitly requested participants are promised a share.
