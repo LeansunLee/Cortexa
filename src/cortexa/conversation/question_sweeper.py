@@ -122,9 +122,11 @@ async def process(conv_id: uuid.UUID, question_id: uuid.UUID, user_id, workspace
 
 
 async def sweep_once() -> int:
+    from sqlalchemy import cast, select
+    from sqlalchemy.dialects.postgresql import JSONB
+
     from cortexa.db.engine import async_session_factory
     from cortexa.db.models import Conversation
-    from sqlalchemy import select
 
     if auto_answer_timeout() <= 0:
         return 0
@@ -133,9 +135,7 @@ async def sweep_once() -> int:
     async with async_session_factory() as db:
         rows = (
             await db.execute(
-                select(Conversation).where(
-                    Conversation.metadata_json["pending_question"].astext != None  # noqa: E711
-                )
+                select(Conversation).where(cast(Conversation.metadata_json, JSONB).has_key("pending_question"))
             )
         ).scalars()
         for conv in rows:
