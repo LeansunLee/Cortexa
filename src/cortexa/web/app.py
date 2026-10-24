@@ -94,6 +94,10 @@ async def recover_knowledge_jobs() -> None:
     """Resume PDF jobs lost with the previous process."""
     try:
         from cortexa.api import knowledge
+        from cortexa.data.document_jobs import sweep_orphan_locks
+        swept = sweep_orphan_locks()
+        if swept:
+            print(f"[PDF] Swept {swept} orphan document lock(s) at startup", flush=True)
         knowledge._recovery_task = asyncio.create_task(knowledge.recover_pdf_jobs())
         def report_failure(task):
             if not task.cancelled() and task.exception():
@@ -102,6 +106,23 @@ async def recover_knowledge_jobs() -> None:
     except Exception as error:
         # Startup must remain available even when the database is temporarily down.
         print(f"[PDF] Startup recovery failed: {type(error).__name__}: {error}", file=sys.stderr)
+
+
+@app.on_event("startup")
+async def start_question_sweeper() -> None:
+    """Auto-continue recommended questions past the deadline (env-gated)."""
+    from cortexa.conversation.question_sweeper import auto_answer_timeout, run
+
+    if auto_answer_timeout() > 0:
+        app.state.question_sweeper = asyncio.create_task(run())
+        print("[Questions] Auto-continue sweeper started", flush=True)
+
+
+@app.on_event("shutdown")
+async def stop_question_sweeper() -> None:
+    task = getattr(app.state, "question_sweeper", None)
+    if task:
+        task.cancel()
 
 
 @app.on_event("shutdown")

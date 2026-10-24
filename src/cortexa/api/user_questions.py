@@ -64,6 +64,11 @@ async def pending_question(conv_id: uuid.UUID):
 
 @router.post("/{conv_id}/question/{question_id}/answer")
 async def submit_answer(conv_id: uuid.UUID, question_id: uuid.UUID, body: Answer):
+    return await apply_answer(conv_id, question_id, body.selected_indices, body.text)
+
+
+async def apply_answer(conv_id: uuid.UUID, question_id: uuid.UUID, selected: list[int], text: str, *, auto: bool = False):
+    """Shared answer pipeline for user clicks and the timeout auto-continue sweeper."""
     # Lock plus question identity makes duplicate clicks and stale tabs harmless.
     async with async_session_factory() as db:
         await own_conversation(db, conv_id, use_agent=True)
@@ -75,9 +80,11 @@ async def submit_answer(conv_id: uuid.UUID, question_id: uuid.UUID, body: Answer
         if public["status"] != "pending":
             raise HTTPException(409, "回答已提交，请等待执行结果；不会重复调用 Agent")
         await require_agent_use(db, uuid.UUID(public["agent_id"]))
-        text = answer_text(public, body.selected_indices, body.text)
+        text = answer_text(public, selected, text)
         context = files.read(question_id, meta["question_context"])
         public = {**public, "status": "answering", "answer": text}
+        if auto:
+            public = {**public, "auto": True}
         meta["pending_question"] = public
         rows = (
             await db.scalars(
@@ -93,6 +100,15 @@ async def submit_answer(conv_id: uuid.UUID, question_id: uuid.UUID, body: Answer
                 data["user_question"] = public
                 row.metadata_json = data
         conv.metadata_json = meta
+        if auto:
+            db.add(
+                ConversationMessage(
+                    conversation_id=conv_id,
+                    role="assistant",
+                    content=f"⏱ 超过时限未收到你的选择，已按推荐选项自动继续：{text}",
+                    metadata_json={"auto_answered": True, "question_id": str(question_id)},
+                )
+            )
         await db.commit()
     try:
         if context["engine"] == "goal":
@@ -114,6 +130,23 @@ async def submit_answer(conv_id: uuid.UUID, question_id: uuid.UUID, body: Answer
             if (meta.get("pending_question") or {}).get("id") == str(question_id):
                 meta["pending_question"] = {**public, "status": "pending"}
                 conv.metadata_json = meta
+                if auto:
+                    # The auto-continue notice must not outlive a failed attempt.
+                    rows = (
+                        await db.scalars(
+                            select(ConversationMessage)
+                            .where(
+                                ConversationMessage.conversation_id == conv_id,
+                                ConversationMessage.role == "assistant",
+                            )
+                            .order_by(ConversationMessage.created_at.desc())
+                            .limit(10)
+                        )
+                    ).all()
+                    for row in rows:
+                        data = dict(row.metadata_json or {})
+                        if data.get("auto_answered") and data.get("question_id") == str(question_id):
+                            await db.delete(row)
                 await db.commit()
         raise
 

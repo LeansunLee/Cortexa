@@ -1,5 +1,6 @@
 import uuid
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import HTTPException
@@ -20,6 +21,8 @@ class AskUserInput(BaseModel):
     )
     multi_select: bool = False
     allow_free_text: bool = True
+    recommended_option_index: int | None = Field(default=None, ge=0, lt=12)
+    recommendation_reason: str = Field(default="", max_length=500)
 
 
 class UserQuestionPause(Exception):
@@ -33,22 +36,59 @@ answered_question = ContextVar("answered_question", default=None)
 files = ArtifactStore(ROOT.parent / "user_questions")
 
 
+def auto_answer_timeout() -> int:
+    """Seconds before a recommended single-select question auto-continues; 0 disables."""
+    import os
+
+    try:
+        return max(0, int(os.environ.get("QUESTION_AUTO_ANSWER_TIMEOUT", "3600")))
+    except ValueError:
+        return 3600
+
+
 def question(raw, agent):
     parsed = AskUserInput.model_validate({k: v for k, v in raw.items() if k in AskUserInput.model_fields})
     values = parsed.model_dump()
     values["options"] = [value.strip() for value in values["options"] if value.strip()]
     if not values["options"]:
         values["allow_free_text"] = True
-    return {"id": str(uuid.uuid4()), "agent_id": str(agent.id), "agent_name": agent.name, "status": "pending", **values}
+    # A recommendation is only meaningful for single-choice questions with options.
+    if values.get("recommended_option_index") is not None and (
+        values["multi_select"] or not values["options"] or values["recommended_option_index"] >= len(values["options"])
+    ):
+        values["recommended_option_index"] = None
+        values["recommendation_reason"] = ""
+    if values.get("recommended_option_index") is None:
+        values.pop("recommendation_reason", None)
+    timeout = auto_answer_timeout()
+    return {
+        "id": str(uuid.uuid4()),
+        "agent_id": str(agent.id),
+        "agent_name": agent.name,
+        "status": "pending",
+        "raised_at": datetime.now(timezone.utc).isoformat(),
+        **({"auto_timeout_seconds": timeout} if values.get("recommended_option_index") is not None and timeout > 0 else {}),
+        **values,
+    }
 
 
 def ask_user_tool():
     async def ask(
-        question: str, options: list[str] | None = None, multi_select: bool = False, allow_free_text: bool = True
+        question: str,
+        options: list[str] | None = None,
+        multi_select: bool = False,
+        allow_free_text: bool = True,
+        recommended_option_index: int | None = None,
+        recommendation_reason: str = "",
     ):
         return {
             "user_question": AskUserInput(
-                question=question, options=options or [], multi_select=multi_select, allow_free_text=allow_free_text
+                question=question,
+                options=options or [],
+                multi_select=multi_select,
+                allow_free_text=allow_free_text,
+                recommended_option_index=recommended_option_index,
+                recommendation_reason=recommendation_reason,
             ).model_dump()
         }
 
@@ -56,7 +96,11 @@ def ask_user_tool():
         coroutine=ask,
         name="ask_user",
         args_schema=AskUserInput,
-        description="需要用户作出选择、确认偏好、确定业务口径或补充关键信息时调用。提供问题与选项，暂停并等待用户回答；不得替用户选择。",
+        description=(
+            "需要用户作出选择、确认偏好、确定业务口径或补充关键信息时调用。提供问题与选项，暂停并等待用户回答；"
+            "不得替用户选择。单选问题应在业务上评估选项并给出推荐：设置 recommended_option_index 为推荐项序号，"
+            "并用 recommendation_reason 说明理由；推荐会在卡片上标注，用户长时间未选择时将按推荐继续。"
+        ),
     )
 
 
@@ -65,6 +109,8 @@ async def save_question(conv_id, public, context, *, sessions=None):
         conv = await db.scalar(select(Conversation).where(Conversation.id == conv_id).with_for_update())
         if conv is None:
             raise HTTPException(404, "对话已删除或无权访问")
+        if context.get("engine") and not public.get("engine"):
+            public = {**public, "engine": context["engine"]}
         ref = files.write(public["id"], context)
         conv.metadata_json = {**(conv.metadata_json or {}), "pending_question": public, "question_context": ref}
         await db.commit()

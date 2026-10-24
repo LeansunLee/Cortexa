@@ -87,24 +87,10 @@ def raw(stmt):
     return stmt.execution_options(security_unscoped=True)
 
 
-async def load_actor(token: str) -> Actor | None:
+async def hydrate_actor(user) -> Actor:
+    """Build the full Actor (system roles + workspace memberships + agent grants) for a user row."""
+    actor = Actor(user.id, user.username, user.is_superadmin, user.must_change_password, user.auth_version)
     async with async_session_factory() as db:
-        row = (
-            await db.execute(
-                select(LoginSession, User)
-                .join(User, User.id == LoginSession.user_id)
-                .where(
-                    LoginSession.token_hash == token_digest(token),
-                    LoginSession.expires_at > datetime.now(timezone.utc),
-                    User.status == "active",
-                    LoginSession.auth_version == User.auth_version,
-                )
-            )
-        ).first()
-        if not row:
-            return None
-        session, user = row
-        actor = Actor(user.id, user.username, user.is_superadmin, user.must_change_password, user.auth_version)
         sys_roles = (
             await db.execute(
                 select(Role)
@@ -164,6 +150,27 @@ async def load_actor(token: str) -> Actor | None:
                 "agent_ids": set(grants),
             }
         return actor
+
+
+async def load_actor(token: str) -> Actor | None:
+    async with async_session_factory() as db:
+        row = (
+            await db.execute(
+                select(LoginSession, User)
+                .join(User, User.id == LoginSession.user_id)
+                .where(
+                    LoginSession.token_hash == token_digest(token),
+                    LoginSession.expires_at > datetime.now(timezone.utc),
+                    User.status == "active",
+                    User.auth_version == LoginSession.auth_version,
+                )
+            )
+        ).first()
+        if not row:
+            return None
+        session, user = row
+        del session
+        return await hydrate_actor(user)
 
 
 async def require_agent_use(db, agent_id):
