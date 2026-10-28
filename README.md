@@ -4,6 +4,7 @@ Python 导入包为 `cortexa`（`src/cortexa`），命令行入口为 `cortexa` 
 
 ## 当前开发资料
 
+- [开发基线版本 v1.10.261028（2026-10-28）](docs/V1.10.261028.md)
 - [最新产品设计与 Memory 2.0 实施基线（含 2026-09-20 UI 更新）](docs/PRODUCT_DESIGN_20260919.md)
 - [Memory 2.0 现状审计（2026-09-19）](docs/MEMORY_2_AUDIT_20260919.md)
 - [Memory 2.0 数据库与领域模型方案（已批准，设计留档）](docs/MEMORY_2_DESIGN_PROPOSAL_20260919.md)
@@ -11,6 +12,7 @@ Python 导入包为 `cortexa`（`src/cortexa`），命令行入口为 `cortexa` 
 - [知识库设计与编码规范（暂定版，2026-09-16）](docs/KNOWLEDGE_BASELINE_20260916.md)
 - [项目需求、系统架构与下一期开发基线（2026-09-16）](docs/PROJECT_BASELINE_20260916.md)
 - [现行 UI 布局、主题与控件规范](docs/UI_LAYOUT_GUIDELINES.md)
+- [历史版本基线（alpha v1.0.2609230000）](docs/ALPHA_v1.0.2609230000.md)
 - [历史版本基线（alpha v1.0.2609050000）](docs/ALPHA_v1.0.2609050000.md)
 
 记忆管理当前入口为「Agent 运维 → 记忆」。最新产品基线第 10 节包含弹窗操作、筛选行为、召回规则参数及帮助说明；所有界面统一使用“记忆”。UI 更新实现提交为 36333b4，已部署到现有开发服务器。

@@ -106,6 +106,9 @@
         <span class="toast-msg">{{ toast.message }}</span>
       </div>
     </Transition>
+
+    <!-- Experimental: global 3D assistant (hides via its own persisted setting) -->
+    <RobotAssistant />
   </div>
 </template>
 
@@ -122,6 +125,7 @@ import { auth, can, canAdmin, refreshAuth, setWorkspace, logout } from './auth'
 const route = useRoute(), router = useRouter()
 import { workspaceApi } from './api'
 import PageTabPanel from './components/PageTabPanel.vue'
+import RobotAssistant from './components/robot/RobotAssistant.vue'
 
 const pageTabs = ref([])
 const tabBar = ref(null)

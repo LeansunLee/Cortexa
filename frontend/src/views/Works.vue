@@ -29,7 +29,7 @@
         <main class="detail-main">
           <section class="work-panel overview-panel">
             <header class="overview-header"><div class="overview-badges"><span class="priority" :class="work.priority">{{ work.priority }}</span><span class="status" :class="work.status">{{ states[work.status] }}</span></div>
-              <div class="overview-actions"><button v-if="work.permissions.edit" @click="editing = work">编辑工作</button><button v-if="work.permissions.start" class="primary btn btn-primary" :disabled="busy" @click="action('start')">开始工作</button><button v-if="work.permissions.cancel" :disabled="busy" @click="cancelOpen = !cancelOpen">取消工作</button></div>
+              <div class="overview-actions"><button v-if="work.permissions.edit" @click="editing = work">编辑工作</button><button v-if="work.permissions.start" class="primary btn btn-primary" :disabled="busy" @click="action('start')">开始工作</button><button v-if="work.permissions.cancel" :disabled="busy" @click="cancelOpen = !cancelOpen">取消工作</button><button v-if="work.permissions.delete" class="danger" :disabled="busy" @click="removeWork">删除工作</button></div>
             </header>
             <div class="requirements-grid"><div><h3>执行目标</h3><p class="preserve">{{ work.goal }}</p></div><div><h3>交付要求</h3><p class="preserve">{{ work.deliverable_requirement || '未填写' }}</p></div></div>
             <details v-if="work.description" class="work-description"><summary>补充说明</summary><p class="preserve">{{ work.description }}</p></details>
@@ -106,6 +106,10 @@ const knowledgeBaseOptions = computed(() => [
 const auditEvents = computed(() => events.value.filter(e=>e.action !== 'log'))
 const fileSize = size => size < 1024 ? `${size} B` : size < 1048576 ? `${(size/1024).toFixed(1)} KB` : `${(size/1048576).toFixed(1)} MB`
 const actions = {log_edited:'编辑工作日志',created:'创建工作',dispatched:'派发工作',started:'开始工作',edited:'修改工作',submitted:'提交交付',approved:'验收通过',rejected:'退回修改',cancelled:'取消工作',knowledge:'沉淀到知识库',memory:'保存 Agent 记忆'}
+const removeWork = () => {
+  if (!window.confirm('删除后该工作及其日志、交付物将一并移除且不可恢复，确定删除？')) return
+  run(async () => { await workApi.remove(work.value.id); router.push('/works') }, '工作已删除')
+}
 const fieldLabels = {title:'标题',goal:'目标',description:'说明',assignee_id:'负责人',reviewer_id:'验收人',assignee_type:'负责人类型',due_at:'截止时间',priority:'优先级',deliverable_requirement:'交付要求'}
 const format = v => v ? new Date(v).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '未设置'
 const isOverdue = w => w.due_at && !['completed','cancelled'].includes(w.status) && new Date(w.due_at) < new Date()
@@ -179,6 +183,8 @@ onBeforeUnmount(()=>{clearTimeout(timer);revision++})
 .work-panel button { padding:6px 12px; border-radius:8px; }
 .work-panel :deep(.search-select-trigger) { padding:6px 10px; border-radius:8px; min-height:34px; }
 .overview-header,.overview-badges,.overview-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.overview-actions button.danger { color:var(--danger,#E5484D); border:1px solid color-mix(in srgb, var(--danger,#E5484D) 40%, transparent); background:transparent; }
+.overview-actions button.danger:hover:not(:disabled) { background:color-mix(in srgb, var(--danger,#E5484D) 10%, transparent); }
 .overview-header { justify-content:space-between; margin-bottom:14px; }
 .requirements-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }
 .requirements-grid>div+div { border-left:1px solid var(--border); padding-left:20px; }

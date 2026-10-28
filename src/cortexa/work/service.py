@@ -49,6 +49,7 @@ def permissions(w, a):
         "approve": reviewer and w.status == "review",
         "reject": reviewer and w.status == "review",
         "cancel": manager and w.status not in CLOSED,
+        "delete": manager and w.status == "cancelled",
         "knowledge": reviewer and w.status == "completed" and a.has("knowledge.manage"),
         "memory": reviewer and w.status == "completed" and a.has("memory.manage"),
     }

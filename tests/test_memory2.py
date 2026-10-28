@@ -18,7 +18,7 @@ from cortexa.security import isolation  # noqa: F401
 from cortexa.memory.governance import ingest, correct
 from cortexa.memory.schemas import Candidate, Correction
 from cortexa.memory.evidence import Source, visible_evidence
-from cortexa.memory.models import MemoryEvidence, MemoryIssue
+from cortexa.memory.models import MemoryEvidence, MemoryIssue, MemoryRelation
 from cortexa.memory.retrieval import retrieve
 from cortexa.memory.lifecycle import source_deleted
 from cortexa.api.memories import Resolution, resolve_issue
@@ -170,14 +170,14 @@ async def scenario(monkeypatch):
             left = await ingest(
                 db,
                 agent.id,
-                Candidate(content="渠道价格为100元", claim_key="price", source_mode="explicit"),
+                Candidate(content="渠道价格为100元", claim_key="price", source_mode="inferred"),
                 Source("manual", "price-a", user_id=a.id),
                 use_model=False,
             )
             right = await ingest(
                 db,
                 agent.id,
-                Candidate(content="渠道价格为200元", claim_key="price", source_mode="explicit"),
+                Candidate(content="渠道价格为200元", claim_key="price", source_mode="inferred"),
                 Source("manual", "price-b", user_id=a.id),
                 use_model=False,
             )
@@ -211,14 +211,14 @@ async def scenario(monkeypatch):
             first = await ingest(
                 db,
                 agent.id,
-                Candidate(content="年度预算100万元", claim_key="budget", source_mode="explicit"),
+                Candidate(content="年度预算100万元", claim_key="budget", source_mode="inferred"),
                 Source("manual", "budget-a", user_id=a.id),
                 use_model=False,
             )
             second = await ingest(
                 db,
                 agent.id,
-                Candidate(content="年度预算200万元", claim_key="budget", source_mode="explicit"),
+                Candidate(content="年度预算200万元", claim_key="budget", source_mode="inferred"),
                 Source("manual", "budget-b", user_id=a.id),
                 use_model=False,
             )
@@ -295,6 +295,89 @@ async def scenario(monkeypatch):
         current_actor.set(None)
         async with factory() as db:
             assert not (await db.scalars(select(Memory))).all(), "No Actor must fail closed"
+    finally:
+        if context is not None:
+            current_actor.reset(context)
+        await engine.dispose()
+        async with root.begin() as c:
+            await c.execute(text("DROP SCHEMA " + schema + " CASCADE"))
+        await root.dispose()
+
+
+@pytest.mark.skipif(not os.getenv("MEMORY_TEST_DATABASE_URL"), reason="PostgreSQL test URL required")
+def test_explicit_correction_supersedes_claim_conflict(monkeypatch):
+    """Issue #9: an explicit correction closes the conflicts_with loop via supersedes."""
+    asyncio.run(correction_supersede_scenario(monkeypatch))
+
+
+async def correction_supersede_scenario(monkeypatch):
+    url = os.environ["MEMORY_TEST_DATABASE_URL"]
+    schema = "memory2_test_" + uuid.uuid4().hex
+    root = create_async_engine(url)
+    async with root.begin() as c:
+        await c.execute(text("CREATE SCHEMA " + schema))
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    context = None
+    try:
+        async with engine.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        async with factory() as db:
+            w = Workspace(name="Correction test")
+            a = User(username="alice", display_name="Alice", password_hash="unused")
+            db.add_all([w, a])
+            await db.flush()
+            agent = Agent(workspace_id=w.id, name="Sales", status="active")
+            db.add(agent)
+            await db.commit()
+
+        def actor(user):
+            permissions = {"agent.use", "agent.operate", "workspace.manage"}
+            return Actor(
+                user.id,
+                user.username,
+                False,
+                False,
+                1,
+                workspace_id=w.id,
+                memberships={w.id: {"permissions": permissions, "agent_ids": {agent.id}, "all_agents": False}},
+            )
+
+        context = current_actor.set(actor(a))
+        async with factory() as db:
+            old = await ingest(
+                db,
+                agent.id,
+                Candidate(content="公司正式名称是云帆科技", claim_key="company:name", source_mode="explicit"),
+                Source("manual", "name-old", user_id=a.id),
+                use_model=False,
+            )
+            await db.commit()
+        async with factory() as db:
+            new = await ingest(
+                db,
+                agent.id,
+                Candidate(
+                    content="公司已正式更名为云帆数联，旧名云帆科技作废", claim_key="company:name", source_mode="explicit"
+                ),
+                Source("manual", "name-new", user_id=a.id),
+                use_model=False,
+            )
+            await db.commit()
+            assert new.governance_outcome == "superseded"
+            rel = await db.scalar(
+                select(MemoryRelation).where(
+                    MemoryRelation.from_memory_id == new.id,
+                    MemoryRelation.relation_type == "supersedes",
+                )
+            )
+            assert rel and str(rel.to_memory_id) == str(old.id)
+        async with factory() as db:
+            old_row = await db.get(Memory, old.id)
+            assert old_row.status == "superseded"
+            current = await retrieve(db, agent.id, "公司现在叫什么名字")
+            ids = {m.id for m in current.memories}
+            assert new.id in ids and old.id not in ids
     finally:
         if context is not None:
             current_actor.reset(context)

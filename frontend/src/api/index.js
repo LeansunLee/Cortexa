@@ -275,6 +275,7 @@ export const workApi = {
   create: data => api.post('/works', data),
   update: (id, data) => api.patch(`/works/${id}`, data),
   action: (id, action, comment = '') => api.post(`/works/${id}/${action}`, { comment }),
+  remove: id => api.delete(`/works/${id}`),
   submit: (id, data) => api.post(`/works/${id}/submit`, data, { headers: {'Content-Type':'multipart/form-data'}, timeout:300000 }),
   createLog: (id, data) => api.post(`/works/${id}/logs`, data),
   updateLog: (id, logId, data) => api.patch(`/works/${id}/logs/${logId}`, data),

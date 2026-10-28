@@ -27,13 +27,17 @@ Owner 始终为当前 Agent；信息会被其所有授权使用者使用。用�
 Subject 与 claim_key 必须来自来源；同一事项使用稳定 claim_key（例如华东区域负责人），不能只按人员分组。
 时间未知用null；明确日期转换为带时区ISO时间，不把保存时间当事实发生时间。决策通常semantic/decision。
 用户长期偏好绑定其真实User ID。Focus只保存相关场景关注方向，不创建监控、提醒、Work或后台任务。
-高风险/冲突不选择自己偏好的一方。用户明确说“请记住/记住”并给出长期事实或偏好时，应提取该事实，source_mode为explicit；“来源是数据”不代表忽略用户的保存意图。不值得记住时返回[]。
+高风险/冲突不选择自己偏好的一方。用户明确说“请记住/记住/更正/作废”并给出长期事实、偏好或更正时，应提取该事实，source_mode为explicit；“来源是数据”不代表忽略用户的保存意图。不值得记住时返回[]。
 """
 
 
 def explicit_memory_candidate(message: str, source_id: str, source_revision: str, user_id: str, username: str) -> dict | None:
     """Retain a directly stated memory when a model silently returns no candidates."""
-    match = re.match(r"^\s*(?:请|麻烦你|帮我|以后请)?(?:记住|记下|保存到记忆|以后记得)[：:，,\s]*(.+)$", message, re.S)
+    match = re.match(
+        r"^\s*(?:(?:请|麻烦你|帮我|以后请)?(?:记住|记下|保存到记忆|以后记得)|更正|修正|作废)[：:，,\s]*(.+)$",
+        message,
+        re.S,
+    )
     if not match:
         return None
     content = match.group(1).strip(" 。.!！\n")

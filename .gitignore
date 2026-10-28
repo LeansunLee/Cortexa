@@ -29,3 +29,10 @@ data/runtime_goals/
 data/user_questions/
 
 data/prompt_requests/
+
+# Local debug screenshots / scratch scripts dropped in repo root dirs
+/frontend/*.png
+/frontend/dbg.mjs
+
+# ZCode workspace-local tooling
+.zcode/

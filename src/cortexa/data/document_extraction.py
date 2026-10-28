@@ -16,7 +16,14 @@ async def extract_document(doc_id, name, metadata, original):
         text, pages = await run_in_threadpool(pdf_extraction.extract_pdf, original)
         return text, pages, False
     if kind == 'image':
-        text, pages = await run_in_threadpool(pdf_extraction.extract_image, original)
+        try:
+            text, pages = await run_in_threadpool(pdf_extraction.extract_image, original)
+        except RuntimeError as error:
+            if '未识别到文字' not in str(error):
+                raise
+            # Valid image with no recognizable text: a textless file, not a
+            # system error — the pipeline keeps it accessible as unsupported.
+            return '', 0, False
         return text, pages, False
     if kind == 'office':
         target = previews.pdf_file(doc_id, 'office')

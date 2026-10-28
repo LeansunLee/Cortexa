@@ -408,20 +408,26 @@ async def ingest(db, agent_id, data, source, *, use_model=True, trusted=False, i
         target.governance_outcome = "merged"
         return target
     elif decision["action"] == "conflict" and target:
-        mem.status = "active"
-        mem.has_conflict = target.has_conflict = True
-        target.revision += 1
-        await relation(db, mem, target, "conflicts_with")
-        await confidence(db, target)
-        await issue(db, mem, "conflict", "contradictory_evidence", [target])
-        outcome = "conflict"
-    elif decision["action"] == "update" and target:
-        if target.valid_from and cand.valid_from <= target.valid_from:
+        if mem.source_mode == "explicit":
+            outcome = await _explicit_supersede(db, mem, target, cand)
+        else:
             mem.status = "active"
             mem.has_conflict = target.has_conflict = True
+            target.revision += 1
             await relation(db, mem, target, "conflicts_with")
-            await issue(db, mem, "conflict", "ambiguous_time", [target])
+            await confidence(db, target)
+            await issue(db, mem, "conflict", "contradictory_evidence", [target])
             outcome = "conflict"
+    elif decision["action"] == "update" and target:
+        if target.valid_from and cand.valid_from <= target.valid_from:
+            if mem.source_mode == "explicit":
+                outcome = await _explicit_supersede(db, mem, target, cand)
+            else:
+                mem.status = "active"
+                mem.has_conflict = target.has_conflict = True
+                await relation(db, mem, target, "conflicts_with")
+                await issue(db, mem, "conflict", "ambiguous_time", [target])
+                outcome = "conflict"
         else:
             target.valid_to = cand.valid_from
             if cand.valid_from <= now():
@@ -450,6 +456,23 @@ async def ingest(db, agent_id, data, source, *, use_model=True, trusted=False, i
     )
     mem.governance_outcome = outcome
     return mem
+
+
+async def _explicit_supersede(db, mem, target, cand):
+    """An explicit user correction retires the conflicting memory now.
+
+    Without this the conflicts_with pair both stays active and recall hands
+    the arbitration to the model; explicit authority closes the loop instead.
+    """
+    target.valid_to = cand.valid_from
+    if cand.valid_from is None or cand.valid_from <= now():
+        target.status = "superseded"
+    target.revision += 1
+    target.updated_at = now()
+    mem.status = "active"
+    await relation(db, mem, target, "supersedes")
+    await event(db, target, "superseded", "explicit_correction", data={"replacement_id": str(mem.id)})
+    return "superseded"
 
 
 async def change_state(db, mem, status, reason="manual", expected_revision=None):

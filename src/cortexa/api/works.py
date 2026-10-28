@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -169,6 +169,24 @@ async def reject(work_id: uuid.UUID, payload: ReviewInput, db: AsyncSession = De
 @router.post("/works/{work_id}/cancel")
 async def cancel(work_id: uuid.UUID, payload: ReviewInput, db: AsyncSession = Depends(get_db)):
     return await s.output(db, await s.transition(db, await s.get_work(db, work_id, True), "cancel", payload.comment))
+
+
+@router.delete("/works/{work_id}", status_code=204)
+async def delete_work(work_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Only a cancelled work may be removed, and only by its creator or a workspace admin."""
+    w = await s.get_work(db, work_id, True)
+    if w.status != "cancelled":
+        raise HTTPException(409, "仅已取消的工作可删除")
+    s.allowed(w, "delete")
+    blobs = [s.blob_path(row) for row in (await db.execute(select(WorkDeliverable.id).where(WorkDeliverable.work_id == w.id))).scalars()]
+    await db.execute(sa_delete(WorkActivity).where(WorkActivity.work_id == w.id))
+    await db.execute(sa_delete(WorkDeliverable).where(WorkDeliverable.work_id == w.id))
+    # A suggestion whose work was deleted becomes proposeable again.
+    await db.execute(sa_update(WorkCandidate).where(WorkCandidate.work_id == w.id).values(status="candidate", work_id=None))
+    await db.delete(w)
+    await db.commit()
+    for path in blobs:
+        await run_in_threadpool(path.unlink, missing_ok=True)
 
 
 @router.post("/works/{work_id}/submit")

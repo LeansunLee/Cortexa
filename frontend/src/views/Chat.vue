@@ -346,14 +346,9 @@
           <p v-if="curSession?.draftError" class="msg-error-bar">{{ curSession.draftError }}</p>
           <div class="chat-input-wrap">
             <CollaborationComposer :autonomous="curSession?.goalEnabled && !pendingFiles.length" ref="collaborationComposerRef" @finish="chatInputRef?.focus()" :key="currentConvId" :drafts="curSession?.collaborationDrafts || []" :input="input" :conversation-id="currentConvId" :disabled="sending || streaming" @update="updateDraft" @remove="removeDraft" @move="moveDraft" />
-            <ProjectPicker ref="projectPickerRef" :key="currentConvId" :references="curSession?.projectRefs || []" :initial-project="route.query.project_id" :query="projectQuery" :disabled="sending || streaming" @update="refs => curSession.projectRefs=refs" @close="closeProjectQuery" />
-            <WorkPicker ref="workPickerRef" :key="currentConvId" :references="curSession?.workRefs || []" :disabled="sending || streaming" @update="refs => curSession.workRefs=refs" />
+            <AddMenu ref="addMenuRef" :key="currentConvId" :projects="curSession?.projectRefs || []" :works="curSession?.workRefs || []" :initial-project="route.query.project_id" :query="projectQuery" :disabled="sending || streaming" @update-projects="refs => curSession.projectRefs=refs" @update-works="refs => curSession.workRefs=refs" @close="closeProjectQuery" @upload="fileInput?.click()" />
             <div class="chat-input-row">
-            <button class="chat-attach-btn" @click="fileInput?.click()" title="上传文件">
-              <Paperclip :size="18" />
-            </button>
-            <button class="chat-attach-btn" :disabled="sending || streaming" title="引用项目" aria-label="引用项目" @click="projectPickerRef?.openMenu()"><FileText :size="18" /></button>
-            <button class="chat-attach-btn" :disabled="sending || streaming" title="引用工作" aria-label="引用工作" @click="workPickerRef?.openMenu()"><ClipboardList :size="18" /></button>
+            <button class="chat-attach-btn" :disabled="sending || streaming" title="添加附件、引用项目或工作" aria-label="添加附件、引用项目或工作" @click="addMenuRef?.openMenu()"><Plus :size="18" /></button>
             <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.xlsx,.xls,.pptx,.ppt,.zip,.rar" style="display:none" @change="handleFileSelect" />
             <textarea ref="chatInputRef" v-model="input" class="chat-input" :placeholder="currentConvAgent?.agent_type === 'proxy' ? '输入发送给外部智能体的消息' : '给智能体发送消息；@ 可邀请其他智能体'"
               @input="onTextInput" @keydown.enter.exact.prevent="handleEnterKeydown" @keydown.escape="closeMentionPopover" @paste="handlePaste" rows="1" :disabled="sending"></textarea>
@@ -460,9 +455,10 @@
 
 <script setup>
 import AgentAvatar from '../components/AgentAvatar.vue'
+import { robotEvent } from '../components/robot/bus'
 import { highlightKeyContent } from '../utils/chatHighlights'
 import { inlineFormat, applyCitationMarkers, renderCitationMarkers } from '../utils/messageFormatting'
-import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen, Download, PanelRightOpen, ClipboardList } from 'lucide-vue-next'
+import { Bot, MessageSquare, Send, Copy, Link, RefreshCw, Pencil, MoreHorizontal, Trash2, Clock, Cpu, Search, BookOpen, Database, ChevronDown, AlertCircle, Check, Brain, CheckCircle, FileText, Loader, Paperclip, Image, X, Bug, Globe, FolderOpen, Download, PanelRightOpen, ClipboardList, Plus } from 'lucide-vue-next'
 import DocumentPreview from '../components/knowledge/DocumentPreview.vue'
 import AgentMentionPopover from '../components/AgentMentionPopover.vue'
 import AgentCollaborationCard from '../components/AgentCollaborationCard.vue'
@@ -474,8 +470,7 @@ import { restoreRejectedSend, filterAvailableConversations, sendErrorMessage } f
 import { syncDrafts, draftPayload, moveDraftOrder } from '../utils/collaborationDrafts.js'
 import UserQuestionCard from '../components/UserQuestionCard.vue'
 import RuntimeTimeline from '../components/RuntimeTimeline.vue'
-import ProjectPicker from '../components/ProjectPicker.vue'
-import WorkPicker from '../components/WorkPicker.vue'
+import AddMenu from '../components/AddMenu.vue'
 import { stepOutcome, appendStatusStep } from '../utils/statusSteps'
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import WorkCandidates from '../components/WorkCandidates.vue'
@@ -734,8 +729,7 @@ watch([input, currentConvId], () => {
   textarea.style.height = `${Math.min(120, Math.max(38, textarea.scrollHeight))}px`
 }, { flush: 'post' })
 
-const projectPickerRef = ref(null)
-const workPickerRef = ref(null)
+const addMenuRef = ref(null)
 const projectQuery = computed(()=>{const match=(input.value || '').match(/(?:^|\s)#([^\s#]*)$/);return match ? match[1] : null})
 const closeProjectQuery = ()=>{input.value=(input.value || '').replace(/(?:^|\s)#[^\s#]*$/, '').trimEnd()}
 // ── @Agent Mention Handlers ──
@@ -972,7 +966,11 @@ const loadConversations = async () => {
 const refreshGoal = async (convId, session) => {
   if (!session.goal?.goal_id) return
   const { data } = await goalApi.get(convId, session.goal.goal_id)
+  const wasRunning = session.goal.status === 'RUNNING'
   session.goal = data
+  // Robot assistant tracks real goal state (also covers reload/restore).
+  if (data.status === 'RUNNING') robotEvent('task:working', { id: convId, goal: true })
+  else if (wasRunning) robotEvent(data.status === 'FAILED' ? 'task:error' : 'task:done', { id: convId })
   if (data.user_question) session.pendingQuestion = data.user_question
   session.goalCandidates = []
   session.goalSelection = []
@@ -1415,8 +1413,10 @@ const sendMessage = async (decision = null) => {
     endpoint = `/api/conversations/${convId}/question/${decision.question_id}/${decision.recover ? 'recover' : 'answer'}`
     body = decision.recover ? {} : { selected_indices: decision.selected_indices, text: decision.text }
     session.goalMode = Boolean(session.goal?.goal_id)
+    robotEvent('task:resolved', { id: convId })
   }
   const attempt = {id: ++sendSequence, text: displayText, drafts: JSON.parse(JSON.stringify(drafts))}
+  robotEvent('task:submitted', { id: convId, title: conversations.value.find(c => c.id === convId)?.title || displayText.slice(0, 24) })
   if (!decision?.recover && !isRecovery) session.messages.push({ _attemptId: attempt.id, role: 'user', content: displayText, metadata_json: {project_ids:projectIds, project_refs:[...session.projectRefs], work_ids:workIds, collaboration_drafts: collaborationDrafts}, attachments: attachments.length > 0 ? attachments : undefined })
   if (!isRecovery && !decision?.recover) {
     session.lastUserMessage = displayText
@@ -1485,10 +1485,12 @@ const sendMessage = async (decision = null) => {
           const event = JSON.parse(line.slice(6))
           if (event.type === 'user_question') {
             session.pendingQuestion = event.question
+            robotEvent('task:waiting', { id: convId })
             scrollToBottom()
           } else if (event.type === 'runtime_progress') {
             if (event.heartbeat) continue
             const name = event.agent_name || (event.runtime_role === 'CHILD' ? '协作 Agent' : '主 Agent')
+            if (event.status === 'running') robotEvent('task:tool', { id: convId, tool: event.message || event.action_id, agent: name })
             const existing = event.action_id && event.status === 'running' && session.statusSteps.findLast(item => item.tool === event.action_id && !item._done)
             if (existing) existing.message = `${name} · ${event.message}`
             else appendStatusStep(session.statusSteps, { status: event.status === 'error' ? 'runtime_error' : event.status === 'completed' ? 'runtime_done' : 'runtime_start', tool: event.action_id, agent_name: name, sources: event.sources || [], data_result: event.data_result, icon: event.status === 'error' ? 'error' : 'thinking' }, `${name} · ${event.message}`)
@@ -1528,6 +1530,7 @@ const sendMessage = async (decision = null) => {
             session.statusSteps = []
             session.collabPending = []
             session.collabResults = []
+            robotEvent('task:working', { id: convId })
           } else if (event.type === 'status') {
             const rawMsg = cleanStatusText(event.message)
             appendStatusStep(session.statusSteps, event, rawMsg)
@@ -1536,6 +1539,7 @@ const sendMessage = async (decision = null) => {
           } else if (event.type === 'collab_status') {
             // Handle collaboration status events
             if (event.status === 'started') {
+              robotEvent('task:collab', { id: convId, agent: event.target_agent_name })
               session.collabPending.push({
                 order: session.collabResults.length + session.collabPending.length,
                 agent_name: event.target_agent_name,
@@ -1586,6 +1590,7 @@ const sendMessage = async (decision = null) => {
             completed = true
             session.sending = goalMode
             session.streaming = goalMode
+            robotEvent('task:done', { id: convId, question: Boolean(event.user_question) })
             const meta = {}
             if (event.user_question) { meta.user_question = event.user_question; session.pendingQuestion = event.user_question }
             if (goalMode) {
@@ -1624,6 +1629,7 @@ const sendMessage = async (decision = null) => {
             session.sending = false
             session.statusSteps = []
             session.streamError = event.error
+            robotEvent('task:error', { id: convId, message: event.error })
           }
         } catch (e) { /* skip */ }
       }
@@ -2089,6 +2095,10 @@ onMounted(async () => {
     await nextTick()
     if (route.query.message) document.getElementById(`message-${route.query.message}`)?.scrollIntoView({block:'center'})
   }
+  // Robot assistant: restore from real task state after (re)load, not from animation history.
+  robotEvent('runtime:snapshot', { tasks: Object.entries(sessions.value).filter(([, session]) => session.goal?.status === 'RUNNING' || session.pendingQuestion?.status === 'answering').map(([id, session]) => session.goal?.status === 'RUNNING'
+    ? { id, title: conversations.value.find(c => c.id === id)?.title || '后台目标', phase: 'working' }
+    : { id, title: conversations.value.find(c => c.id === id)?.title || '待确认', phase: 'waiting' }) })
 })
 onBeforeUnmount(() => {
   window.removeEventListener('conversation-debug-config', handleDebugConfigChanged)

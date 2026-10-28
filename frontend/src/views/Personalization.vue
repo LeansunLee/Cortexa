@@ -1,16 +1,5 @@
 <template>
   <div class="settings">
-    <section v-if="can('conversation.debug')" class="card debug-preference">
-      <div>
-        <strong>对话调试</strong>
-        <p>在聊天中查看调试过程。仅对你的账号生效。</p>
-      </div>
-      <label class="debug-switch">
-        <input type="checkbox" v-model="debugEnabled" :disabled="debugSaving" @change="saveDebug" />
-        <span>{{ debugEnabled ? '已开启' : '已关闭' }}</span>
-      </label>
-      <p v-if="debugError" role="alert">{{ debugError }}</p>
-    </section>
     <!-- Theme Color -->
     <div class="card">
       <div class="theme-card-heading">
@@ -171,10 +160,54 @@
       </div>
     </div>
 
+    <section v-if="can('conversation.debug')" class="card debug-preference">
+      <div>
+        <strong>对话调试</strong>
+        <p>在聊天中查看调试过程。仅对你的账号生效。</p>
+      </div>
+      <label class="debug-switch">
+        <input type="checkbox" v-model="debugEnabled" :disabled="debugSaving" @change="saveDebug" />
+        <span>{{ debugEnabled ? '已开启' : '已关闭' }}</span>
+      </label>
+      <p v-if="debugError" role="alert">{{ debugError }}</p>
+    </section>
+
+    <!-- Robot Assistant (experimental) -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><Bot :size="18" /> 悬浮助手 <em class="robot-beta-tag">试验</em></span>
+      </div>
+      <p class="card-desc">页面右下角的悬浮机器人会跟随 Agent 任务与平台通知做出反馈。仅影响展示，不影响任何任务与通知功能。</p>
+      <div class="robot-settings">
+        <label class="robot-setting-row">
+          <span>启用悬浮助手</span>
+          <input type="checkbox" v-model="robotSettings.enabled" @change="saveRobotSettings" />
+        </label>
+        <label class="robot-setting-row">
+          <span>漂浮动画</span>
+          <input type="checkbox" v-model="robotSettings.animations" @change="saveRobotSettings" />
+        </label>
+        <button type="button" class="btn btn-ghost btn-sm" @click="resetRobotPosition">重置悬浮位置</button>
+      </div>
+      <div class="robot-preview">
+        <div class="robot-preview-stage">
+          <RobotArt :state="previewState" :animations="true" :theme="tempTheme" />
+        </div>
+        <div class="robot-preview-side">
+          <span class="robot-preview-title">动作预览</span>
+          <div class="tabs robot-preview-tabs">
+            <button v-for="option in robotPreviewStates" :key="option.value" type="button" class="tab"
+                    :class="{ active: previewState === option.value }" @click="previewState = option.value">{{ option.label }}</button>
+          </div>
+          <p class="robot-preview-hint">点击切换动作；形象配色实时跟随上方所选主题材质。</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 <script setup>
-import { Palette, Check, Sun, Moon, Monitor } from "lucide-vue-next"
+import { Palette, Check, Sun, Moon, Monitor, Bot } from "lucide-vue-next"
 import { ref, computed, watch, onMounted } from "vue"
 import { can } from '../auth'
 import { debugPreferenceApi } from '../api'
@@ -201,6 +234,29 @@ import { themeGroups, themeColors, solidCategories, readTheme, saveTheme, themeV
 import { texturePresets, textureCategories } from "../utils/textures"
 import { glassFinishes } from "../utils/glass"
 import { appearanceOptions, readAppearance, saveAppearance } from "../utils/appearance"
+import { readRobotSettings, writeRobotSettings, resetRobotSettings } from "../components/robot/settings"
+import RobotArt from "../components/robot/RobotArt.vue"
+const previewState = ref('idle')
+const robotPreviewStates = [
+  { value: 'idle', label: '待机' },
+  { value: 'thinking', label: '思考' },
+  { value: 'working', label: '执行' },
+  { value: 'success', label: '成功' },
+  { value: 'notification', label: '通知' },
+  { value: 'waiting', label: '等待' },
+  { value: 'error', label: '错误' },
+  { value: 'sleeping', label: '休眠' },
+]
+const robotSettings = ref(readRobotSettings())
+const saveRobotSettings = () => writeRobotSettings({
+  enabled: robotSettings.value.enabled,
+  animations: robotSettings.value.animations,
+})
+const resetRobotPosition = () => {
+  const defaults = resetRobotSettings()
+  robotSettings.value = { ...defaults }
+  window.dispatchEvent(new CustomEvent('robot-assistant-reset'))
+}
 const tempTheme = ref(normalizeTheme(readTheme()))
 const appearance = ref(readAppearance())
 const selectAppearance = value => {
@@ -357,9 +413,20 @@ watch(tempTheme, persistTheme)
 .theme-demo-tabs { margin: 0; gap: 2px; }
 .theme-demo-tabs .tab { padding: 5px 10px; font-size: 12px; }
 .theme-demo-tab-panel { padding-top: 2px; color: var(--text2); font-size: 11px; }
+.robot-beta-tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 600; color: var(--primary); background: var(--primary-light); }
 .theme-preview-note { margin: 10px 0 0; font-size: 11px; color: var(--text2); }
+.robot-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.robot-setting-row { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+.robot-setting-row input { cursor: pointer; }
+.robot-preview { display: flex; align-items: center; gap: 18px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.robot-preview-stage { flex: none; width: 132px; }
+.robot-preview-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.robot-preview-title { font-size: 12px; font-weight: 600; color: var(--text2); }
+.robot-preview-tabs { flex-wrap: wrap; margin-bottom: 0; }
+.robot-preview-tabs .tab { padding: 5px 10px; font-size: 12px; }
+.robot-preview-hint { margin: 0; font-size: 11px; color: var(--text3); }
 @media (max-width: 760px) { .theme-demo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .settings { padding: 0; } .theme-colors { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } .theme-actions { flex-wrap: wrap; } }
+@media (max-width: 600px) { .settings { padding: 0; } .theme-colors { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } .theme-actions { flex-wrap: wrap; } .robot-preview { flex-direction: column; align-items: stretch; } .robot-preview-stage { width: 150px; margin: 0 auto; } }
 @media (max-width: 440px) { .theme-demo-grid { grid-template-columns: 1fr; } }
 
 .texture-categories { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }

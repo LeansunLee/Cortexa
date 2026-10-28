@@ -35,6 +35,21 @@ def test_assignee_cannot_review_even_as_creator_or_admin():
     assert not any(value for key, value in permissions(w, a).items() if key != "log")
 
 
+def test_delete_only_creator_or_admin_on_cancelled():
+    uid, ws = uuid.uuid4(), uuid.uuid4()
+    creator = Actor(uid, "creator", False, False, 1, memberships={ws: {"permissions": set()}}, workspace_id=ws)
+    admin = Actor(uid, "admin", False, False, 1, memberships={ws: {"permissions": {"workspace.manage"}}}, workspace_id=ws)
+    w = SimpleNamespace(assignee_type="human", assignee_id=uuid.uuid4(), creator_id=uid, reviewer_id=uuid.uuid4(), status="in_progress")
+    assert not permissions(w, creator)["delete"]
+    assert not permissions(w, admin)["delete"]
+    w.status = "cancelled"
+    assert permissions(w, creator)["delete"]
+    assert permissions(w, admin)["delete"]
+    w.creator_id = uuid.uuid4()
+    assert not permissions(w, creator)["delete"]
+    assert permissions(w, admin)["delete"]
+
+
 def test_rejection_requires_comment_and_returns_to_execution():
     uid, ws = uuid.uuid4(), uuid.uuid4()
     a = Actor(uid, "a", False, False, 1, memberships={ws: {"permissions": set()}}, workspace_id=ws)
@@ -117,6 +132,120 @@ def test_log_edit_authorization_conflict_and_audit(monkeypatch):
 @pytest.mark.skipif(not os.getenv("WORK_TEST_DATABASE_URL"), reason="Disposable PostgreSQL URL not configured")
 def test_work_api_closed_loop(tmp_path, monkeypatch):
     asyncio.run(integration(tmp_path, monkeypatch))
+
+
+@pytest.mark.skipif(not os.getenv("WORK_TEST_DATABASE_URL"), reason="Disposable PostgreSQL URL not configured")
+def test_work_api_delete_cancelled(tmp_path, monkeypatch):
+    asyncio.run(delete_integration(tmp_path, monkeypatch))
+
+
+async def delete_integration(tmp_path, monkeypatch):
+    """DELETE /works/{id}: creator or admin, cancelled only, row and dependents gone."""
+    import sys
+    import httpx
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from cortexa.web.app import app
+    from cortexa.db.engine import Base
+    from cortexa.db import models as m
+    from cortexa.security import models as sm
+    from cortexa.security.http import COOKIE
+    from cortexa.security.passwords import token_digest
+    from cortexa.api.deps import get_db
+    from cortexa.work import service
+
+    schema = "work_del_" + uuid.uuid4().hex
+    base = create_async_engine(os.environ["WORK_TEST_DATABASE_URL"])
+    async with base.begin() as conn:
+        await conn.execute(text(f"CREATE SCHEMA {schema}"))
+    engine = create_async_engine(
+        os.environ["WORK_TEST_DATABASE_URL"], connect_args={"server_settings": {"search_path": schema}}
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(service, "STORAGE", tmp_path / "works")
+    for mod in list(sys.modules.values()):
+        if getattr(mod, "__name__", "").startswith("cortexa.") and hasattr(mod, "async_session_factory"):
+            monkeypatch.setattr(mod, "async_session_factory", factory)
+
+    async def db_dependency():
+        async with factory() as db:
+            try:
+                yield db
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = db_dependency
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with factory() as db:
+            ws = m.Workspace(name="Del test")
+            role = sm.Role(code="work_del_member", name="T", scope="workspace", permissions=["agent.use"])
+            db.add_all([ws, role])
+            await db.flush()
+            users, tokens = [], []
+            for name in ["carol", "dave"]:
+                user = sm.User(username=name, display_name=name, must_change_password=False, status="active")
+                db.add(user)
+                await db.flush()
+                member = sm.Membership(user_id=user.id, workspace_id=ws.id, all_agents=True)
+                db.add(member)
+                await db.flush()
+                db.add(sm.MemberRole(member_id=member.id, role_id=role.id))
+                token = uuid.uuid4().hex
+                db.add(
+                    sm.LoginSession(
+                        token_hash=token_digest(token),
+                        user_id=user.id,
+                        auth_version=1,
+                        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    )
+                )
+                tokens.append(token)
+                users.append(user)
+            agent = m.Agent(workspace_id=ws.id, name="Plan", status="active", model="test")
+            db.add(agent)
+            await db.commit()
+        transport = httpx.ASGITransport(app=app)
+        clients = [
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies={COOKIE: t},
+                headers={"X-Workspace-Id": str(ws.id), "X-Requested-With": "Cortexa"},
+            )
+            for t in tokens
+        ]
+        carol, dave = clients
+
+        async def call(client, method, url, expected=200, **kwargs):
+            res = await client.request(method, url, **kwargs)
+            assert res.status_code == expected, (method, url, res.status_code, res.text[:500])
+            return res.json() if res.content else None
+
+        w = await call(carol, "POST", "/api/works", 201, json={
+            "title": "删除用例", "goal": "验证已取消工作可删除", "assignee_id": str(users[1].id),
+        })
+        url = f"/api/works/{w['id']}"
+        await call(carol, "DELETE", url, 409)
+        await call(carol, "POST", url + "/cancel", json={})
+        detail = await call(carol, "GET", url)
+        assert detail["permissions"]["delete"] and not detail["permissions"]["cancel"]
+        await call(dave, "DELETE", url, 403)
+        await call(carol, "DELETE", url, 204)
+        await call(carol, "GET", url, 404)
+        await call(carol, "DELETE", url, 404)
+        for client in clients:
+            await client.aclose()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        await engine.dispose()
+        async with base.begin() as conn:
+            await conn.execute(text(f"DROP SCHEMA {schema} CASCADE"))
+        await base.dispose()
 
 
 async def integration(tmp_path, monkeypatch):
@@ -339,6 +468,21 @@ async def integration(tmp_path, monkeypatch):
         # Work survives source deletion, without granting participants access to private chat.
         await call(a, "DELETE", f"/api/conversations/{conv.id}", 204)
         assert (await call(b, "GET", "/api/works/" + accepted["id"]))["source_excerpt"]
+        # Cancelled works can be deleted by the creator or a workspace admin only;
+        # deleting one revives the originating suggestion.
+        w2 = await call(a, "POST", "/api/works", 201, json={**payload, "title": "被取消的工作"})
+        url2 = f"/api/works/{w2['id']}"
+        await call(a, "DELETE", url2, 409)
+        await call(a, "POST", url2 + "/cancel", json={})
+        assert (await call(a, "GET", url2))["permissions"]["delete"]
+        await call(c, "DELETE", url2, 404)
+        await call(b, "DELETE", url2, 403)
+        await call(a, "DELETE", url2, 204)
+        await call(a, "GET", url2, 404)
+        await call(a, "POST", f"/api/works/{accepted['id']}/cancel", json={})
+        await call(a, "DELETE", f"/api/works/{accepted['id']}", 204)
+        revived = await call(a, "POST", candidate_url, json=proposed)
+        assert revived["id"] != accepted["id"]
         for client in clients:
             await client.aclose()
     finally:

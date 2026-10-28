@@ -46,7 +46,7 @@ from cortexa.data.doc_storage import (
 )
 from cortexa.db.models import Document, KnowledgeBase, KnowledgeFolder
 from cortexa.security.access import actor_required
-from cortexa.data.document_jobs import document_job_lock
+from cortexa.data.document_jobs import document_job_lock, clear_document_locks
 
 # Track active PDF extraction jobs to prevent duplicate processing
 _active_pdf_jobs: set = set()
@@ -453,6 +453,7 @@ async def delete_knowledge_base(
     await db.commit()
     for doc_id in ids:
         await run_in_threadpool(delete_document_content, doc_id)
+        await run_in_threadpool(clear_document_locks, doc_id)
 
 
 @router.patch("/{kb_id}/name", response_model=KnowledgeBaseOut)
@@ -693,12 +694,11 @@ async def _summarize_document_impl(document_id) -> None:
 
 
 async def _process_pdf(document_id, kb_id):
-    # Retain the existing job/lock name for compatibility with running PDF jobs.
     if document_id in _active_pdf_jobs:
         return
     _active_pdf_jobs.add(document_id)
     try:
-        async with document_job_lock(document_id, 'pdf'):
+        async with document_job_lock(document_id, 'extract'):
             from cortexa.db.engine import async_session_factory
             async with async_session_factory() as session:
                 doc = await session.get(Document, document_id)
@@ -762,8 +762,17 @@ async def _process_pdf_impl(document_id, kb_id):
             if not original:
                 raise RuntimeError('原文件缺失，请重新上传')
             text, ocr_pages, information_only = await extract_document(str(doc.id), doc.name, doc.metadata_json or {}, original)
-            if not text.strip():
-                raise RuntimeError('文件没有可识别文字，请检查清晰度或手动填写摘要')
+            textless = not text.strip()
+            if textless:
+                # A valid file with no recoverable text is not a system failure:
+                # keep it accessible with a file-info summary, marked unsupported.
+                extension = Path(doc.name).suffix.lower().lstrip('.') or '无扩展名'
+                text = (
+                    f'文件信息摘要：{doc.name}\n类型：{extension}；大小：{original.stat().st_size} 字节。\n'
+                    '未能从该文件识别出可检索的文字内容，本摘要仅包含文件信息。'
+                    '可下载原文件查看，或重新上传更清晰的版本。'
+                )
+                information_only = True
             await session.refresh(doc, with_for_update=True)
             await run_in_threadpool(save_document_content, str(doc.id), text)
             doc.metadata_json = {**(doc.metadata_json or {}), 'content_revision': str(uuid.uuid4()),
@@ -778,7 +787,10 @@ async def _process_pdf_impl(document_id, kb_id):
             else:
                 summary_source = (doc.metadata_json or {}).get('summary_source', 'manual')
             doc.metadata_json = {**doc.metadata_json, 'encoding': 'utf-8', 'has_full_content': True,
-                                 'extraction_status': 'ready', 'ocr_pages': ocr_pages, 'extraction_error': None,
+                                 'extraction_status': 'unsupported' if textless else 'ready',
+                                 'extraction_note': '未识别到文字内容，已按文件信息生成摘要' if textless else None,
+                                 'ocr_pages': ocr_pages, 'extraction_error': None,
+                                 'extraction_error_detail': None,
                                  'summary_scope': 'file_info' if information_only else 'content',
                                  'summary_source': summary_source, 'index_status': 'pending',
                                  'summary_status': 'error' if summary_source == 'truncated' else 'ready',
@@ -789,12 +801,34 @@ async def _process_pdf_impl(document_id, kb_id):
             await session.rollback()
             doc = await session.get(Document, document_id)
             if doc:
-                doc.metadata_json = {**(doc.metadata_json or {}), 'extraction_status': 'error', 'extraction_error': str(error)[:200],
-                                     'summary_status': 'ready' if (doc.metadata_json or {}).get('summary_source') == 'manual' else 'error',
-                                     'index_status': 'error', 'index_error': '正文识别失败，请先重试识别'}
+                reason = str(error).strip()
+                if not isinstance(error, RuntimeError) or not reason:
+                    # Library-level failures carry no user-facing message; classify
+                    # by file kind instead of surfacing raw exception text.
+                    kind = previews.file_kind(doc.name, doc.metadata_json or {})
+                    reason = {
+                        'image': '图片无法识别：文件可能已损坏或格式不受支持，请重新导出后再上传',
+                        'pdf': 'PDF 解析失败：文件可能已损坏或已加密，请重试或更换文件',
+                    }.get(kind, '文件正文提取失败：文件可能已损坏或格式不受支持')
+                manual_summary = (doc.metadata_json or {}).get('summary_source') == 'manual'
+                doc.metadata_json = {**(doc.metadata_json or {}), 'extraction_status': 'error',
+                                     'extraction_error': reason[:200],
+                                     'extraction_error_detail': f'{type(error).__name__}: {error}'[:200],
+                                     'summary_status': 'ready' if manual_summary else 'error',
+                                     'summary_error': None if manual_summary else '正文未识别成功，暂无摘要可生成',
+                                     'index_status': 'error', 'index_error': reason[:200]}
                 await session.commit()
             return
-    await _safe_index(document_id, kb_id)
+    if textless:
+        # The file-info summary is not worth indexing; unsupported is terminal.
+        async with async_session_factory() as session:
+            doc = await session.get(Document, document_id)
+            if doc:
+                doc.metadata_json = {**(doc.metadata_json or {}), 'index_status': 'unsupported',
+                                     'index_chunks': 0, 'index_error': None}
+                await session.commit()
+    else:
+        await _safe_index(document_id, kb_id)
 
 
 @router.post("/{kb_id}/documents/{doc_id}/extract", status_code=202)
@@ -882,6 +916,7 @@ async def delete_document(
     await db.delete(doc)
     await db.commit()
     await run_in_threadpool(delete_document_content, str(doc_id))
+    await run_in_threadpool(clear_document_locks, str(doc_id))
 
 
 @router.patch("/{kb_id}/documents/{doc_id}/validity", response_model=DocumentOut)
