@@ -211,7 +211,9 @@ async def configure_search(db, agent, enabled):
         await db.execute(insert(Tool).values(id=ident, workspace_id=agent.workspace_id,
             name="web_search", description="联网搜索：获取公开网页标题、链接和摘要", type="function",
             config={"builtin": "web_search"}, input_schema=SearchInput.model_json_schema(),
-            output_schema={}, status="active").on_conflict_do_nothing(index_elements=[Tool.id]))
+            output_schema={}, status="active",
+            provider_type="builtin", endpoint={}, manifest={"builtin": "web_search"},
+            ).on_conflict_do_nothing(index_elements=[Tool.id]))
         ids.append(str(ident))
     agent.tool_ids = ids
 

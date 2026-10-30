@@ -254,6 +254,12 @@ class Agent(Base):
         comment="绑定的工具 ID 列表，例如：['uuid1', 'uuid2']"
     )
 
+    # ========== Skills 技能绑定 ==========
+    skill_ids: Mapped[list] = mapped_column(
+        JSON, default=list,
+        comment="绑定的技能 ID 列表，例如：['uuid1', 'uuid2']"
+    )
+
     @property
     def web_search_enabled(self) -> bool:
         from cortexa.tools.web_search import search_enabled
@@ -872,6 +878,38 @@ class Tool(Base):
         JSON, default=dict,
         comment="输出结果 Schema"
     )
+    provider_type: Mapped[str] = mapped_column(
+        String(16), default="builtin",
+        comment="提供方类型：builtin(内置函数)|http(HTTP API)|mcp(MCP服务器)"
+    )
+    endpoint: Mapped[dict] = mapped_column(
+        JSON, default=dict,
+        comment="调用端点：http={url,method,auth...}; mcp={url,...}; builtin={}"
+    )
+    auth_secret_enc: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="加密凭证（Fernet），永不回传前端"
+    )
+    manifest: Mapped[dict] = mapped_column(
+        JSON, default=dict,
+        comment="工具清单：参数定义/风险级/超时/配额/使用规则等（tools.manifest.ToolManifest）"
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, default=1,
+        comment="清单版本号，更新时递增"
+    )
+    health_status: Mapped[str] = mapped_column(
+        String(16), default="unknown",
+        comment="健康状态：unknown|healthy|unhealthy"
+    )
+    health_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="最近健康检查时间"
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("t_users.id"), nullable=True,
+        comment="创建人"
+    )
     status: Mapped[str] = mapped_column(
         String(32), default="active",
         comment="状态：active(可用), disabled(禁用)"
@@ -887,6 +925,69 @@ class Tool(Base):
 
     workspace: Mapped["Workspace"] = relationship(
         back_populates="tools"
+    )
+
+
+# =============================================================================
+# 技能 (Skill)
+# =============================================================================
+class Skill(Base):
+    """
+    技能表 - 程序性知识包（SOP），按需注入提示词
+
+    技能只含使用说明与推荐工具引用，不含执行逻辑；
+    正文存文件系统（instructions_path），DB 存元数据与摘要。
+    """
+    __table_args__ = {'comment': '技能库 - 程序性知识包（SOP），按需注入提示词；正文存文件系统'}
+    __tablename__ = "t_skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_uuid,
+        comment="技能唯一标识符"
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("t_workspaces.id"), nullable=False,
+        comment="所属工作空间 ID"
+    )
+    name: Mapped[str] = mapped_column(
+        String(100), nullable=False,
+        comment="技能名称，例如：'web_research'"
+    )
+    description: Mapped[str] = mapped_column(
+        Text, default="",
+        comment="技能描述（触发条件），常驻提示词索引"
+    )
+    instructions_path: Mapped[str] = mapped_column(
+        Text, default="",
+        comment="正文文件路径（文件系统存储）"
+    )
+    summary: Mapped[str] = mapped_column(
+        Text, default="",
+        comment="正文摘要，用于列表展示"
+    )
+    tool_ids: Mapped[list] = mapped_column(
+        JSON, default=list,
+        comment="推荐绑定工具 ID 列表"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="active",
+        comment="状态：active(可用), disabled(禁用)"
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, default=1,
+        comment="版本号，正文更新时递增"
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("t_users.id"), nullable=True,
+        comment="创建人"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=_utcnow,
+        comment="最后更新时间"
     )
 
 

@@ -170,6 +170,10 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                 )
                 # Read ORM-backed prompt fields while the async session is open.
                 child_system_prompt = build_system_prompt(fresh, workspace)
+                from cortexa.tools.skills import build_skill_index
+                child_skill_index = await build_skill_index(fresh, db)
+                if child_skill_index:
+                    child_system_prompt += "\n\n" + child_skill_index
             ident = str(fresh.id)
             chain = check_path(source.id, target_id, state.active_agent_path, state.limits.agent_depth)
             if fresh.agent_type == "proxy":

@@ -29,6 +29,10 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
     # parameter normalization is reused; no hidden per-tool parameter LLM call.
     business = _build_data_tools(caps, sources, model=None, user_query=query, agent_id=agent.id, read_only=True)
     web = await load_search_tools(agent, db, query, sources)
+    from cortexa.tools.registry import load_registry_tool_pairs
+    registry_pairs = await load_registry_tool_pairs(agent, db, sources=sources)
+    manifest_map = {tool.name: manifest for tool, manifest in registry_pairs}
+    registry = [tool for tool, _ in registry_pairs]
     cap_map = {f"query_{item['capability'].id.hex}": item["capability"] for item in caps}
     bindings = []
     from cortexa.projects.runtime import tools as project_tools
@@ -43,9 +47,22 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
             pass
     from cortexa.work import runtime as work_runtime
     project = [*project, *work_runtime.tools(agent.id, sources)]
-    for tool in [*business, *web, *project]:
+    for tool in [*business, *web, *registry, *project]:
         capability = cap_map.get(tool.name)
+        manifest = manifest_map.get(tool.name)
         adapter = tool_adapter(tool, str(agent.workspace_id), capability=capability)
+        if manifest is not None:
+            # Registry-driven policy: manifest fields override adapter defaults.
+            adapter.descriptor.risk_level = manifest.risk_level
+            adapter.descriptor.requires_confirmation = manifest.requires_confirmation
+            adapter.descriptor.timeout = manifest.timeout
+            adapter.descriptor.input_budget = manifest.input_budget
+            adapter.descriptor.availability = "available"
+            adapter.descriptor.aliases = list(manifest.aliases)
+            adapter.descriptor.domains = list(manifest.domains)
+            adapter.descriptor.constraints["quota_per_goal"] = manifest.quota.per_goal
+            if manifest.usage_rules:
+                adapter.descriptor.constraints["usage_rules"] = manifest.usage_rules
         if tool.name == "project_read":
             adapter.descriptor.risk_level = "low"
             adapter.descriptor.requires_confirmation = False
@@ -103,7 +120,9 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
                     # work service against the requesting user.
                 else:
                     fresh_web = await load_search_tools(fresh, check_db, query, sources)
-                    if not any(t.name == tool.name for t in fresh_web):
+                    from cortexa.tools.registry import load_registry_tools
+                    fresh_registry = await load_registry_tools(fresh, check_db, sources=sources)
+                    if not any(t.name == tool.name for t in [*fresh_web, *fresh_registry]):
                         raise PermissionError("capability_revoked")
 
         async def invoke(args, action_id, tool=tool, adapter=adapter):
@@ -124,6 +143,24 @@ async def prepare_bindings(agent, query, sources, db, *, context_budget=6000, pr
         return InvocationResult(Observation('TOOL', adapter.descriptor.id, action_id, 'NOT_READY',
             summary=public['question'], metadata={'user_question':public}), public['question'], {})
     bindings.append(Binding(tool, adapter, ask))
+    from cortexa.tools.skills import build_skill_index, make_load_skill_tool
+    skill_index = await build_skill_index(agent, db)
+    if skill_index:
+        tool = make_load_skill_tool(agent)
+        adapter = tool_adapter(tool, str(agent.workspace_id))
+        adapter.descriptor.type = CapabilityType.TOOL
+        adapter.descriptor.risk_level = 'low'
+        adapter.descriptor.requires_confirmation = False
+        adapter.descriptor.availability = 'available'
+        adapter.descriptor.timeout = 5
+        async def load_skill(args, action_id, tool=tool, adapter=adapter):
+            raw = await tool.ainvoke(args)
+            return InvocationResult(adapter.observe(raw, action_id), str(raw), raw)
+        # 每轮授权在 load_skill_body 内部以全新会话复查（绑定/启用/同名）。
+        async def skill_access(tool=tool):
+            async with async_session_factory() as check_db:
+                await require_agent_use(check_db, agent.id)
+        bindings.append(Binding(tool, adapter, load_skill, skill_access))
     plan = plan_retrieval(query)
     for kind in (CapabilityType.KNOWLEDGE, CapabilityType.MEMORY):
         if not getattr(plan, kind.lower()):

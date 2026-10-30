@@ -227,30 +227,7 @@ class KnowledgeBaseOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# -- Tool ------------------------------------------------------------------
-class ToolCreate(BaseModel):
-    name: str
-    description: str | None = None
-    type: str = "function"
-    config: dict[str, Any] = Field(default_factory=dict)
-    input_schema: dict[str, Any] = Field(default_factory=dict)
-    output_schema: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolOut(BaseModel):
-    id: uuid.UUID
-    workspace_id: uuid.UUID
-    name: str
-    description: str | None
-    type: str
-    config: dict[str, Any]
-    input_schema: dict[str, Any]
-    output_schema: dict[str, Any]
-    status: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
+# -- Tool 注册表 schema 见 cortexa/api/tools.py（ToolOut）与 cortexa/tools/manifest.py（ToolManifest）--
 
 
 # -- Conversation ----------------------------------------------------------

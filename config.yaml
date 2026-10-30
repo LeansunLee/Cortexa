@@ -55,3 +55,5 @@ features:
   goal_proxy_enabled: false
   goal_shadow_enabled: true
   conversation_debug_enabled: true
+  external_tools_enabled: true
+  skills_enabled: true
