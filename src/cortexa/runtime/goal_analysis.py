@@ -79,14 +79,21 @@ async def analyze_request(source, payload, db, config):
             str(part) for part in (response.content or [])
         )
         data = extract_json(content)
-        # 模型偶尔回角色名而非名字：名字或角色都接受，统一映射回名字。
-        canonical = {}
+        # 模型可能回角色名，或把名单行的"名字｜角色"整段抄回来：精确命中接受，
+        # 否则取被该串包含的最长名字，统一映射回名字。
+        names = sorted({a.name for a in roster}, key=len, reverse=True)
+        exact = {}
         for a in roster:
-            canonical[a.name.casefold()] = a.name
-            canonical[(a.role or "").casefold()] = a.name
+            exact[a.name.casefold()] = a.name
+            exact[(a.role or "").casefold()] = a.name
         agents = []
         for n in data.get("agents") or []:
-            hit = canonical.get(str(n).casefold()) if isinstance(n, str) else None
+            if not isinstance(n, str):
+                continue
+            hit = exact.get(n.casefold())
+            if hit is None:
+                folded = n.casefold()
+                hit = next((name for name in names if name.casefold() in folded), None)
             if hit and hit not in agents:
                 agents.append(hit)
         return GoalAnalysis(

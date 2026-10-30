@@ -75,9 +75,9 @@ def test_analyze_request_filters_agents_to_roster(monkeypatch):
 
 
 def test_analyze_request_accepts_role_and_dedupes(monkeypatch):
-    # 模型偶尔回角色名而非名字：两者都应映射回同一个名字。
+    # 模型偶尔回角色名或"名字｜角色"整行：都应映射回同一个名字并去重。
     content = json.dumps(
-        {"objective": "查销量", "agents": ["数据分析师", "数据分析部门", "销售部"]},
+        {"objective": "查销量", "agents": ["数据分析师", "数据分析部门｜数据分析师", "国内销售负责人"]},
         ensure_ascii=False,
     )
     patch_env(monkeypatch, FakeModel(content=content))
