@@ -55,6 +55,18 @@ const routes = [
     component: () => import('../views/DataSources.vue')
   },
   {
+    path: '/tools',
+    name: 'Tools',
+    meta: { permission: 'tools.manage' },
+    component: () => import('../views/Tools.vue')
+  },
+  {
+    path: '/skills',
+    name: 'Skills',
+    meta: { permission: 'agent.read' },
+    component: () => import('../views/Skills.vue')
+  },
+  {
     path: '/workspaces',
     name: 'Workspaces',
     component: () => import('../views/Workspaces.vue')

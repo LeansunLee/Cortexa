@@ -141,11 +141,28 @@ export const knowledgeApi = {
   rawDoc: (kbId, docId) => `/api/knowledge/${kbId}/documents/${docId}/raw`,
 }
 
-// Tool API
+// Tool API（注册表）
 export const toolApi = {
   list: () => api.get('/tools'),
   create: (data) => api.post('/tools', data),
-  delete: (id) => api.delete(`/tools/${id}`)
+  update: (id, data) => api.put(`/tools/${id}`, data),
+  delete: (id) => api.delete(`/tools/${id}`),
+  test: (id) => api.post(`/tools/${id}/test`),
+  status: (id, status) => api.post(`/tools/${id}/status`, { status }),
+  bind: (id, agent_ids) => api.post(`/tools/${id}/bind`, { agent_ids }),
+  validate: (data) => api.post('/tools/validate', data),
+  agentsLookup: () => api.get('/tools/agents-lookup')
+}
+
+// Skill API（技能库）
+export const skillApi = {
+  list: () => api.get('/skills'),
+  create: (data) => api.post('/skills', data),
+  update: (id, data) => api.put(`/skills/${id}`, data),
+  delete: (id) => api.delete(`/skills/${id}`),
+  status: (id, status) => api.post(`/skills/${id}/status`, { status }),
+  bind: (id, agent_ids) => api.post(`/skills/${id}/bind`, { agent_ids }),
+  agentsLookup: () => api.post('/skills/agents-lookup')
 }
 
 // Conversation API

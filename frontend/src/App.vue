@@ -45,6 +45,14 @@
           <Database :size="18" />
           <span class="nav-text">数据源</span>
         </router-link>
+        <router-link v-if="can('tools.manage')" to="/tools" class="nav-item" title="工具" aria-label="工具">
+          <Wrench :size="18" />
+          <span class="nav-text">工具</span>
+        </router-link>
+        <router-link v-if="can('agent.read')" to="/skills" class="nav-item" title="技能库" aria-label="技能库">
+          <GraduationCap :size="18" />
+          <span class="nav-text">技能库</span>
+        </router-link>
       </nav>
       <div class="sidebar-footer">
         <router-link v-if="canAdmin()" to="/access" class="nav-item" title="用户与权限" aria-label="用户与权限">
@@ -116,7 +124,7 @@
 import {
   ChartNoAxesCombined, FolderKanban, ClipboardList, LayoutDashboard, Bot, Calendar, BookOpen, Database,
   MessageSquare, Palette, Settings, ShieldCheck, KeyRound, LogOut, Bot as BotIcon, ChevronUp, X,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, Wrench, GraduationCap
 } from 'lucide-vue-next'
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, markRaw } from 'vue'
