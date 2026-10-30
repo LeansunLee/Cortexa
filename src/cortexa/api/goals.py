@@ -951,7 +951,7 @@ async def approval_candidates(conv_id: uuid.UUID, goal_id: uuid.UUID):
         for a in agents
         if str(a.id) in state.pending_agents
         and str(a.id) not in state.denied_agents
-        and proxy_enabled(a, execution_config())
+        and proxy_enabled(a)
         and settings(a).discoverable
         and permitted_by_goal(a, snapshot, discovery=True)
     ]

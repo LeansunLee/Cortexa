@@ -149,7 +149,7 @@ async def resolve_explicit(db, source, goal, ids=(), config=None):
         selected.add(str(matches[0].id))
     if len(selected) > 5 or any(ident not in by_id for ident in selected):
         raise HTTPException(422, "显式参与者超出范围、未授权或不可用")
-    if any(not proxy_enabled(by_id[ident], config or {}) for ident in selected):
+    if any(not proxy_enabled(by_id[ident]) for ident in selected):
         raise HTTPException(409, "该代理尚未开启目标输入契约，请配置发布后使用，或切换普通对话")
     return sorted(selected)
 
@@ -164,7 +164,7 @@ async def discover(db, source, state, payload, config):
         a
         for a in agents
         if enabled
-        and proxy_enabled(a, config)
+        and proxy_enabled(a)
         and str(a.id) not in denied
         and permitted_by_goal(a, payload)
         and (
@@ -234,7 +234,7 @@ async def authorize_agent(db, source_id, target_id, state, payload, config, *, i
     mode, _, enabled = await policy_for(db, source, config, state)
     if (
         config.get("features", {}).get("goal_collaboration_enabled") is not True
-        or not proxy_enabled(target, config)
+        or not proxy_enabled(target)
         or target.workspace_id != source.workspace_id
         or not enabled
         or not settings(target).allow_incoming

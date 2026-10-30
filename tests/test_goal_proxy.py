@@ -61,7 +61,7 @@ def test_all_sources_allowed_but_only_declared_inputs_are_sent():
     assert trace["selected_fields"] == ["input"] and trace["rejected_field_count"] == 1
     assert trace["compression"] == "structural_projection"
     assert "primary_system_prompt" in trace["denied_context"]
-    assert not enabled(agent, CONFIG)
+    assert enabled(agent)  # 平台无总开关：契约发布即可参与目标协作
     with pytest.raises(ValidationError):
         ProxyInvocation.model_validate({"inputs": {"input": "PRIVATE_SYSTEM"}})
     with pytest.raises(ValidationError):
@@ -168,7 +168,7 @@ async def configure(ctx, monkeypatch, *, fields=None, schema=None, output=None, 
         agent.proxy_config = spec.proxy_config
         await db.commit()
     monkeypatch.setattr(
-        api, "execution_config", lambda: {"features": {**CONFIG["features"], "goal_proxy_enabled": True}}
+        api, "execution_config", lambda: {"features": dict(CONFIG["features"])}
     )
     sent = []
 

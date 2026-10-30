@@ -52,7 +52,6 @@ features:
   capability_shadow_enabled: true
   goal_execution_enabled: false
   goal_collaboration_enabled: false
-  goal_proxy_enabled: false
   goal_shadow_enabled: true
   conversation_debug_enabled: true
   external_tools_enabled: true

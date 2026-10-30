@@ -69,11 +69,12 @@ def policy(agent):
     return ProxyContract.model_validate(raw)
 
 
-def enabled(agent, config):
+def enabled(agent):
+    # 平台无 Proxy 总开关：能否参与目标协作只取决于该代理自己的输入契约是否发布
     if agent.agent_type != "proxy":
         return True
     try:
-        return config.get("features", {}).get("goal_proxy_enabled") is True and policy(agent).enabled
+        return policy(agent).enabled
     except (ValueError, TypeError):
         return False
 

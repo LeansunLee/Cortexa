@@ -1,6 +1,6 @@
 # AgentRuntime 当前执行流程
 
-本文按当前代码说明 AgentRuntime（代码中的 Goal Runtime）的实际执行路径。入口主要位于 `api/goals.py`；循环执行由 `runtime/loop.py` 完成；Agent 协作和 Proxy 投影是可选分支。功能是否进入此路径仍由 `config.yaml` 的 `goal_execution_enabled`、`goal_collaboration_enabled`、`goal_proxy_enabled` 控制。
+本文按当前代码说明 AgentRuntime（代码中的 Goal Runtime）的实际执行路径。入口主要位于 `api/goals.py`；循环执行由 `runtime/loop.py` 完成；Agent 协作和 Proxy 投影是可选分支。功能是否进入此路径由 `config.yaml` 的 `goal_execution_enabled`、`goal_collaboration_enabled` 控制；Proxy 代理没有平台总开关，单个代理的 `goal_contract.enabled=true` 即可进入协作候选（2026-10-30 起，`features.goal_proxy_enabled` 已移除）。
 
 ## 一、端到端流程图
 
