@@ -407,8 +407,22 @@ async def stream_meeting(
                         business_tools = _build_data_tools(capabilities, model=data_model, user_query=meeting.topic, context=all_messages)
                         tools.extend(business_tools)
                         tools.extend(await load_search_tools(agent, db, meeting.topic))
+                        from cortexa.tools.registry import load_registry_tools
+                        tools.extend(await load_registry_tools(agent, db))
+                        from cortexa.tools.skills import build_skill_index, make_load_skill_tool
+                        skill_index = await build_skill_index(agent, db)
+                        if skill_index:
+                            tools.append(make_load_skill_tool(agent))
+                            # 技能索引 + load_skill 已覆盖使用指引（含 web_research），
+                            # 仅在空间未配置技能时回退到内置 SEARCH_RULES。
+                            search_guidance = ""
+                        else:
+                            search_guidance = SEARCH_RULES
 
-                        system_prompt = _build_agent_meeting_prompt(agent, meeting.topic, meeting.purpose, meeting.attachments, tool_names=[t.name for t in tools]) + SEARCH_RULES
+                        system_prompt = _build_agent_meeting_prompt(agent, meeting.topic, meeting.purpose, meeting.attachments, tool_names=[t.name for t in tools])
+                        if skill_index:
+                            system_prompt += "\n\n" + skill_index
+                        system_prompt += search_guidance
                         system_prompt += _build_tool_usage_instructions(capabilities, business_tools)
                         user_content = _build_round_user_content(meeting.topic, round_num, all_messages, conflict_detected)
 
