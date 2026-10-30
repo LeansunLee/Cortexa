@@ -45,6 +45,10 @@ class CollaborationPolicy(BaseModel):
     candidate_limit: int = Field(default=3, ge=1, le=5)
 
 
+# 非显式模式下暴露给模型的协作目录上限；实际协作人数另由 max_collaborators 约束
+CATALOG_CAP = 12
+
+
 def settings(agent):
     raw = dict(getattr(agent, "collaboration", None) or {})
     if getattr(agent, "agent_type", None) == "proxy":
@@ -200,13 +204,13 @@ async def discover(db, source, state, payload, config):
         operations=tuple(payload["goal"].get("operations", [])),
     )
     selected_ids = {m.capability.id.removeprefix("agent:") for m in matches}
-    if not selected_ids and top_k > 0 and (invitation_requested or mode != Autonomy.EXPLICIT_ONLY):
-        # 词法匹配是路由排序手段，不是协作资格判定：用户已选择询问/主动模式
-        # （或明确邀请协作）时，零命中不应静默清空协作目录——有界回退到候选
-        # 目录，由模型按各 Agent 职责描述决定是否发起协作。仅"不主动"模式
-        # 维持显式 @ 为唯一入口。
-        selected_ids = {str(a.id) for a in candidates[:top_k]}
-        payload["collaboration_catalog_fallback"] = True
+    if mode != Autonomy.EXPLICIT_ONLY and candidates:
+        # 词法匹配只作排序参考，不作为目录准入：询问/主动模式下模型必须看到
+        # 完整协作目录才能选对专家（用户说"卖得咋样"而专家职责写"销售/销量"，
+        # 无共同二元组即漏配；命中"市场调研"的产品经理反而挤掉真正的分析师）。
+        # 实际协作人数仍由 max_collaborators 在授权层有界。
+        selected_ids |= {str(a.id) for a in candidates[:CATALOG_CAP]}
+        payload["collaboration_catalog_full"] = True
     chosen = sorted(explicit + [a for a in candidates if str(a.id) in selected_ids], key=lambda a: str(a.id))
     state.candidate_agents = sorted(str(a.id) for a in chosen if str(a.id) not in fixed)
     return chosen, mode
