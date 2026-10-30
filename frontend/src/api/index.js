@@ -37,7 +37,9 @@ export const configApi = {
   deleteProvider: (name) => api.delete(`/config/provider/${name}`),
   test: (name) => api.post('/config/test', { name }),
   saveEmbedding: (data) => api.post('/config/embedding', data),
-  saveConversationDebug: (enabled) => api.post('/config/conversation-debug', { enabled })
+  saveConversationDebug: (enabled) => api.post('/config/conversation-debug', { enabled }),
+  listFeatures: () => api.get('/config/features'),
+  saveFeatures: (features) => api.put('/config/features', { features })
 }
 
 export const debugPreferenceApi = {

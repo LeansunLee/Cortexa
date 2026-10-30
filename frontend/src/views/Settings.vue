@@ -1,5 +1,26 @@
 <template>
   <div class="settings">
+    <!-- Platform feature flags -->
+    <section v-if="can('config.manage')" class="card feature-flags-card" aria-labelledby="feature-flags-heading">
+      <div class="card-header">
+        <div>
+          <h2 id="feature-flags-heading" class="card-title"><SlidersHorizontal :size="18" /> 平台功能开关</h2>
+          <p class="card-desc">config.yaml 的 features 开关，保存后立即生效，无需重启服务。</p>
+        </div>
+      </div>
+      <div v-for="f in featureFlags" :key="f.key" class="feature-row">
+        <div class="feature-copy">
+          <h3 class="card-title">{{ f.title }} <code class="flag-key">{{ f.key }}</code></h3>
+          <p class="card-desc">{{ f.description }}{{ f.value !== f.default ? '' : `（缺省${f.default ? '开启' : '关闭'}）` }}</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" :checked="f.value" :disabled="savingFlags" @change="toggleFlag(f, $event)" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">{{ f.value ? '开启' : '关闭' }}</span>
+        </label>
+      </div>
+    </section>
+
     <!-- LLM Providers -->
     <section class="card llm-provider-card" aria-labelledby="llm-provider-heading">
       <div class="card-header llm-provider-header">
@@ -124,10 +145,11 @@
 </template>
 
 <script setup>
-import { Server } from 'lucide-vue-next'
+import { Server, SlidersHorizontal } from 'lucide-vue-next'
 
 import { computed, ref, onMounted } from 'vue'
 import { configApi } from '../api'
+import { can } from '../auth'
 
 const testing = ref({})
 
@@ -138,6 +160,8 @@ const selectedDefault = ref('')
 const showModal = ref(false)
 const editMode = ref(false)
 const editingName = ref('')
+const featureFlags = ref([])
+const savingFlags = ref(false)
 
 const form = ref({
   name: '',
@@ -177,6 +201,33 @@ const loadConfig = async () => {
     selectedDefault.value = data.default_provider || ''
   } catch (e) {
     console.error(e)
+  }
+}
+
+const loadFeatures = async () => {
+  if (!can('config.manage')) return
+  try {
+    const { data } = await configApi.listFeatures()
+    featureFlags.value = data.features || []
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const toggleFlag = async (flag, event) => {
+  const value = event.target.checked
+  const prev = flag.value
+  flag.value = value
+  savingFlags.value = true
+  try {
+    await configApi.saveFeatures({ [flag.key]: value })
+    showToast(`${flag.title}已${value ? '开启' : '关闭'}`, 'success')
+  } catch (e) {
+    flag.value = prev
+    event.target.checked = prev
+    showToast('保存失败: ' + (e.response?.data?.detail || e.message), 'error')
+  } finally {
+    savingFlags.value = false
   }
 }
 
@@ -252,6 +303,7 @@ const saveDefault = async () => {
 
 onMounted(() => {
   loadConfig()
+  loadFeatures()
 })
 </script>
 
@@ -259,10 +311,12 @@ onMounted(() => {
 .settings { padding: 0; max-width: 900px; }
 .settings h1 { font-size: 24px; font-weight: 700; margin: 0; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
-.feature-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.feature-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.feature-row:last-child { border-bottom: 0; }
 .feature-copy { min-width: 0; }
-.feature-copy .card-title { display: flex; align-items: center; gap: 8px; margin: 0; }
+.feature-copy .card-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
 .feature-copy .card-desc { max-width: 660px; margin: 7px 0 0; line-height: 1.65; }
+.flag-key { font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; font-family: var(--font-mono, monospace); }
 .switch { display: inline-flex; align-items: center; gap: 9px; flex-shrink: 0; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
 .switch-track { width: 42px; height: 24px; padding: 2px; box-sizing: border-box; border-radius: 999px; background: var(--border); transition: background var(--transition); }

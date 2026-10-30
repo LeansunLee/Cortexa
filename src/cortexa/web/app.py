@@ -297,6 +297,57 @@ async def save_conversation_debug_config(payload: ConversationDebugPayload) -> d
     return {"status": "ok", "enabled": payload.enabled}
 
 
+# 平台功能开关目录：key -> (标题, 说明, 缺省值)。缺省值 = config.yaml 未写该键时的生效行为。
+FEATURE_FLAGS: dict[str, tuple[str, str, bool]] = {
+    "goal_execution_enabled": ("目标模式", "关闭后所有消息走普通对话，不进入目标执行循环。", False),
+    "goal_collaboration_enabled": ("Agent 协作", "目标模式下 Agent 互相委派的候选目录与授权；关闭后无法协作。", False),
+    "goal_shadow_enabled": ("目标影子跟踪", "普通对话中影子记录目标意图（不执行），用于目标路由分析。", False),
+    "capability_shadow_enabled": ("能力影子采集", "普通对话中采集能力使用影子数据，为能力路由积累样本。", False),
+    "conversation_debug_enabled": ("对话调试轨迹", "平台总开关；用户还需具备调试权限并在个性化页打开调试。", False),
+    "external_tools_enabled": ("外部工具", "HTTP/MCP 注册工具的整体灰度，缺省开启。", True),
+    "skills_enabled": ("技能索引", "技能绑定与索引的整体灰度，缺省开启。", True),
+}
+
+
+class FeaturesPayload(BaseModel):
+    features: dict[str, bool]
+
+
+@app.get("/api/config/features")
+async def list_feature_flags() -> dict[str, Any]:
+    """平台功能开关及当前生效值；各读取点按请求读盘，保存后立即生效，无需重启。"""
+    cfg = _load_config()
+    features = cfg.get("features", {})
+    return {
+        "features": [
+            {
+                "key": key,
+                "title": title,
+                "description": description,
+                "default": default,
+                "value": bool(features.get(key, default)),
+            }
+            for key, (title, description, default) in FEATURE_FLAGS.items()
+        ]
+    }
+
+
+@app.put("/api/config/features")
+async def save_feature_flags(payload: FeaturesPayload) -> dict[str, Any]:
+    unknown = sorted(set(payload.features) - set(FEATURE_FLAGS))
+    if unknown:
+        raise HTTPException(422, "未知的开关：" + "、".join(unknown))
+    cfg = _load_config()
+    features = cfg.setdefault("features", {})
+    for key, value in payload.features.items():
+        features[key] = value
+    _save_config(cfg)
+    return {
+        "status": "ok",
+        "features": {key: bool(features.get(key, default)) for key, (_, _, default) in FEATURE_FLAGS.items()},
+    }
+
+
 class EmbeddingPayload(BaseModel):
     provider: str = ""
     model: str = "text-embedding-3-small"
