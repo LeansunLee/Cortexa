@@ -200,10 +200,13 @@ async def discover(db, source, state, payload, config):
         operations=tuple(payload["goal"].get("operations", [])),
     )
     selected_ids = {m.capability.id.removeprefix("agent:") for m in matches}
-    if invitation_requested and not selected_ids:
-        # Let the model assess bounded eligible descriptions when the user's
-        # invitation has no lexical overlap with the catalog.
+    if not selected_ids and top_k > 0 and (invitation_requested or mode != Autonomy.EXPLICIT_ONLY):
+        # 词法匹配是路由排序手段，不是协作资格判定：用户已选择询问/主动模式
+        # （或明确邀请协作）时，零命中不应静默清空协作目录——有界回退到候选
+        # 目录，由模型按各 Agent 职责描述决定是否发起协作。仅"不主动"模式
+        # 维持显式 @ 为唯一入口。
         selected_ids = {str(a.id) for a in candidates[:top_k]}
+        payload["collaboration_catalog_fallback"] = True
     chosen = sorted(explicit + [a for a in candidates if str(a.id) in selected_ids], key=lambda a: str(a.id))
     state.candidate_agents = sorted(str(a.id) for a in chosen if str(a.id) not in fixed)
     return chosen, mode
