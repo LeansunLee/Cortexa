@@ -24,7 +24,7 @@
         <li v-for="(step, index) in steps" :key="index" :class="['flow-step', outcome(step, index)]">
           <span class="flow-node"><Loader v-if="outcome(step, index) === 'running'" :size="14" class="flow-spinner" /><AlertCircle v-else-if="outcome(step, index) === 'error'" :size="14" /><Check v-else :size="14" /></span>
           <div class="flow-step-body">
-            <div class="flow-step-title"><span>{{ step.message }}</span>
+            <div class="flow-step-title"><button v-if="hasData(step)" class="flow-data-btn" title="点击查看查询返回的数据" @click="dataModal = normalizeData(step)"><span>{{ step.message }}</span><Table :size="13" /><small>查看数据</small></button><span v-else>{{ step.message }}</span>
               <DataResultTag v-if="step.tool && (step.data_result || /返回 \d+ 条数据；状态/.test(step.message || ''))" :action-id="step.tool" :conversation-id="conversationId" /><PromptTag v-for="prompt in canInspectPrompts ? step.prompts || [] : []" :key="prompt.id" :prompt="prompt" :conversation-id="conversationId" /><small v-if="step.usage?.token_count != null">{{ number(step.usage.token_count) }} Token</small></div>
             <div v-if="step.sources?.length" class="flow-sources">
               <button v-for="(source, i) in documents(step.sources)" :key="i" @click="$emit('source', source)" :title="[source.name || source.title, source.purpose].filter(Boolean).join(' · ')"><FileText :size="13" /><span>{{ source.name || source.title || (source.type === 'memory' ? '记忆来源' : '参考来源') }}</span><small v-if="source.evidence_grade">{{ { DIRECT:'直接证据', RELATED:'相关参考', BACKGROUND:'背景资料' }[source.evidence_grade] || source.evidence_grade }}</small></button>
@@ -38,16 +38,40 @@
       </ol>
     </div>
   </details>
+  <div v-if="dataModal" class="data-modal-mask" @click.self="dataModal = null">
+    <div class="data-modal" role="dialog" aria-label="查询返回数据">
+      <div class="data-modal-head">
+        <strong>查询返回数据</strong>
+        <span class="data-modal-meta">共 {{ number(dataModal.row_count) }} 条<template v-if="dataModal.truncated">，显示前 {{ dataModal.rows.length }} 条</template></span>
+        <button class="data-modal-close" aria-label="关闭" @click="dataModal = null"><X :size="16" /></button>
+      </div>
+      <div class="data-modal-body">
+        <table>
+          <thead><tr><th v-for="col in dataModal.columns" :key="col">{{ col }}</th></tr></thead>
+          <tbody><tr v-for="(row, ri) in dataModal.rows" :key="ri"><td v-for="col in dataModal.columns" :key="col">{{ cell(row[col]) }}</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { Activity, Target, FileText, MessageSquare, Check, Loader, AlertCircle } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { Activity, Target, FileText, MessageSquare, Check, Loader, AlertCircle, Table, X } from 'lucide-vue-next'
 import PromptTag from './PromptTag.vue'
 import DataResultTag from './DataResultTag.vue'
 import { stepOutcome } from '../utils/statusSteps'
 const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, notices: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, formatMessage: { type: Function, required: true } })
 defineEmits(['source'])
+const dataModal = ref(null)
+const hasData = step => step.data_result && typeof step.data_result === 'object' && Array.isArray(step.data_result.rows)
+const normalizeData = step => {
+  const raw = step.data_result
+  const rows = raw.rows || []
+  const columns = raw.columns?.length ? raw.columns : (rows[0] && typeof rows[0] === 'object' ? Object.keys(rows[0]) : ['值'])
+  return { ...raw, rows, columns }
+}
+const cell = value => value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value))
 const reported = computed(() => props.usage.filter(item => item.token_count != null))
 const total = computed(() => reported.value.reduce((sum, item) => sum + item.token_count, 0))
 const input = computed(() => reported.value.reduce((sum, item) => sum + (item.input_tokens || 0), 0))
@@ -103,4 +127,20 @@ const documents = sources => [...new Map(sources.map((source, i) => [source.memo
 .flow-draft-content :deep(p) { margin: 6px 0; }.flow-draft-content :deep(table) { border-collapse: collapse; font-size: 12px; }.flow-draft-content :deep(td), .flow-draft-content :deep(th) { border: 1px solid var(--border); padding: 5px 8px; }
 .flow-draft-content :deep(h1), .flow-draft-content :deep(h2), .flow-draft-content :deep(h3) { font-size: 14px; line-height: 1.5; margin: 12px 0 6px; }
 .flow-spinner { animation: flow-spin 1s linear infinite; }@keyframes flow-spin { to { transform: rotate(360deg); } }@media (prefers-reduced-motion: reduce) { .flow-spinner { animation: none; } }
+.flow-data-btn { display: inline-flex; align-items: baseline; gap: 6px; border: 0; background: none; padding: 0; color: inherit; font: inherit; line-height: 21px; cursor: pointer; text-align: left; }
+.flow-data-btn svg { align-self: center; color: var(--primary); flex-shrink: 0; }
+.flow-data-btn small { color: var(--primary); font-size: 10px; border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent); border-radius: 20px; padding: 1px 7px; white-space: nowrap; }
+.flow-data-btn:hover span { color: var(--primary); text-decoration: underline; }
+.data-modal-mask { position: fixed; inset: 0; z-index: 90; background: rgba(8,10,14,.55); display: flex; align-items: center; justify-content: center; padding: 32px; backdrop-filter: blur(4px); }
+.data-modal { display: flex; flex-direction: column; width: min(1100px, 96vw); max-height: 82vh; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.4); overflow: hidden; }
+.data-modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-bottom: 1px solid var(--border); }
+.data-modal-head strong { font-size: 14px; color: var(--text); }
+.data-modal-meta { font-size: 12px; color: var(--text3); }
+.data-modal-close { margin-left: auto; border: 0; background: var(--surface2); color: var(--text2); border-radius: 8px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.data-modal-close:hover { color: var(--text); }
+.data-modal-body { overflow: auto; padding: 0 18px 16px; }
+.data-modal-body table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 4px; }
+.data-modal-body th, .data-modal-body td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
+.data-modal-body th { position: sticky; top: 0; background: var(--surface2); color: var(--text); font-weight: 600; }
+.data-modal-body tr:hover td { background: var(--surface2); }
 </style>

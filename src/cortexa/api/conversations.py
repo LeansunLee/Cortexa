@@ -370,6 +370,13 @@ async def create_message(
                               *work_runtime.tools(agent.id, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
+                from cortexa.tools.registry import load_registry_tools
+                data_tools.extend(await load_registry_tools(agent, db, sources=sources))
+                from cortexa.tools.skills import build_skill_index, make_load_skill_tool
+                _skill_index = await build_skill_index(agent, db)
+                if _skill_index:
+                    system_prompt += "\n\n" + _skill_index
+                    data_tools.append(make_load_skill_tool(agent))
 
                 # Add data capability info to system prompt
                 if cap_list:
@@ -984,6 +991,13 @@ async def regenerate_message(
                  *artifacts_store.save_document_tool(conv_id, conv.workspace_id, conv.owner_user_id, agent.id, artifact_created),
                  *work_runtime.tools(agent.id, sources)]
         tools.extend(await load_search_tools(agent, db, last_user_content, sources))
+        from cortexa.tools.registry import load_registry_tools
+        tools.extend(await load_registry_tools(agent, db, sources=sources))
+        from cortexa.tools.skills import build_skill_index, make_load_skill_tool
+        _skill_index = await build_skill_index(agent, db)
+        if _skill_index:
+            system_prompt += "\n\n" + _skill_index
+            tools.append(make_load_skill_tool(agent))
         if cap_list:
             capability_text = "\n".join(
                 f"- {item['capability'].name}"
@@ -1085,7 +1099,8 @@ async def create_message_stream(
         """Helper to yield a status SSE event."""
         data = {"type": "status", "status": msg_type, **kwargs}
         process_steps.append({"status": msg_type, "message": kwargs.get("message", ""),
-                              **({"prompts": kwargs["prompts"]} if kwargs.get("prompts") else {})})
+                              **({"prompts": kwargs["prompts"]} if kwargs.get("prompts") else {}),
+                              **({"data_result": kwargs["data_result"]} if kwargs.get("data_result") else {})})
         return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     @usage_action("reply")
@@ -1908,7 +1923,13 @@ async def create_message_stream(
                               *work_runtime.tools(agent.id, sources)]
                 from cortexa.tools.web_search import load_search_tools
                 data_tools.extend(await load_search_tools(agent, db, payload.content, sources))
-
+                from cortexa.tools.registry import load_registry_tools
+                data_tools.extend(await load_registry_tools(agent, db, sources=sources))
+                from cortexa.tools.skills import build_skill_index, make_load_skill_tool
+                _skill_index = await build_skill_index(agent, db)
+                if _skill_index:
+                    system_prompt += "\n\n" + _skill_index
+                    data_tools.append(make_load_skill_tool(agent))
                 # Describe already-loaded tools. Matching is shadow-only: preserve the
                 # full legacy tool list and its existing schema, binding and permissions.
                 capability_by_tool = {f"query_{item['capability'].id.hex}": item["capability"] for item in cap_list}
@@ -2120,6 +2141,7 @@ async def create_message_stream(
 
                                 # Preview result for status
                                 result_preview = ""
+                                result_data = None
                                 try:
                                     result_data = json.loads(str(tool_result)) if isinstance(tool_result, str) else tool_result
                                     if isinstance(result_data, dict) and result_data.get("error"):
@@ -2136,8 +2158,24 @@ async def create_message_stream(
                                 except Exception:
                                     result_preview = str(tool_result)[:100]
 
+                                # 附带查询数据本体（封顶 100 行、单元格截断），供前端步骤点击查看
+                                data_result = None
+                                if isinstance(result_data, dict) and isinstance(result_data.get("data"), list) and result_data["data"]:
+                                    def _cap_cell(value):
+                                        if value is None:
+                                            return None
+                                        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+                                        return text[:120]
+                                    rows = result_data["data"]
+                                    data_result = {
+                                        "row_count": result_data.get("row_count") or len(rows),
+                                        "truncated": len(rows) > 100,
+                                        "rows": [{k: _cap_cell(v) for k, v in row.items()} if isinstance(row, dict) else {"值": _cap_cell(row)}
+                                                 for row in rows[:100]],
+                                    }
+
                                 print(f"[TOOL] Tool result: {result_preview}", flush=True)
-                                yield await _status("tool_result", message=f"{'⚠️' if isinstance(tool_result, dict) and tool_result.get('error') else '✅'} 查询完成 — {result_preview}", tool=tool_name, tool_desc=tool_desc, result_preview=result_preview)
+                                yield await _status("tool_result", message=f"{'⚠️' if isinstance(tool_result, dict) and tool_result.get('error') else '✅'} 查询完成 — {result_preview}", tool=tool_name, tool_desc=tool_desc, result_preview=result_preview, **({"data_result": data_result} if data_result else {}))
                                 debug_event = await _debug(
                                     "tool", f"工具返回：{tool_desc}",
                                     status="error" if isinstance(tool_result, dict) and tool_result.get("error") else "success",
