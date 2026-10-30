@@ -771,7 +771,10 @@ def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *
             configured_schema=configured_schema,
             instructions=supplemental_prompt,
         ):
-            async def _exec(**kwargs):
+            async def _exec(**raw_kwargs):
+                # 只认当前配置声明的参数：模型可能从对话历史模仿已废弃的入参（如
+                # schema 同步污染期的 param_N），未声明的键一律丢弃，防污染解析环节
+                kwargs = {k: v for k, v in raw_kwargs.items() if k in parameter_names}
                 normalized_kwargs = _apply_schema_parameter_rules(
                     values=kwargs,
                     schema=configured_schema,
@@ -792,6 +795,10 @@ def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *
                             user_query=user_query,
                         )
                     except Exception:
+                        import traceback
+                        print(f"[DATA] 参数解析失败 capability={cap_id} "
+                              f"kwargs={json.dumps(kwargs, ensure_ascii=False, default=str)[:300]} "
+                              f"error={traceback.format_exc(limit=3)}", flush=True)
                         return {"error": "未能确认工具参数，请补充或重试；本次未执行数据库查询。"}
                 cache_key = (str(cap_id), json.dumps(normalized_kwargs, sort_keys=True, default=str))
                 if cache_key in query_cache:
