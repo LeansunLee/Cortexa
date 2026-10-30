@@ -27,11 +27,11 @@ class GoalAnalysis(BaseModel):
 SYSTEM_PROMPT = (
     "你是目标拆解器。把用户的原始请求转成一个 JSON 对象，不输出任何其他文字：\n"
     '{"objective": "规范化的一句话目标，补全指代，保留数字、车型、区域等关键对象", '
-    '"agents": ["最适合处理该请求的智能体名，1-3个，按优先级排序"], '
+    '"agents": ["最适合处理该请求的智能体，1-3个，按优先级排序"], '
     '"domains": ["涉及的数据或业务域，如：车型参数/销量数据/门店经销商"], '
     '"clarification": null 或 "缺少关键对象无法拆解时的一句追问"}\n'
-    "规则：agents 只能逐字使用候选名单里的名字，名单为空则给空数组；"
-    "没有足够信息时宁缺勿猜；clarification 一般为 null。"
+    "规则：agents 从候选名单中选，填写名单第一列的「名字」（不是角色名），逐字复制；"
+    "名单为空则给空数组；没有足够信息时宁缺勿猜；clarification 一般为 null。"
 )
 
 
@@ -79,8 +79,16 @@ async def analyze_request(source, payload, db, config):
             str(part) for part in (response.content or [])
         )
         data = extract_json(content)
-        names = {a.name.casefold(): a.name for a in roster}
-        agents = [names[n.casefold()] for n in data.get("agents") or [] if isinstance(n, str) and n.casefold() in names]
+        # 模型偶尔回角色名而非名字：名字或角色都接受，统一映射回名字。
+        canonical = {}
+        for a in roster:
+            canonical[a.name.casefold()] = a.name
+            canonical[(a.role or "").casefold()] = a.name
+        agents = []
+        for n in data.get("agents") or []:
+            hit = canonical.get(str(n).casefold()) if isinstance(n, str) else None
+            if hit and hit not in agents:
+                agents.append(hit)
         return GoalAnalysis(
             objective=str(data.get("objective") or "")[:300],
             agents=agents[:3],

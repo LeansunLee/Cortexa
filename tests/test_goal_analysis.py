@@ -74,6 +74,19 @@ def test_analyze_request_filters_agents_to_roster(monkeypatch):
     )
 
 
+def test_analyze_request_accepts_role_and_dedupes(monkeypatch):
+    # 模型偶尔回角色名而非名字：两者都应映射回同一个名字。
+    content = json.dumps(
+        {"objective": "查销量", "agents": ["数据分析师", "数据分析部门", "销售部"]},
+        ensure_ascii=False,
+    )
+    patch_env(monkeypatch, FakeModel(content=content))
+    out = asyncio.run(
+        analyze_request(SimpleNamespace(model="Mimo"), payload(), object(), {"features": {}})
+    )
+    assert out.agents == ["数据分析部门", "销售部"]
+
+
 def test_analyze_request_disabled_flag_skips_model(monkeypatch):
     called = []
 
