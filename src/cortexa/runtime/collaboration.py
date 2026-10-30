@@ -184,6 +184,12 @@ async def discover(db, source, state, payload, config):
     ]
     explicit = [a for a in allowed if str(a.id) in fixed]
     candidates = [a for a in allowed if str(a.id) not in fixed]
+    # 目标入口的一次模型拆解给出语义人选：随口问法（"卖得咋样"）与职责措辞
+    # （"销量分析"）常无共同二元组，词法零命中时人选仍必须保留在目录里。
+    analysis_names = {str(n).casefold() for n in ((payload.get("goal_analysis") or {}).get("agents") or [])}
+    analysis_ids = {str(a.id) for a in candidates if a.name.casefold() in analysis_names}
+    if analysis_ids:
+        payload["goal_analysis_selected"] = sorted(analysis_ids)
     descriptors = []
     for agent in candidates:
         descriptor = agent_adapter(agent).descriptor
@@ -203,7 +209,7 @@ async def discover(db, source, state, payload, config):
         top_k=top_k,
         operations=tuple(payload["goal"].get("operations", [])),
     )
-    selected_ids = {m.capability.id.removeprefix("agent:") for m in matches}
+    selected_ids = analysis_ids | {m.capability.id.removeprefix("agent:") for m in matches}
     if mode != Autonomy.EXPLICIT_ONLY and candidates:
         # 词法匹配只作排序参考，不作为目录准入：询问/主动模式下模型必须看到
         # 完整协作目录才能选对专家（用户说"卖得咋样"而专家职责写"销售/销量"，

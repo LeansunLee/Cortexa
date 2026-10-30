@@ -19,6 +19,7 @@ from cortexa.runtime.adapters import agent_adapter
 from cortexa.runtime.bindings import prepare_bindings
 from cortexa.runtime.collaboration import authorize_agent, discover
 from cortexa.runtime.contracts import contract_errors
+from cortexa.runtime.goal_analysis import analyze_request
 from cortexa.runtime.loop import Binding, GoalLoop, InvocationResult, serialize_messages, token_upper_bound
 from cortexa.runtime.observations import Observation
 from cortexa.runtime.policy import resolve_effective_policy
@@ -116,6 +117,16 @@ def project_agent_input(task, inputs, requested, known, limit):
 
 async def prepare_agent_bindings(source, state, payload, loop, store, row, config):
     async with store.sessions() as db:
+        analysis = await analyze_request(source, payload, db, config())
+        if analysis is not None:
+            payload["goal_analysis"] = analysis.model_dump()
+            loop.record(
+                "Goal analysis",
+                objective=analysis.objective[:120],
+                agents="、".join(analysis.agents) or "（无）",
+                domains="、".join(analysis.domains),
+                clarification=analysis.clarification or "",
+            )
         candidates, _ = await discover(db, source, state, payload, config())
     bindings = []
     for target in candidates:
@@ -134,6 +145,8 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
         description = f"协作角色：{target.role or 'AI助手'}\n执行职责：{(target.responsibilities or '')[:1200]}"
         if explicit_task:
             description += "\n用户明确分工：" + explicit_task
+        if ident in set(payload.get("goal_analysis_selected") or ()):
+            description += "\n目标拆解结果建议优先与该角色协作。"
         label = "目标输入契约（外部请求字段，非协作调用参数）" if target.agent_type == "proxy" else "输入契约"
         description += "\n" + label + "：" + json.dumps(target.input_schema or {}, ensure_ascii=False)
         signature = contract_signature(target)

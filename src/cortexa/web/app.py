@@ -304,6 +304,7 @@ FEATURE_FLAGS: dict[str, tuple[str, str, bool]] = {
     "goal_shadow_enabled": ("目标影子跟踪", "普通对话中影子记录目标意图（不执行），用于目标路由分析。", False),
     "capability_shadow_enabled": ("能力影子采集", "普通对话中采集能力使用影子数据，为能力路由积累样本。", False),
     "conversation_debug_enabled": ("对话调试轨迹", "平台总开关；用户还需具备调试权限并在个性化页打开调试。", False),
+    "goal_analysis_enabled": ("目标智能拆解", "目标入口用一次模型调用把随口提问拆解成结构化目标并预选协作对象；关闭后回退词法匹配。", True),
     "external_tools_enabled": ("外部工具", "HTTP/MCP 注册工具的整体灰度。", True),
     "skills_enabled": ("技能索引", "技能绑定与索引的整体灰度。", True),
 }

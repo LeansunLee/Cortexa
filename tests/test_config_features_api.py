@@ -19,7 +19,7 @@ def store(monkeypatch):
 def test_list_features_reports_effective_values(store):
     config, _ = store
     by_key = {f["key"]: f for f in asyncio.run(list_feature_flags())["features"]}
-    assert len(by_key) == 7 and "goal_proxy_enabled" not in by_key
+    assert len(by_key) == 8 and "goal_proxy_enabled" not in by_key
     assert by_key["skills_enabled"]["value"] is False  # 文件显式值
     assert by_key["goal_execution_enabled"]["value"] is False and by_key["goal_execution_enabled"]["default"] is False
     assert by_key["external_tools_enabled"]["value"] is True and by_key["external_tools_enabled"]["default"] is True
