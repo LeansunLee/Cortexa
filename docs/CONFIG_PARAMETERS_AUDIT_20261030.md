@@ -8,7 +8,11 @@
 - `.env`（服务器 `/opt/agentdevstu/.env`）：`load_env()` 启动时注入，改完需重启。
 - 代码内默认值：配置缺失时静默回退，参数"不存在"与"取默认值"不可区分。
 
-## config.yaml · features（全部为文件级开关，无 UI）
+## config.yaml · features
+
+**2026-10-30 更新：以下 7 个开关已收敛到管理员设置页**（系统配置页「平台功能开关」卡片，`GET/PUT /api/config/features`，`config.manage` 权限门控，保存即生效无需重启，见 commit 2411c22）。下表保留作为实现说明；`.env` 与 `runtime:` 块仍为纯文件配置。
+
+| 参数 | 读取位置 | 作用 | 缺失时 |
 
 | 参数 | 读取位置 | 作用 | 缺失时 |
 | --- | --- | --- | --- |
