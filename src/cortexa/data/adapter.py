@@ -39,6 +39,15 @@ async def test_connection(ds_type: str, config: dict, encrypted_credential: str 
             credential_data = decrypt_dict(encrypted_credential)
         except Exception as e:
             return {"success": False, "message": f"凭证解密失败: {e}", "password_verified": False}
+    else:
+        # Without a credential the driver would fall back to the service
+        # process's OS user (e.g. "role root does not exist"), which reads
+        # like a database problem instead of the missing credential it is.
+        return {
+            "success": False,
+            "message": "数据源未绑定凭证：请先在凭证页创建凭证，并在数据源配置中选择该凭证",
+            "password_verified": False,
+        }
 
     url = _build_connection_url(ds_type, config, credential_data)
     engine: AsyncEngine | None = None
@@ -143,6 +152,14 @@ async def execute_query(
     credential_data = None
     if encrypted_credential:
         credential_data = decrypt_dict(encrypted_credential)
+    else:
+        return {
+            "success": False,
+            "data": [],
+            "duration_ms": 0,
+            "row_count": 0,
+            "error": "数据源未绑定凭证：请先在凭证页创建凭证，并在数据源配置中选择该凭证",
+        }
 
     url = _build_connection_url(ds_type, config, credential_data)
     # Set statement timeout via connect_args

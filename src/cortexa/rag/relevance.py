@@ -26,6 +26,13 @@ PURPOSES = {
     "BACKGROUND": "仅提供背景信息，不支持目标事实",
     "IRRELEVANT": "不注入",
 }
+# Interrogative/filler tokens excluded from the lexical fast path for generic
+# phrase queries; they never appear in document bodies.
+QUERY_FILLER_TERMS = {"什么", "怎么", "怎样", "如何", "哪些", "多少", "为何", "为什么", "请问", "一下"}
+# Entity sources the business gate may treat as hard constraints. Leftover
+# phrases ("unresolved_phrase") and unknown ASCII tokens ("unresolved_token")
+# are just the query's own subject, not registry-backed business entities.
+SOFT_ENTITY_SOURCES = {"unresolved_phrase", "unresolved_token"}
 
 
 def normalize(value):
@@ -431,7 +438,8 @@ def assess(doc, query, full_text, analysis, raw_score, algorithm="lexical"):
             or (len(analysis.keywords) == 1 and analysis.keywords[0] in doc.name)
         )
     )
-    if analysis.entities and not analysis.intent and not analysis.document_type:
+    hard_entities = [e for e in analysis.entities if e.get("source") not in SOFT_ENTITY_SOURCES]
+    if hard_entities and not analysis.intent and not analysis.document_type:
         semantic = False
     case_status = retrieval.get("case_status", meta.get("case_status"))
     case_verified = case_status == "completed" or bool(
@@ -449,7 +457,35 @@ def assess(doc, query, full_text, analysis, raw_score, algorithm="lexical"):
         re.search(r"模板|草案|建议稿|拟定", doc.name)
     )
     grade, filters = "IRRELEVANT", []
-    if not readable:
+    # Generic phrase queries ("产品定位") carry no registry-backed entity. The
+    # business gate below would wrongly discard documents that literally contain
+    # the queried terms, so admit on lexical evidence instead: the query phrase
+    # itself, or every non-filler keyword, appearing in the document is direct
+    # evidence; absence falls through to the ordinary gate.
+    soft_entities = [e for e in analysis.entities if e.get("source") in SOFT_ENTITY_SOURCES]
+    lexical_gate = bool(
+        soft_entities
+        and len(soft_entities) == len(analysis.entities)
+        and not analysis.intent
+        and not analysis.document_type
+        and not analysis.ambiguous_entity
+    )
+    if lexical_gate and not readable:
+        filters.append("unreadable_content")
+    elif lexical_gate:
+        haystack = normalize(doc.name + "\n" + (doc.content or "") + "\n" + full_text)
+        phrase_hit = all(normalize(e["name"]) in haystack for e in soft_entities)
+        keyword_terms = [
+            normalize(k)
+            for k in analysis.keywords
+            if len(normalize(k)) >= 2 and normalize(k) not in QUERY_FILLER_TERMS
+        ]
+        keyword_hit = bool(keyword_terms) and all(term in haystack for term in keyword_terms)
+        if phrase_hit or keyword_hit:
+            grade = "DIRECT"
+        else:
+            filters.append("query_terms_absent")
+    elif not readable:
         filters.append("unreadable_content")
     elif analysis.ambiguous_entity:
         filters.append(reason)

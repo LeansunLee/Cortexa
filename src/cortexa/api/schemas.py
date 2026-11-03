@@ -355,6 +355,9 @@ class DocumentSummaryUpdate(BaseModel):
 
 # -- DataSource --------------------------------------------------------------
 class DataSourceCreate(BaseModel):
+    # extra fields would be silently dropped otherwise — a connection dict
+    # pasted at the top level then reads back as an unusable empty config.
+    model_config = ConfigDict(extra="forbid")
     name: str
     description: str | None = None
     type: str  # postgres, mysql, api

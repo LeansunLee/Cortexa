@@ -430,6 +430,8 @@ a { text-decoration: none; color: inherit; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
   padding: 16px 12px;
   display: flex;
   flex-direction: column;

@@ -313,6 +313,9 @@ async def create_message(
                 workspace = await db.get(Workspace, conv.workspace_id) if conv.workspace_id else None
                 system_prompt = _build_system_prompt(agent, workspace)
                 references = await organization_reference(agent, db)
+                # Initialize sources tracker before the conditional extends below.
+                sources = list(project_refs)
+                collaboration_results = []
                 if project_context:
                     references.append(reference_message("本轮引用项目（只读参考）", project_context))
                 if works_context:
@@ -324,10 +327,6 @@ async def create_message(
                 memory = await memory_reference(agent, payload.content, db)
                 if memory:
                     references.append(memory)
-
-                # Initialize sources tracker
-                sources = list(project_refs)
-                collaboration_results = []
 
                 # Retrieve knowledge base content
                 knowledge_context = await _retrieve_knowledge(agent, payload.content, db, sources=sources)
@@ -1085,7 +1084,11 @@ async def regenerate_message(
         if m.role in ("user", "assistant"):
             llm_messages.append({"role": m.role, "content": history_text(m.content)})
 
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm, provider_exists
+    if not provider_exists(agent.model):
+        # The provider may have been renamed or removed in config.yaml after the
+        # agent was published; fail with a readable 422 instead of a 500 page.
+        raise HTTPException(422, f"智能体模型 '{agent.model}' 未在系统配置中定义，无法生成回复；请为该 Agent 重新选择可用模型")
     annotate_usage(agent=agent, action="reply")
     model = create_llm(agent.model)
 
@@ -1243,7 +1246,9 @@ async def create_message_stream(
                 from cortexa.work import runtime as work_runtime
                 works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
                 referenced_works_context, referenced_works_refs = await work_runtime.referenced_summary(db, payload.work_ids)
-                sources = list(project_refs) + list(works_refs) + list(referenced_works_refs) + list(works_refs)
+                # Works/referenced works are appended conditionally further down;
+                # seeding them here too put every work ref into sources twice.
+                sources = list(project_refs)
                 # Save user message
                 attachments = payload.attachments or []
                 generated_title = await assign_first_message_title(db, conv_id, payload.content)

@@ -338,6 +338,10 @@ async def authorize_request(request: Request):
             elif not (actor.has("knowledge.manage") or actor.has("knowledge.use")):
                 raise HTTPException(403, "没有使用知识库权限")
             return
+        if module == "skills":
+            # 技能库：列表读 agent.read；写操作由 API 层细分（agent.operate / agent.update）。
+            require("agent.read" if method == "GET" else "agent.operate")
+            return
         if code is None:
             raise HTTPException(404, "接口不存在")
         require(code)

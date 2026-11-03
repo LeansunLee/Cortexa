@@ -47,7 +47,7 @@ async def conversation_summary(db, conversation_id, *, budget=3000):
     ids = {w.assignee_id for w in rows if w.assignee_type == "human"}
     names = {}
     if ids:
-        from cortexa.db.models import User
+        from cortexa.security.models import User
         names = {u.id: u.display_name for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all()}
     works_meta = [{
         "id": str(w.id),

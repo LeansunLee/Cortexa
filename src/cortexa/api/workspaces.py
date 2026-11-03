@@ -68,7 +68,51 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     ws = await db.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    # Most child tables are covered by ORM relationships or DB-level ON DELETE
+    # CASCADE, but the project/work/candidate/audit families have neither, and a
+    # plain db.delete(ws) used to violate their FKs at commit time — after the
+    # 204 was already returned, silently rolling the whole delete back.
+    # Pre-clean those rows here; anything unforeseen still surfaces as a 409.
+    from pathlib import Path
+
     from sqlalchemy import delete
-    from cortexa.db.models import Memory
-    await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id==ws.id))
+    from sqlalchemy.exc import IntegrityError
+    from starlette.concurrency import run_in_threadpool
+
+    from cortexa.db.meetings import TodoItem
+    from cortexa.db.models import DataQuery, Memory, Skill
+    from cortexa.projects.models import Project, ProjectActivity, ProjectMember
+    from cortexa.tools.skills import delete_instructions
+    from cortexa.work.models import Work, WorkActivity, WorkCandidate, WorkDeliverable
+    from cortexa.work.service import blob_path as work_blob_path
+
+    deliverable_ids = (
+        await db.scalars(select(WorkDeliverable.id).where(WorkDeliverable.workspace_id == ws.id))
+    ).all()
+    skill_paths = (
+        await db.scalars(select(Skill.instructions_path).where(Skill.workspace_id == ws.id))
+    ).all()
+    await db.execute(delete(WorkCandidate.__table__).where(WorkCandidate.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(WorkDeliverable.__table__).where(WorkDeliverable.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(WorkActivity.__table__).where(WorkActivity.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(Work.__table__).where(Work.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(ProjectActivity.__table__).where(ProjectActivity.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(ProjectMember.__table__).where(ProjectMember.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(Project.__table__).where(Project.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(DataQuery.__table__).where(DataQuery.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(Skill.__table__).where(Skill.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(TodoItem.__table__).where(TodoItem.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id == ws.id))
     await db.delete(ws)
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(
+            409, "工作空间下仍有受关联约束的数据，删除未完成；请核查该空间的项目、工作或会议后重试"
+        ) from error
+    stale_files: list[Path] = [work_blob_path(ident) for ident in deliverable_ids]
+    for path in stale_files:
+        await run_in_threadpool(path.unlink, missing_ok=True)
+    for relative in skill_paths:
+        await run_in_threadpool(delete_instructions, relative)
