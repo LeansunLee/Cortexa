@@ -153,11 +153,16 @@ def test_data_tool_respects_capability_limit_and_keeps_complete_result(monkeypat
     assert prompt["conversation"] == [{"role": "user", "content": "此前条件"}]
     assert prompt["instructions"] == cap.description
     before_failure = execute.await_count
+    # A broken resolver reply no longer kills the call: the model's own declared
+    # args satisfy the schema, so execution proceeds with them (PDT-15 fallback).
     for invalid in ('not JSON', '{"invented":"x"}'):
         model.ainvoke.return_value = SimpleNamespace(content=invalid)
-        failure = asyncio.run(resolved_tool.ainvoke({"region": "新条件"}))
-        assert "未执行数据库查询" in failure["error"]
-        assert execute.await_count == before_failure
+        fallback = asyncio.run(resolved_tool.ainvoke({"region": "新条件"}))
+        assert fallback.get("data") is not None
+    # First invalid reply executed the raw declared args; the identical second
+    # call was served by the result cache instead of the database.
+    assert execute.await_count == before_failure + 1
+    assert execute.await_args.kwargs["params"]["region"] == "新条件"
     assert sources == [{
         "type": "data_source", "name": "配置数据源",
         "capability": "门店", "description": "测试来源",

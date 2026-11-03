@@ -313,18 +313,30 @@ async def update_capability_status(
 
 
 @router.get("/capabilities/{cap_id}", response_model=DataCapabilityOut)
-async def get_capability(cap_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_capability(
+    cap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    workspace_id: str | None = Depends(get_current_workspace),
+):
     cap = await db.get(DataCapability, cap_id)
     if not cap:
         raise HTTPException(404, "Data capability not found")
+    if workspace_id and str(cap.workspace_id) != workspace_id:
+        raise HTTPException(403, "无权访问该数据能力")
     return cap
 
 
 @router.delete("/capabilities/{cap_id}", status_code=204)
-async def delete_capability(cap_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_capability(
+    cap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    workspace_id: str | None = Depends(get_current_workspace),
+):
     cap = await db.get(DataCapability, cap_id)
     if not cap:
         raise HTTPException(404, "Data capability not found")
+    if workspace_id and str(cap.workspace_id) != workspace_id:
+        raise HTTPException(403, "无权访问该数据能力")
     # Audit rows keep their history but lose the dangling capability reference;
     # agent bindings cascade at the DB level.
     await db.execute(
@@ -344,10 +356,13 @@ async def update_capability(
     cap_id: uuid.UUID,
     payload: DataCapabilityCreate,
     db: AsyncSession = Depends(get_db),
+    workspace_id: str | None = Depends(get_current_workspace),
 ):
     cap = await db.get(DataCapability, cap_id)
     if not cap:
         raise HTTPException(404, "Data capability not found")
+    if workspace_id and str(cap.workspace_id) != workspace_id:
+        raise HTTPException(403, "无权访问该数据能力")
     if payload.name is not None:
         cap.name = payload.name
     if payload.description is not None:

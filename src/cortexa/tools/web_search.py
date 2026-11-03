@@ -235,6 +235,7 @@ async def invoke_with_tools(model, messages, tools, usage=None, required_tools=N
         DATA_QUERY_GROUNDING_FAILURE,
         bind_tools_for_first_response,
         called_required_tool,
+        promote_text_tool_calls,
     )
     history = list(messages)
     bound = model.bind_tools(tools) if tools else model
@@ -245,6 +246,7 @@ async def invoke_with_tools(model, messages, tools, usage=None, required_tools=N
             history.append({"role": "user", "content": "本轮工具预算已结束，请仅根据已返回的结果给出最终回答；若结果不足则明确说明，不再发起工具调用。"})
         active_model = first_bound if iteration == 0 else (model if iteration == 3 else bound)
         response = await active_model.ainvoke(history)
+        response = promote_text_tool_calls(response, tools)
         if usage is not None:
             usage.add(response)
         if iteration == 0 and required_tools and not called_required_tool(response, required_tools):

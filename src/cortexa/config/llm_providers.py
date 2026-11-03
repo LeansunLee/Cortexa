@@ -73,6 +73,15 @@ def get_provider_config(name: str | None = None, config_path: Path | None = None
     )
 
 
+def provider_exists(name: str | None, config_path: Path | None = None) -> bool:
+    """Whether a provider name exists in config.yaml; unknown names otherwise
+    only fail at message time with a mid-stream error."""
+    if not name:
+        return False
+    providers = _load_yaml_config(config_path).get("llm", {}).get("providers", {})
+    return name in providers
+
+
 def create_llm(name: str | None = None, config_path: Path | None = None) -> Any:
     cfg = get_provider_config(name, config_path)
     from cortexa.usage.collector import UsageCallback

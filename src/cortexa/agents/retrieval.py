@@ -74,17 +74,23 @@ def bounded_result(result, max_rows=1000, max_chars=120000):
             break
         rows.append(row)
     truncated = len(rows) < len(data)
+    row_count = result.get("row_count", len(data))
+    if not rows and not row_count:
+        notice = (
+            "查询成功但返回 0 行：请如实告知用户库中没有匹配的数据；"
+            "不得编造数值或参数，也不得声称稍后重试。"
+        )
+    elif truncated:
+        notice = "返回受限的查询结果；不得把样本行数当作业务总数。需要更多明细请缩小筛选范围。"
+    else:
+        notice = "已返回本次查询取得的全部数据行；字段名和值必须原样使用，不得补写未返回字段。分组数量必须使用 facets，不得自行数行推算。"
     return {
         "data": rows,
-        "row_count": result.get("row_count", len(data)),
+        "row_count": row_count,
         "returned_rows": len(rows),
         "truncated": truncated,
         "facets": _result_facets(data),
-        "notice": (
-            "返回受限的查询结果；不得把样本行数当作业务总数。需要更多明细请缩小筛选范围。"
-            if truncated else
-            "已返回本次查询取得的全部数据行；字段名和值必须原样使用，不得补写未返回字段。分组数量必须使用 facets，不得自行数行推算。"
-        ),
+        "notice": notice,
     }
 
 

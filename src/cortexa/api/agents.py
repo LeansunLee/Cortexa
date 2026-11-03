@@ -105,6 +105,16 @@ async def create_agent(
         if ws and ws.default_model_provider:
             model_name = ws.default_model_provider
 
+    # Reject unknown providers at creation; they otherwise only fail at
+    # message time with a mid-stream error (PDT-05).
+    if model_name:
+        from cortexa.config.llm_providers import provider_exists
+        if not provider_exists(model_name):
+            raise HTTPException(
+                status_code=422,
+                detail=f"模型供应商 '{model_name}' 不存在，请从可用供应商中选择",
+            )
+
     agent = Agent(
         workspace_id=uuid.UUID(workspace_id),
         name=payload.name,
@@ -211,6 +221,13 @@ async def update_agent(
         raise HTTPException(422, "业务角色不能为空")
     if "role" in update_data:
         update_data["role"] = role
+    if update_data.get("model") and update_data["model"] != agent.model:
+        from cortexa.config.llm_providers import provider_exists
+        if not provider_exists(update_data["model"]):
+            raise HTTPException(
+                status_code=422,
+                detail=f"模型供应商 '{update_data['model']}' 不存在，请从可用供应商中选择",
+            )
     if "collaboration" in update_data:
         if payload.collaboration is None:
             raise HTTPException(422, "协作配置不能为 null")

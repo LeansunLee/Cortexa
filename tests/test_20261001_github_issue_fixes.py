@@ -61,12 +61,21 @@ def test_delete_credential_in_use_is_rejected_with_409():
 
 
 def test_delete_capability_detaches_audit_rows_and_commits():
-    cap = SimpleNamespace(id=uuid.uuid4())
+    cap = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4())
     db = make_db(cap)
-    asyncio.run(delete_capability(cap.id, db))
+    asyncio.run(delete_capability(cap.id, db, str(cap.workspace_id)))
     assert db.execute.await_count == 1
     assert db.delete.await_args.args == (cap,)
     assert db.commit.await_count == 1
+
+
+def test_delete_capability_rejects_cross_workspace_caller():
+    cap = SimpleNamespace(id=uuid.uuid4(), workspace_id=uuid.uuid4())
+    db = make_db(cap)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(delete_capability(cap.id, db, str(uuid.uuid4())))
+    assert error.value.status_code == 403
+    assert db.delete.await_count == 0
 
 
 def test_explicit_memories_recall_below_generic_threshold():

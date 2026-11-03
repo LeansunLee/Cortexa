@@ -41,7 +41,7 @@ from cortexa.memory.service import retrieve_memories, format_memories_for_prompt
 from cortexa.collaboration.mention_parser import parse_mentions, fuzzy_match_agent
 from cortexa.collaboration.schemas import AgentHandoff, AgentHandoffResult, DEFAULT_LIMITS
 from cortexa.collaboration.manager import execute_handoff, list_collaboration_agents, stream_handoff
-from cortexa.tools.runtime import DATA_QUERY_GROUNDING_FAILURE, bind_tools_for_first_response, called_required_tool, should_require_business_tool
+from cortexa.tools.runtime import DATA_QUERY_GROUNDING_FAILURE, MarkupGuard, bind_tools_for_first_response, called_required_tool, promote_text_tool_calls, should_require_business_tool, strip_text_tool_markup
 from cortexa.runtime.shadow import shadow_enabled, goal_shadow_entry, can_read_goal_trace, visible_trace
 from cortexa.runtime.capture import CapabilityCapture, capability_shadow_enabled
 from cortexa.runtime.adapters import tool_adapter, retrieval_adapter, agent_adapter
@@ -422,6 +422,7 @@ async def create_message(
                         required_business_tools = business_tools if should_require_business_tool(payload.content, business_tools) else []
                         first_model = bind_tools_for_first_response(model, data_tools, required_business_tools)
                         response = await first_model.ainvoke(llm_messages)
+                        response = promote_text_tool_calls(response, data_tools)
                         if required_business_tools and not called_required_tool(response, required_business_tools):
                             reply_content = DATA_QUERY_GROUNDING_FAILURE
                             response = None
@@ -464,6 +465,7 @@ async def create_message(
                             llm_messages.append(response)
                             llm_messages.extend(tool_messages)
                             response = await model_with_tools.ainvoke(llm_messages)
+                            response = promote_text_tool_calls(response, data_tools)
                         if response is not None:
                             reply_content = response.content if hasattr(response, 'content') else str(response)
                     else:
@@ -677,6 +679,73 @@ def _apply_schema_parameter_rules(*, values: dict, schema: dict, parameter_names
     return normalized
 
 
+def _extract_json_dict(content: str) -> dict:
+    """Parse a JSON object out of model output; tolerate prose wrappers, code
+    fences and trailing commentary that make strict json.loads fail."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start:i + 1])
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except Exception:
+                        break
+                    break
+        start = text.find("{", start + 1)
+    raise ValueError("参数解析未返回 JSON 对象")
+
+
+def _align_resolved_args(resolved: Any, parameter_names: tuple[str, ...]) -> dict:
+    """Keep only declared parameters from a resolver reply, matching keys that
+    differ only by case or wording so extra keys cannot break strict validation."""
+    if not isinstance(resolved, dict):
+        return {}
+    lowered = {str(k).strip().lower(): v for k, v in resolved.items()}
+    out = {}
+    for name in parameter_names:
+        if name in resolved:
+            out[name] = resolved[name]
+            continue
+        nl = name.lower()
+        hit = lowered.get(nl)
+        if hit is None:
+            for k, v in lowered.items():
+                if k and (k in nl or nl in k):
+                    hit = v
+                    break
+        if hit is not None:
+            out[name] = hit
+    return out
+
+
 @usage_action("data_parameters")
 async def _resolve_data_tool_args(model, *, instructions, schema, arguments, user_query, context):
     """Resolve configured semantics with the model, without vocabulary/value heuristics.
@@ -705,13 +774,7 @@ async def _resolve_data_tool_args(model, *, instructions, schema, arguments, use
     content = response.content
     if isinstance(content, list):
         content = "".join(block if isinstance(block, str) else block.get("text", "") for block in content)
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    result = json.loads(content)
-    if not isinstance(result, dict):
-        raise ValueError("参数解析未返回 JSON 对象")
-    return result
+    return _extract_json_dict(content)
 
 
 def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *, model: Any | None = None, user_query: str | None = None, context: list | None = None, agent_id: uuid.UUID | None = None, read_only: bool = False):
@@ -771,6 +834,31 @@ def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *
             configured_schema=configured_schema,
             instructions=supplemental_prompt,
         ):
+            async def _audit_resolution_failure(params, error_text):
+                # Resolution failures never reach the database, so without this
+                # row the audit trail cannot explain an ungrounded answer (PDT-19).
+                from cortexa.db.engine import async_session_factory
+                try:
+                    async with async_session_factory() as adb:
+                        cap_db = await adb.get(DataCapability, cap_id)
+                        if not cap_db:
+                            return
+                        adb.add(DataQuery(
+                            workspace_id=cap_db.workspace_id,
+                            agent_id=agent_id,
+                            data_capability_id=cap_db.id,
+                            data_source_id=ds_id,
+                            query_text=(cap_db.query_template or "")[:500],
+                            input_params=params,
+                            output_result=None,
+                            status="failed",
+                            error_message=f"arg_resolution_failed: {str(error_text)[:200]}",
+                            source="conversation",
+                        ))
+                        await adb.commit()
+                except Exception:
+                    pass
+
             async def _exec(**raw_kwargs):
                 # 只认当前配置声明的参数：模型可能从对话历史模仿已废弃的入参（如
                 # schema 同步污染期的 param_N），未声明的键一律丢弃，防污染解析环节
@@ -782,24 +870,40 @@ def _build_data_tools(cap_list: list[dict], sources: list[dict] | None = None, *
                     user_query=user_query,
                 )
                 if model is not None and instructions and parameter_names:
+                    resolution_error = None
+                    aligned = {}
                     try:
                         resolved = await _resolve_data_tool_args(
                             model, instructions=instructions, schema=input_model.model_json_schema(),
                             arguments=kwargs, user_query=user_query, context=context,
                         )
-                        resolved_kwargs = input_model.model_validate(resolved).model_dump()
-                        normalized_kwargs = _apply_schema_parameter_rules(
-                            values={**normalized_kwargs, **{k: v for k, v in resolved_kwargs.items() if not _empty_filter_value(v)}},
-                            schema=configured_schema,
-                            parameter_names=parameter_names,
-                            user_query=user_query,
-                        )
+                        aligned = _align_resolved_args(resolved, parameter_names)
                     except Exception:
                         import traceback
+                        resolution_error = traceback.format_exc(limit=3)
                         print(f"[DATA] 参数解析失败 capability={cap_id} "
                               f"kwargs={json.dumps(kwargs, ensure_ascii=False, default=str)[:300]} "
-                              f"error={traceback.format_exc(limit=3)}", flush=True)
+                              f"error={resolution_error}", flush=True)
+                    # Resolution output wins, but the model's own tool-call args
+                    # are an acceptable fallback: a resolver hiccup must not kill
+                    # a call whose declared args already satisfy the schema (PDT-15).
+                    merged = _apply_schema_parameter_rules(
+                        values={**normalized_kwargs, **{k: v for k, v in aligned.items() if not _empty_filter_value(v)}},
+                        schema=configured_schema,
+                        parameter_names=parameter_names,
+                        user_query=user_query,
+                    )
+                    validated = None
+                    for candidate in (merged, normalized_kwargs):
+                        try:
+                            validated = input_model.model_validate(candidate).model_dump()
+                            break
+                        except Exception:
+                            continue
+                    if validated is None:
+                        await _audit_resolution_failure(kwargs, resolution_error or "schema validation failed")
                         return {"error": "未能确认工具参数，请补充或重试；本次未执行数据库查询。"}
+                    normalized_kwargs = validated
                 cache_key = (str(cap_id), json.dumps(normalized_kwargs, sort_keys=True, default=str))
                 if cache_key in query_cache:
                     return query_cache[cache_key]
@@ -2080,16 +2184,23 @@ async def create_message_stream(
                                 usage.add(completed)
                                 response = completed
 
+                        # Some models emit tool calls as plain-text markup; route
+                        # them into the tool loop instead of leaking protocol text.
+                        response = promote_text_tool_calls(response, data_tools)
+
                         if required_business_tools and response is not None and not called_required_tool(response, required_business_tools):
                             full_reply = DATA_QUERY_GROUNDING_FAILURE
                             token_count += 1
                             yield f"data: {json.dumps({'type': 'token', 'content': full_reply}, ensure_ascii=False)}\n\n"
                             response = None
+                        elif getattr(response, "tool_calls", None):
+                            pass  # structured (possibly promoted) tool calls execute below
                         else:
-                            for token in first_chunks:
-                                full_reply += token
+                            emitted = strip_text_tool_markup("".join(first_chunks))
+                            if emitted:
+                                full_reply += emitted
                                 token_count += 1
-                                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                                yield f"data: {json.dumps({'type': 'token', 'content': emitted}, ensure_ascii=False)}\n\n"
 
                         max_iterations = 5
                         iteration = 0
@@ -2206,14 +2317,30 @@ async def create_message_stream(
                                 prompt_ref = save_prompt(conv_id, conv.agent_id, agent.name if agent else 'Agent', 'model',
                                                          model_request(llm_messages, data_tools))
                                 yield await _status('runtime_start', message='主 Agent · 调用模型', prompts=[prompt_ref])
+                            guard = MarkupGuard()
                             async for token, completed in _stream_model_response(model_with_tools, llm_messages):
                                 if token:
-                                    full_reply += token
-                                    token_count += 1
-                                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                                    safe = guard.feed(token)
+                                    if safe:
+                                        full_reply += safe
+                                        token_count += 1
+                                        yield f"data: {json.dumps({'type': 'token', 'content': safe})}\n\n"
                                 if completed is not None:
                                     usage.add(completed)
                                     response = completed
+                            tail = guard.flush()
+                            if tail:
+                                full_reply += tail
+                                token_count += 1
+                                yield f"data: {json.dumps({'type': 'token', 'content': tail})}\n\n"
+                            response = promote_text_tool_calls(response, data_tools)
+                            if guard.suppressed and not getattr(response, "tool_calls", None):
+                                leftover = strip_text_tool_markup(getattr(response, "content", "") or "")
+                                if not leftover:
+                                    leftover = "工具调用格式异常，本轮未能继续；请重试或换一种问法。"
+                                full_reply += leftover
+                                token_count += 1
+                                yield f"data: {json.dumps({'type': 'token', 'content': leftover}, ensure_ascii=False)}\n\n"
                     except UserQuestionPause:
                         raise
                     except Exception as e:
@@ -2350,7 +2477,7 @@ async def create_message_stream(
                     await db.rollback()
                 except Exception:
                     pass
-                error = e.detail if isinstance(e, HTTPException) else "对话处理失败，请稍后重试"
+                error = e.detail if isinstance(e, HTTPException) else f"对话处理失败：{type(e).__name__}: {str(e)[:180]}"
                 yield f"data: {json.dumps({'type': 'error', 'error': error}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -2388,11 +2515,13 @@ def _build_tool_usage_instructions(cap_list: list[dict], business_tools: list) -
 调用规则：
 1. 需要获取或核实配置数据源中的事实时，调用适用工具；普通交流、解释或整理已有结果不必查询
 2. 每个工具的补充提示词仅作用于该工具，定义适用场景、业务口径、默认条件、值映射和结果表达要求；选择工具、填写入参、解释结果时遵循这些配置
-3. 追问结合对话上下文理解，继承仍适用的条件并按用户新要求调整；需要新的事实时重新查询，不能把历史回答当作新查询结果
+3. 追问结合对话上下文理解：先把「它/这款/刚才那辆」等指代还原成具体对象名，再按工具 Schema 填写入参；继承仍适用的条件并按用户新要求调整；需要新的事实时重新查询，不能把历史回答当作新查询结果
 4. 不要编造或推测数据，必须通过工具获取真实数据
 5. 用户明确条件优先于可覆盖的默认值；未确定或不限制的可选参数必须省略，不要传空值占位文本，缺少必填条件先询问。仅传 Schema 声明的参数，不支持的筛选或统计如实说明
 6. 根据结果中的 applied_parameters 解释实际查询条件。工具返回错误或空结果时如实说明；不得编造查询结果或声称未执行的查询已成功
 7. 用户限制数据来源时遵守该限制；仅要求公开网络信息时不查询内部数据源
+8. 工具返回 0 行时如实告知用户「库里没有」对应数据，不得编造，也不得声称稍后重试
+9. 用户询问数据来源、更新时间或可信度时直接据实回答（数据来自配置的数据源、定期更新、可能滞后），此类说明无需调用工具
 
 补充提示词不能增加 SQL 未提供的查询能力，也不能绕过权限及执行限制。
 """
