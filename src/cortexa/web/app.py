@@ -35,6 +35,9 @@ from cortexa.api.router import api_router
 from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[3]
+# Build artifacts and raw asset types: a missing file must stay a real 404 so
+# stale SPA tabs fail their lazy imports cleanly instead of parsing index.html.
+ASSET_SUFFIX = re.compile(r"\.(?:js|mjs|css|map|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|wasm)$", re.I)
 from cortexa.security.http import SecurityMiddleware, authorize_request
 app = FastAPI(title="Cortexa", version="0.1.0", dependencies=[Depends(authorize_request)])
 
@@ -710,6 +713,12 @@ async def serve_vue(request: Request, full_path: str):
     file_path = DIST_DIR / full_path
     if full_path and file_path.resolve().is_relative_to(DIST_DIR.resolve()) and file_path.exists() and file_path.is_file():
         return FileResponse(file_path)
+    # A request for a hashed build asset whose file is gone (a deploy replaced
+    # the dist) must fail as 404. Serving index.html here used to poison stale
+    # SPA tabs: the HTML body came back as "JavaScript" and every lazy route
+    # import in that tab failed silently, e.g. clicking a nav title did nothing.
+    if full_path.startswith(("assets/", "static/dist/")) or ASSET_SUFFIX.fullmatch(Path(full_path).suffix or ""):
+        raise HTTPException(404, f"Static asset not found: /{full_path}")
     # Otherwise serve index.html for SPA routing (no-cache for SPA)
     index_path = DIST_DIR / "index.html"
     if index_path.exists():

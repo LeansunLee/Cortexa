@@ -88,4 +88,19 @@ router.beforeEach(async to => {
   if (to.meta.superadmin && !auth.user?.is_superadmin) return '/'
   if (to.meta.admin && !canAdmin()) return '/'
 })
+
+// A deploy replaces the hashed build chunks; a long-lived tab still holds the
+// old URLs, so its first lazy navigation fails. Reload once to pick up the new
+// build instead of leaving the click silently dead (sessionStorage guards
+// against reload loops when the failure is not version drift).
+router.onError((error, to) => {
+  const message = String(error?.message || error)
+  if (!/dynamically imported module|error loading dynamically|Failed to fetch/.test(message)) return
+  const key = 'spa-chunk-reload:' + (to?.fullPath || '/')
+  try {
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch { /* private mode: reload anyway */ }
+  window.location.assign(to?.fullPath || '/')
+})
 export default router
