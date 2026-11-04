@@ -57,6 +57,18 @@ _SENSITIVE_DEBUG_KEYS = {"api_key", "apikey", "authorization", "password", "secr
 _CONFIG_PATH = Path(__file__).resolve().parents[3] / "config.yaml"
 
 
+def _dedupe_sources(sources):
+    """Order-preserving dedupe: the same work can arrive via conversation works
+    and this turn's references, which produced identical pills twice."""
+    seen, unique = set(), []
+    for item in sources:
+        key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
 def _conversation_debug_enabled() -> bool:
     """Read the runtime feature flag without importing the FastAPI app."""
     try:
@@ -474,7 +486,7 @@ async def create_message(
                 # Build metadata with sources
                 metadata = {}
                 if sources:
-                    metadata["sources"] = sources
+                    metadata["sources"] = _dedupe_sources(sources)
                 if artifact_created:
                     metadata["artifacts"] = await artifacts_store.summaries(artifact_created)
 
@@ -1136,7 +1148,7 @@ async def regenerate_message(
         conversation_id=conv_id,
         role="assistant",
         content=reply_content,
-        metadata_json={"stats": {**usage.stats(), "model": agent.model}, "sources": sources,
+        metadata_json={"stats": {**usage.stats(), "model": agent.model}, "sources": _dedupe_sources(sources),
                        **({"artifacts": await artifacts_store.summaries(artifact_created)} if artifact_created else {})},
     )
     db.add(assistant_msg)
@@ -1937,7 +1949,7 @@ async def create_message_stream(
 
                         # Build metadata matching normal conversation format
                         collab_meta = {
-                            "sources": sources,
+                            "sources": _dedupe_sources(sources),
                             "steps": process_steps,
                             "collaboration": True,
                             "target_agents": [cr["agent_name"] for cr in successful_results],
@@ -1983,7 +1995,7 @@ async def create_message_stream(
                             "type": "done",
                             "id": str(assistant_msg.id),
                             "content": final_answer,
-                            "sources": sources,
+                            "sources": _dedupe_sources(sources),
                             "stats": collab_meta["stats"],
                             "collaborations": collab_meta["collaborations"],
                             **({"debug_trace": visible_trace(debug_trace)} if debug_enabled else {}),
@@ -2386,7 +2398,7 @@ async def create_message_stream(
                     yield debug_event
 
                 # Save assistant message with stats
-                meta = {"sources": sources} if sources else {}
+                meta = {"sources": _dedupe_sources(sources)} if sources else {}
                 meta["steps"] = process_steps
                 meta["collaborations"] = [
                     {"agent_name": cr["agent_name"], "agent_avatar": cr["agent_avatar"],
