@@ -2443,7 +2443,7 @@ async def create_message_stream(
                 from cortexa.memory.integration import register_extraction
                 await register_extraction(db,conv_id,user_msg.id)
 
-                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': sources, 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'artifacts': meta['artifacts']} if artifact_created else {}), **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'id': str(assistant_msg.id), 'content': full_reply, 'sources': meta.get('sources', []), 'stats': meta['stats'], 'collaborations': meta['collaborations'], **({'artifacts': meta['artifacts']} if artifact_created else {}), **({'debug_trace': visible_trace(debug_trace)} if debug_enabled else {})}, ensure_ascii=False)}\n\n"
 
 
             except UserQuestionPause as pause:
