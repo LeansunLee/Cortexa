@@ -80,7 +80,7 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     from starlette.concurrency import run_in_threadpool
 
     from cortexa.db.meetings import TodoItem
-    from cortexa.db.models import DataQuery, Memory, Skill
+    from cortexa.db.models import Agent, AgentRun, AgentVersion, DataQuery, Memory, Skill
     from cortexa.projects.models import Project, ProjectActivity, ProjectMember
     from cortexa.tools.skills import delete_instructions
     from cortexa.work.models import Work, WorkActivity, WorkCandidate, WorkDeliverable
@@ -92,6 +92,7 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     skill_paths = (
         await db.scalars(select(Skill.instructions_path).where(Skill.workspace_id == ws.id))
     ).all()
+    agent_ids = select(Agent.id).where(Agent.workspace_id == ws.id)
     await db.execute(delete(WorkCandidate.__table__).where(WorkCandidate.__table__.c.workspace_id == ws.id))
     await db.execute(delete(WorkDeliverable.__table__).where(WorkDeliverable.__table__.c.workspace_id == ws.id))
     await db.execute(delete(WorkActivity.__table__).where(WorkActivity.__table__.c.workspace_id == ws.id))
@@ -99,7 +100,21 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     await db.execute(delete(ProjectActivity.__table__).where(ProjectActivity.__table__.c.workspace_id == ws.id))
     await db.execute(delete(ProjectMember.__table__).where(ProjectMember.__table__.c.workspace_id == ws.id))
     await db.execute(delete(Project.__table__).where(Project.__table__.c.workspace_id == ws.id))
-    await db.execute(delete(DataQuery.__table__).where(DataQuery.__table__.c.workspace_id == ws.id))
+    # Query audit rows can also dangle on the agent dimension (capability
+    # deletion only detaches the capability column).
+    await db.execute(
+        delete(DataQuery.__table__).where(
+            (DataQuery.__table__.c.workspace_id == ws.id) | (DataQuery.__table__.c.agent_id.in_(agent_ids))
+        )
+    )
+    # Published agents leave version/run rows whose FKs have no cascade, and
+    # goal snapshots RESTRICT agent deletion — clear them before the ORM
+    # cascade removes the agents themselves.
+    from cortexa.runtime.models import RuntimeGoal
+
+    await db.execute(delete(RuntimeGoal.__table__).where(RuntimeGoal.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(AgentRun.__table__).where(AgentRun.__table__.c.agent_id.in_(agent_ids)))
+    await db.execute(delete(AgentVersion.__table__).where(AgentVersion.__table__.c.agent_id.in_(agent_ids)))
     await db.execute(delete(Skill.__table__).where(Skill.__table__.c.workspace_id == ws.id))
     await db.execute(delete(TodoItem.__table__).where(TodoItem.__table__.c.workspace_id == ws.id))
     await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id == ws.id))
