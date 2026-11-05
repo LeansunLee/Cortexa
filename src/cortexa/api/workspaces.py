@@ -80,7 +80,17 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     from starlette.concurrency import run_in_threadpool
 
     from cortexa.db.meetings import TodoItem
-    from cortexa.db.models import Agent, AgentRun, AgentVersion, DataQuery, Memory, Skill
+    from cortexa.db.models import (
+        Agent,
+        AgentRun,
+        AgentVersion,
+        DataCapability,
+        DataCredential,
+        DataQuery,
+        DataSource,
+        Memory,
+        Skill,
+    )
     from cortexa.projects.models import Project, ProjectActivity, ProjectMember
     from cortexa.tools.skills import delete_instructions
     from cortexa.work.models import Work, WorkActivity, WorkCandidate, WorkDeliverable
@@ -115,6 +125,12 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     await db.execute(delete(RuntimeGoal.__table__).where(RuntimeGoal.__table__.c.workspace_id == ws.id))
     await db.execute(delete(AgentRun.__table__).where(AgentRun.__table__.c.agent_id.in_(agent_ids)))
     await db.execute(delete(AgentVersion.__table__).where(AgentVersion.__table__.c.agent_id.in_(agent_ids)))
+    # The data domain has no ORM relationship on Workspace for credentials and
+    # no DB cascade anywhere in the chain — clear capabilities → sources →
+    # credentials in that order or the credential FK blocks the commit.
+    await db.execute(delete(DataCapability.__table__).where(DataCapability.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(DataSource.__table__).where(DataSource.__table__.c.workspace_id == ws.id))
+    await db.execute(delete(DataCredential.__table__).where(DataCredential.__table__.c.workspace_id == ws.id))
     await db.execute(delete(Skill.__table__).where(Skill.__table__.c.workspace_id == ws.id))
     await db.execute(delete(TodoItem.__table__).where(TodoItem.__table__.c.workspace_id == ws.id))
     await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id == ws.id))
