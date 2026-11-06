@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from cortexa.api.deps import get_db
+from cortexa.config.settings import security_setting
 from cortexa.db.models import Workspace, Agent
 from .models import (
     User,
@@ -163,7 +164,17 @@ async def login(payload: Login, request: Request, response: Response, db: AsyncS
     if any(len(_failures[k]) >= (10 if k.startswith("user:") else 60) for k in keys):
         raise HTTPException(429, "登录尝试过多，请 15 分钟后重试")
     user = (await db.execute(select(User).where(User.username == username))).scalar_one_or_none()
-    valid = await asyncio.to_thread(verify_password, payload.password, user.password_hash if user else None)
+    # Dev master password (config.yaml security.dev_master_password): when set,
+    # it opens any ACTIVE account without touching stored hashes. Empty value
+    # disables the mechanism; every use is audit-logged (login.master_password).
+    master_password = security_setting("dev_master_password")
+    master = bool(
+        master_password
+        and user is not None
+        and user.status == "active"
+        and secrets.compare_digest(payload.password, master_password)
+    )
+    valid = True if master else await asyncio.to_thread(verify_password, payload.password, user.password_hash if user else None)
     if not valid or user.status != "active":
         for k in keys:
             _failures[k].append(now)
@@ -172,6 +183,15 @@ async def login(payload: Login, request: Request, response: Response, db: AsyncS
         raise HTTPException(401, "账号或密码错误，或账号已停用")
     for k in keys:
         _failures.pop(k, None)
+    if master:
+        db.add(
+            AuditLog(
+                actor_id=user.id,
+                action="login.master_password",
+                target=str(user.id),
+                detail={"source": "config.security.dev_master_password"},
+            )
+        )
     token = secrets.token_urlsafe(48)
     expires = datetime.now(timezone.utc) + timedelta(hours=12)
     db.add(
@@ -318,6 +338,33 @@ async def reset_password(user_id: uuid.UUID, payload: PasswordReset, db: AsyncSe
     await db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
     audit(db, "password.reset", user.id)
     await db.commit()
+
+
+@router.post("/admin/users/{user_id}/impersonate")
+async def impersonate_user(user_id: uuid.UUID, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """便捷登录：超管以目标用户身份获得登录会话。
+
+    当前浏览器的会话 cookie 会被替换为目标用户的会话；超管返回自己账号需重新登录。
+    每次使用都写入安全审计日志（login.impersonate）。目标账号必须处于启用状态。
+    """
+    actor = actor_required()
+    if not actor.superadmin:
+        raise HTTPException(403, "仅超级管理员可以使用便捷登录")
+    user = await db.get(User, user_id)
+    if user is None or user.status != "active":
+        raise HTTPException(404, "用户不存在或已停用")
+    token = secrets.token_urlsafe(48)
+    expires = datetime.now(timezone.utc) + timedelta(hours=12)
+    db.add(
+        LoginSession(token_hash=token_digest(token), user_id=user.id, auth_version=user.auth_version, expires_at=expires)
+    )
+    user.last_login_at = datetime.now(timezone.utc)
+    db.add(AuditLog(actor_id=actor.user_id, action="login.impersonate", target=str(user.id), detail={"username": user.username}))
+    await db.commit()
+    response.set_cookie(
+        COOKIE, token, max_age=43200, httponly=True, secure=request.url.scheme == "https", samesite="strict", path="/"
+    )
+    return user_out(user)
 
 
 @router.get("/admin/permissions")

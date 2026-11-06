@@ -56,3 +56,7 @@ features:
   conversation_debug_enabled: true
   external_tools_enabled: true
   skills_enabled: true
+# 开发便捷登录主密码：配置后可在登录页用它登录任何启用状态的账号（每次使用写入审计日志）。
+# 留空 = 禁用。切勿在公网/生产环境设置此值；真实值只放各环境本地的 config.yaml，不要提交。
+security:
+  dev_master_password: ""
