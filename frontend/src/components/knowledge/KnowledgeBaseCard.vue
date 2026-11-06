@@ -1,11 +1,13 @@
 <template>
-  <article class="knowledge-card" :class="{ 'menu-active': moreOpen, expanded }">
+  <Teleport to="body" :disabled="!fullscreen">
+  <article class="knowledge-card" :class="{ 'menu-active': moreOpen, expanded, fullscreen }">
     <header class="card-heading">
       <div class="folder-icon"><FolderOpen :size="22" /></div>
-      <div class="card-info"><div class="card-title-row"><button class="kb-root-link" type="button" :title="kb.name" @click="navigateToFolder(null)">{{ kb.name }}</button><div v-if="breadcrumbs.length" class="folder-breadcrumbs header-breadcrumbs"><template v-for="crumb in breadcrumbs" :key="crumb.id"><ChevronRight :size="13" /><button type="button" @click="navigateToFolder(crumb.id)">{{ crumb.name }}</button></template></div><button class="copy-path" type="button" :title="`复制：${readablePath}`" aria-label="复制当前知识库可读路径和 API 路径" @click="copyResourcePath"><Copy :size="14" /></button></div><p>{{ loading ? '正在读取文档…' : `${documents.length} 个文档` }}<span v-if="totalSize"> · {{ formatSize(totalSize) }}</span><span v-if="kb.description"> · {{ kb.description }}</span></p></div>
+      <div class="card-info"><div class="card-title-row"><button class="kb-root-link" type="button" :title="'全屏打开 ' + kb.name" @click="openFullscreen">{{ kb.name }}</button><div v-if="breadcrumbs.length" class="folder-breadcrumbs header-breadcrumbs"><template v-for="crumb in breadcrumbs" :key="crumb.id"><ChevronRight :size="13" /><button type="button" @click="navigateToFolder(crumb.id)">{{ crumb.name }}</button></template></div><button class="copy-path" type="button" :title="`复制：${readablePath}`" aria-label="复制当前知识库可读路径和 API 路径" @click="copyResourcePath"><Copy :size="14" /></button></div><p>{{ loading ? '正在读取文档…' : `${documents.length} 个文档` }}<span v-if="totalSize"> · {{ formatSize(totalSize) }}</span><span v-if="kb.description"> · {{ kb.description }}</span></p></div>
       <span class="kb-status" :class="{ disabled: !enabled }">{{ enabled ? '已启用' : '已禁用' }}</span>
       <slot name="actions" />
-      <button class="quiet" :aria-expanded="expanded" @click="expanded = !expanded"><ChevronUp v-if="expanded" :size="16" /><ChevronDown v-else :size="16" />{{ expanded ? '收起' : '展开' }}</button>
+      <button v-if="fullscreen" class="quiet fs-exit" type="button" aria-label="退出全屏" title="退出全屏（Esc）" @click="closeFullscreen"><Minimize2 :size="16" />退出全屏</button>
+      <button v-else class="quiet" :aria-expanded="expanded" @click="expanded = !expanded"><ChevronUp v-if="expanded" :size="16" /><ChevronDown v-else :size="16" />{{ expanded ? '收起' : '展开' }}</button>
       <div v-if="canManage" class="more-wrap" @click.stop><button class="icon" aria-label="更多知识库操作" title="更多" @click="toggleMenu('kb', kb.id)"><MoreHorizontal :size="18" /></button><div v-if="isMenuOpen('kb', kb.id)" class="resource-menu" role="menu"><button @click="openEditor('edit-kb', kb)"><Pencil :size="14" />编辑</button><button @click="toggleStatus(); closeMenu()"><Power :size="14" />{{ enabled ? '禁用知识库' : '启用知识库' }}</button><div class="menu-divider"></div><button class="danger" @click="confirmTarget = { type: 'kb', name: kb.name }; closeMenu()"><Trash2 :size="14" />删除知识库</button></div></div>
     </header>
     <div v-show="expanded" class="card-content">
@@ -120,10 +122,11 @@
       </div>
     </Teleport>
   </article>
+  </Teleport>
 </template>
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue'
-import { PanelLeftOpen, PanelLeftClose, FolderOpen, Folder, FolderTree, FolderPlus, FolderInput, ChevronDown, ChevronUp, ChevronRight, Trash2, Search, RefreshCw, Files, Eye, Share2, Download, CalendarClock, ScrollText, FilePlus, Pencil, Power, Plus, MoreHorizontal, Copy, X, Info } from 'lucide-vue-next'
+import { PanelLeftOpen, PanelLeftClose, FolderOpen, Folder, FolderTree, FolderPlus, FolderInput, ChevronDown, ChevronUp, ChevronRight, Trash2, Search, RefreshCw, Files, Eye, Share2, Download, CalendarClock, ScrollText, FilePlus, Pencil, Power, Plus, MoreHorizontal, Copy, X, Info, Minimize2 } from 'lucide-vue-next'
 import { knowledgeApi, workApi } from '../../api'
 import KnowledgeUpload from './KnowledgeUpload.vue'
 import LlmContextHint from '../LlmContextHint.vue'
@@ -141,6 +144,29 @@ const pageTabActive = inject('pageTabActive', true)
 const editorForm = ref(null)
 let editorPreviousFocus
 const documents = ref([]), loading = ref(false), loadError = ref(''), expanded = ref(false), uploading = ref(false), search = ref(''), typeFilter = ref(null), listPage = ref(1), preview = ref(null), confirmTarget = ref(null), deleting = ref(false)
+// 全屏浏览：点知识库标题把整张卡（展开后的 UI）Teleport 到 body 全屏化。
+const fullscreen = ref(false)
+function openFullscreen() {
+  if (fullscreen.value) { navigateToFolder(null); return }
+  expanded.value = true
+  fullscreen.value = true
+}
+function closeFullscreen() { fullscreen.value = false }
+function hasNestedOverlay() {
+  return Boolean(preview.value || editor.value || confirmTarget.value || infoTarget.value ||
+    summaryTarget.value || validityTarget.value || pushTarget.value || createTextDocTarget.value)
+}
+function handleFullscreenKeydown(event) {
+  if (event.key !== 'Escape' || !fullscreen.value || hasNestedOverlay()) return
+  closeFullscreen()
+}
+watch(fullscreen, value => {
+  document.body.style.overflow = value ? 'hidden' : ''
+  if (value) document.addEventListener('keydown', handleFullscreenKeydown, true)
+  else document.removeEventListener('keydown', handleFullscreenKeydown, true)
+})
+// 后台页签保持挂载（v-show+inert），但 Teleport 到 body 的全屏卡不受 inert 约束，必须随页签失活退出。
+watch(() => pageTabActive?.value === false, inactive => { if (inactive) fullscreen.value = false })
 const selectedIds = ref([]), selectedFolderIds = ref([]), pushTarget = ref(null), validityTarget = ref(null), downloading = ref(null)
 const summaryTarget = ref(null), uploadRef = ref(null)
 const createTextDocTarget = ref(false)
@@ -369,7 +395,7 @@ async function retryIndex(doc) {
   catch (error) { toast(error.response?.data?.detail || '无法启动索引，请重试', 'error') }
 }
 let pollTimer, disposed = false
-onBeforeUnmount(() => { disposed = true; clearTimeout(pollTimer) })
+onBeforeUnmount(() => { disposed = true; clearTimeout(pollTimer); document.removeEventListener('keydown', handleFullscreenKeydown, true); if (fullscreen.value) document.body.style.overflow = '' })
 let requestId = 0
 async function loadDocs() {
   const id = ++requestId
@@ -472,6 +498,11 @@ onBeforeUnmount(() => { document.removeEventListener('click', handleDocumentClic
 .editor-actions .btn{min-height:36px;justify-content:center}
 @media(max-width:760px){.resource-layout{grid-template-columns:1fr;align-items:start}.folder-tree{border-right:0;border-bottom:1px solid var(--border,#eef2f7);padding:0 0 10px;max-height:190px;overflow:auto}.tree-root,.tree-item{display:inline-flex;width:auto;min-width:150px;margin-right:3px}.folder-tree{white-space:nowrap}}@media(max-width:640px){.folder-kind{display:none}.resource-menu{position:fixed;right:12px;top:auto;margin-top:4px}}
 .knowledge-card{position:relative;z-index:1;overflow:visible}.knowledge-card.menu-active{z-index:30}
+.knowledge-card.fullscreen{position:fixed;inset:0;z-index:1200;border:0;border-radius:0;overflow-y:auto;padding-bottom:48px;box-shadow:none}
+.knowledge-card.fullscreen .card-heading{position:sticky;top:0;z-index:12;background:var(--surface,#fff);border-bottom:1px solid var(--border,#e2e8f0);padding:15px 28px}
+.knowledge-card.fullscreen .card-content{padding:16px 28px 0}
+.knowledge-card.fullscreen .resource-menu{z-index:1100}
+.fs-exit{color:var(--text2,#475569)}
 .resource-layout{position:relative;z-index:1}.document-list{position:relative;min-width:0}.folder-row,.document-row{position:relative}
 .resource-menu{z-index:1000}
 .list-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;width:100%;box-sizing:border-box;padding:14px 0 0;border-top:1px solid var(--border,#eee);font-size:12px;color:var(--text3,#64748b)}
