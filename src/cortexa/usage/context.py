@@ -12,7 +12,6 @@ SOURCES = {
     "config": "configuration",
     "conversations": "conversation",
     "collaboration": "conversation",
-    "meetings": "meeting",
     "agents": "system",
     "agent-operations": "agent_operations",
     "knowledge": "knowledge",

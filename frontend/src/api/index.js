@@ -181,23 +181,6 @@ export const conversationApi = {
 }
 
 
-// Meeting API
-export const meetingApi = {
-  list: () => api.get('/meetings'),
-  create: (data) => api.post('/meetings', data),
-  detail: (id) => api.get(`/meetings/${id}`),
-  messages: (id) => api.get(`/meetings/${id}/messages`),
-  conclusion: (id) => api.get(`/meetings/${id}/conclusion`),
-  todos: (id) => api.get(`/meetings/${id}/todos`),
-  start: (id) => api.post(`/meetings/${id}/start`),
-  cancel: (id) => api.post(`/meetings/${id}/cancel`),
-  uploadFile: (file) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    return api.post('/meetings/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-  },
-}
-
 // Memory API
 export const memoryApi = {
   list: (params = {}) => api.get('/memories', { params }),

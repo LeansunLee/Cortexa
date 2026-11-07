@@ -9,7 +9,6 @@ from fastapi import HTTPException, Request
 from starlette.responses import JSONResponse
 from cortexa.db.engine import async_session_factory
 from cortexa.db.models import Conversation, Agent
-from cortexa.db.meetings import Meeting, MeetingParticipant
 from sqlalchemy import select
 from .access import current_actor, actor_required, load_actor, require, require_agent_use, raw
 from .models import ProtectedUpload
@@ -274,40 +273,6 @@ async def authorize_request(request: Request):
             if method == "POST" and request.headers.get("content-type", "").startswith("application/json"):
                 body = await request.json()
                 await validate_attachments(db, body.get("attachments") or [], conv_id)
-    elif module == "meetings":
-        require("meeting.use")
-        require("agent.use")
-        actor.runtime = True
-        async with async_session_factory() as db:
-            if len(parts) > 1 and parts[1] != "upload":
-                try:
-                    meeting = await db.get(Meeting, uuid.UUID(parts[1]))
-                except ValueError:
-                    raise HTTPException(422)
-                if meeting is None:
-                    raise HTTPException(404, "会议不存在或无权访问")
-                if parts[-1] in ("start", "stream"):
-                    ids = (
-                        await db.execute(
-                            select(MeetingParticipant.agent_id).where(MeetingParticipant.meeting_id == meeting.id)
-                        )
-                    ).scalars()
-                    for ident in ids:
-                        if ident:
-                            await require_agent_use(db, ident)
-            elif len(parts) == 1 and method == "POST":
-                body = await request.json()
-                ids = body.get("participant_agent_ids") or []
-                if body.get("host_agent_id"):
-                    ids = [*ids, body["host_agent_id"]]
-                if not ids:
-                    raise HTTPException(422, "请至少选择一个 Agent")
-                for ident in ids:
-                    try:
-                        await require_agent_use(db, uuid.UUID(ident))
-                    except ValueError:
-                        raise HTTPException(422)
-                await validate_attachments(db, body.get("attachments") or [])
     else:
         code = {
             "data": "data.manage",

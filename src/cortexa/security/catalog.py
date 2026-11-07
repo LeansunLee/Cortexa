@@ -25,7 +25,6 @@ SPACE = {
     "tools.manage": "管理工具",
     "workflows.manage": "管理工作流",
     "tasks.manage": "管理自己的任务",
-    "meeting.use": "创建和使用自己的会议",
     "memory.manage": "提交工作成果记忆沉淀",
 }
 PERMISSIONS = {**SYSTEM, **SPACE}
@@ -43,9 +42,8 @@ BUILTINS = [
             "agent.use",
             "agent.operate",
             "knowledge.manage",
-            "meeting.use",
             "memory.manage",
         ],
     ),
-    ("member", "普通使用者", "workspace", ["agent.use", "meeting.use", "memory.manage", "knowledge.use"]),
+    ("member", "普通使用者", "workspace", ["agent.use", "memory.manage", "knowledge.use"]),
 ]

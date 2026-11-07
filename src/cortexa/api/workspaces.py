@@ -75,11 +75,10 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     # Pre-clean those rows here; anything unforeseen still surfaces as a 409.
     from pathlib import Path
 
-    from sqlalchemy import delete
+    from sqlalchemy import delete, text
     from sqlalchemy.exc import IntegrityError
     from starlette.concurrency import run_in_threadpool
 
-    from cortexa.db.meetings import TodoItem
     from cortexa.db.models import (
         Agent,
         AgentRun,
@@ -132,7 +131,17 @@ async def delete_workspace(workspace_id: uuid.UUID, db: AsyncSession = Depends(g
     await db.execute(delete(DataSource.__table__).where(DataSource.__table__.c.workspace_id == ws.id))
     await db.execute(delete(DataCredential.__table__).where(DataCredential.__table__.c.workspace_id == ws.id))
     await db.execute(delete(Skill.__table__).where(Skill.__table__.c.workspace_id == ws.id))
-    await db.execute(delete(TodoItem.__table__).where(TodoItem.__table__.c.workspace_id == ws.id))
+    # The meeting feature was removed; its tables remain in the database
+    # without cascades, so clear their rows before the workspace row goes.
+    for statement in (
+        "DELETE FROM t_meeting_participants WHERE meeting_id IN (SELECT id FROM t_meetings WHERE workspace_id = :wid)",
+        "DELETE FROM t_meeting_rounds WHERE meeting_id IN (SELECT id FROM t_meetings WHERE workspace_id = :wid)",
+        "DELETE FROM t_meeting_messages WHERE meeting_id IN (SELECT id FROM t_meetings WHERE workspace_id = :wid)",
+        "DELETE FROM t_meeting_conclusions WHERE meeting_id IN (SELECT id FROM t_meetings WHERE workspace_id = :wid)",
+        "DELETE FROM t_todo_items WHERE workspace_id = :wid",
+        "DELETE FROM t_meetings WHERE workspace_id = :wid",
+    ):
+        await db.execute(text(statement), {"wid": ws.id})
     await db.execute(delete(Memory.__table__).where(Memory.__table__.c.workspace_id == ws.id))
     await db.delete(ws)
     try:

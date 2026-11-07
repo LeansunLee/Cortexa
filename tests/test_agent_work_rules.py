@@ -2,7 +2,6 @@ import pytest
 from cortexa.agents.rules import merge_work_rules
 from cortexa.agents.prompts import build_system_prompt
 from cortexa.api.agents import _build_system_prompt as agent_test_prompt
-from cortexa.api.meetings import _build_agent_meeting_prompt, _build_host_summary_prompt
 from cortexa.api.schemas import AgentCreate, AgentUpdate, AgentOut
 from cortexa.db.models import Agent
 
@@ -28,12 +27,10 @@ def test_api_uses_single_field_and_accepts_legacy_payload_without_loss():
     assert set(Agent.__table__.columns.keys()).isdisjoint({'behavior', 'boundaries'})
 
 
-def test_work_rules_reach_chat_test_and_meeting_prompts():
+def test_work_rules_reach_chat_and_test_prompts():
     rules = '先核实数据；缺失时邀请具备查询能力的 Agent；不得编造实绩。'
     agent = Agent(name='Peter', role='营销负责人', work_rules=rules)
-    for prompt in (build_system_prompt(agent), agent_test_prompt(agent),
-                   _build_agent_meeting_prompt(agent, '制定销售计划', 'analysis'),
-                   _build_host_summary_prompt(agent, '制定销售计划', 1, 2)):
+    for prompt in (build_system_prompt(agent), agent_test_prompt(agent)):
         assert '工作规则' in prompt
         assert rules in prompt
 

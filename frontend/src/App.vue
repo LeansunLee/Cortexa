@@ -20,10 +20,6 @@
           <MessageSquare :size="18" />
           <span class="nav-text">对话</span>
         </router-link>
-        <router-link v-if="can('meeting.use')" to="/meetings" class="nav-item" title="会议" aria-label="会议">
-          <Calendar :size="18" />
-          <span class="nav-text">会议</span>
-        </router-link>
         <router-link v-if="can('agent.use')" to="/my-agents" class="nav-item" title="我的 Agent" aria-label="我的 Agent">
           <Bot :size="18" />
           <span class="nav-text">我的 Agent</span>
@@ -145,7 +141,7 @@ function toggleSidebar() {
 }
 const pageTitles = {
   '/model-usage': '模型用量',
-  '/': '首页', '/projects': '项目', '/works': '工作', '/chat': '对话', '/meetings': '会议',
+  '/': '首页', '/projects': '项目', '/works': '工作', '/chat': '对话',
   '/my-agents': '我的 Agent', '/workspaces': '工作空间', '/agents': '智能体',
   '/knowledge': '空间知识库', '/data-sources': '数据源', '/settings': '系统配置',
   '/personalization': '个性化设置', '/access': '用户与权限',

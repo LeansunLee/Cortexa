@@ -37,12 +37,6 @@ const routes = [
     component: () => import('../views/Agents.vue')
   },
   {
-    path: '/meetings',
-    name: 'Meetings',
-    meta: { permission: 'meeting.use' },
-    component: () => import('../views/Meetings.vue')
-  },
-  {
     path: '/knowledge',
     name: 'Knowledge',
     meta: { anyPermissions: ['knowledge.manage', 'knowledge.use'] },

@@ -6,11 +6,10 @@ from sqlalchemy import event, select, inspect, and_
 from sqlalchemy.orm import Session, with_loader_criteria
 from cortexa.db.engine import Base
 from cortexa.db import models as m
-from cortexa.db import meetings as mm
 from .access import current_actor
 from cortexa.runtime.models import RuntimeGoal
 
-PRIVATE = (m.Conversation, mm.Meeting, m.Task, m.AgentRun, m.TaskRun, m.DataQuery, RuntimeGoal)
+PRIVATE = (m.Conversation, m.Task, m.AgentRun, m.TaskRun, m.DataQuery, RuntimeGoal)
 
 
 def criteria(actor):
@@ -68,11 +67,6 @@ def criteria(actor):
         (m.TaskRun, "task_id", m.Task),
         (m.DataSchema, "data_source_id", m.DataSource),
         (m.AgentDataBinding, "agent_id", m.Agent),
-        (mm.MeetingParticipant, "meeting_id", mm.Meeting),
-        (mm.MeetingRound, "meeting_id", mm.Meeting),
-        (mm.MeetingMessage, "meeting_id", mm.Meeting),
-        (mm.MeetingConclusion, "meeting_id", mm.Meeting),
-        (mm.TodoItem, "meeting_id", mm.Meeting),
     ]
     for child, key, parent in children:
         condition = getattr(child, key).in_(select(parent.__table__.c.id).where(rules[parent]))
