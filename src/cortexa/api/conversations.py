@@ -1975,6 +1975,7 @@ async def create_message_stream(
                             ],
                             **({"debug_trace": debug_trace} if debug_trace else {}),
                         }
+                        collab_meta["execution_usage"] = [{"agent_name": agent.name, "agent_id": str(agent.id), **collab_meta["stats"]}]
 
                         # Save assistant message to DB
                         assistant_msg = ConversationMessage(
@@ -2418,6 +2419,8 @@ async def create_message_stream(
                     **usage.stats(),
                     "model": agent.model,
                 }
+                # Same shape as the goal runtime so the timeline can show the breakdown.
+                meta["execution_usage"] = [{"agent_name": agent.name, "agent_id": str(agent.id), **usage.stats()}]
                 from cortexa.memory.retrieval import last_trace
                 trace=last_trace.get()
                 if trace and trace.get("agent_id")==str(agent.id):

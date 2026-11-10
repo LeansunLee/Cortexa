@@ -10,7 +10,7 @@
       <details v-if="reported.length" class="flow-usage">
         <summary>输入 {{ number(input) }} · 输出 {{ number(output) }} <span>查看各 Agent 消耗</span></summary>
         <div v-for="agent in agentUsage" :key="agent.key" class="usage-row"><span>{{ agent.name }}</span><span>输入 {{ number(agent.input) }} / 输出 {{ number(agent.output) }}</span><strong>{{ number(agent.total) }}</strong></div>
-        <p v-if="reported.length < usage.length" class="flow-note">部分模型未返回用量；仅统计供应商已报告的 Token。</p>
+        <p v-if="reported.length && reported.length < usageRows.length" class="flow-note">部分模型未返回用量；仅统计供应商已报告的 Token。</p>
       </details>
       <div v-if="notices.length" class="flow-budget" aria-label="本轮预算说明">
         <span class="flow-budget-title">本轮预算说明</span>
@@ -61,10 +61,16 @@ import { Activity, Target, FileText, MessageSquare, Check, Loader, AlertCircle, 
 import PromptTag from './PromptTag.vue'
 import DataResultTag from './DataResultTag.vue'
 import { stepOutcome } from '../utils/statusSteps'
-const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, notices: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, formatMessage: { type: Function, required: true } })
+const props = defineProps({ steps: { type: Array, default: () => [] }, goal: { type: String, default: '' }, usage: { type: Array, default: () => [] }, notices: { type: Array, default: () => [] }, live: Boolean, conversationId: String, canInspectPrompts: Boolean, stats: { type: Object, default: null }, formatMessage: { type: Function, required: true } })
 defineEmits(['source'])
 const dataModal = ref(null)
 const hasData = step => step.data_result && typeof step.data_result === 'object' && Array.isArray(step.data_result.rows)
+// Plain chat rounds only persist aggregate `stats`; normalize it into the goal-style usage rows.
+const usageRows = computed(() => {
+  if (props.usage.length) return props.usage
+  const s = props.stats
+  return s && s.token_count != null ? [{ agent_name: '主 Agent', agent_id: 'stats', ...s }] : []
+})
 const normalizeData = step => {
   const raw = step.data_result
   const rows = raw.rows || []
@@ -72,7 +78,7 @@ const normalizeData = step => {
   return { ...raw, rows, columns }
 }
 const cell = value => value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value))
-const reported = computed(() => props.usage.filter(item => item.token_count != null))
+const reported = computed(() => usageRows.value.filter(item => item.token_count != null))
 const total = computed(() => reported.value.reduce((sum, item) => sum + item.token_count, 0))
 const input = computed(() => reported.value.reduce((sum, item) => sum + (item.input_tokens || 0), 0))
 const output = computed(() => reported.value.reduce((sum, item) => sum + (item.output_tokens || 0), 0))

@@ -150,7 +150,7 @@
               <div class="msg-col-assistant">
                 <RuntimeTimeline v-if="(msg._steps || msg.metadata_json?.steps)?.length || msg.metadata_json?.budget_notices?.length"
                   :steps="msg._steps || msg.metadata_json.steps" :goal="msg.metadata_json?.execution_goal || ''"
-                  :usage="msg.metadata_json?.execution_usage || []" :notices="msg.metadata_json?.budget_notices || []" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
+                  :usage="msg.metadata_json?.execution_usage || []" :stats="msg.metadata_json?.stats || null" :notices="msg.metadata_json?.budget_notices || []" :format-message="formatMessage" :conversation-id="currentConvId" :can-inspect-prompts="debugEnabled"
                   @source="source => showSources({ metadata_json: { sources: [source] } })" />
                 <!-- Collaboration Card (completed) -->
                 <AgentCollaborationCard
@@ -1604,7 +1604,7 @@ const sendMessage = async (decision = null) => {
             if (event.budget_notices) meta.budget_notices = event.budget_notices
             meta.project_ids = event.project_ids || (projectIds.length ? projectIds : (event.sources || []).filter(s=>s.type==='project').map(s=>s.project_id))
             meta.execution_goal = displayText
-            meta.execution_usage = Object.values(session.runtimeUsage || {})
+            meta.execution_usage = Object.values(session.runtimeUsage || {}).length ? Object.values(session.runtimeUsage || {}) : (event.stats?.token_count != null ? [{ agent_name: '主 Agent', agent_id: 'main', ...event.stats }] : [])
             if (event.collaborations?.length) meta.collaborations = event.collaborations
             if (event.artifacts?.length) { meta.artifacts = event.artifacts; refreshWorkspace() }
             if (event.debug_trace?.length) meta.debug_trace = event.debug_trace
