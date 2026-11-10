@@ -2387,6 +2387,13 @@ async def create_message_stream(
                             token_count += 1
                             yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
+                # Reasoning models can spend the whole max_tokens budget on
+                # reasoning and emit no visible text; never persist a silent empty reply.
+                if not full_reply:
+                    full_reply = "⚠️ 本轮模型推理超出了输出上限，未能生成回答。请重试，或简化问题后重试。"
+                    token_count += 1
+                    yield f"data: {json.dumps({'type': 'token', 'content': full_reply})}\n\n"
+
                 duration_ms = round((time.time() - start_time) * 1000)
 
                 debug_event = await _debug(
