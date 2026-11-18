@@ -69,7 +69,33 @@ async def create(data:ProjectInput,db:AsyncSession=Depends(get_db_session)):
 async def detail(ident:uuid.UUID,db:AsyncSession=Depends(get_db_session)):
     p=await s.get(db,ident)
     members=await db.scalars(select(ProjectMember.user_id).where(ProjectMember.project_id == p.id))
-    return {**await s.output(db,p),'member_ids':list(members)}
+    return {**await s.output(db,p),'member_ids':list(members),'agent_grants':await s.agent_grants(db,p.id)}
+
+
+class AgentGrantInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    agent_id: uuid.UUID
+    level: Literal['manage','use'] = 'use'
+
+
+class AgentGrantsPayload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    grants: list[AgentGrantInput] = Field(default_factory=list,max_length=100)
+
+
+@router.get('/{ident}/agent-grants')
+async def agent_grants(ident:uuid.UUID,db:AsyncSession=Depends(get_db_session)):
+    await s.get(db,ident)
+    return await s.agent_grants(db,ident)
+
+
+@router.put('/{ident}/agent-grants')
+async def replace_agent_grants(ident:uuid.UUID,data:AgentGrantsPayload,db:AsyncSession=Depends(get_db_session)):
+    p=await s.get(db,ident,manage=True,lock=True)
+    items=[{'agent_id':g.agent_id,'level':g.level} for g in data.grants]
+    await s.replace_agent_grants(db,p,items)
+    await db.flush()
+    return await s.agent_grants(db,p.id)
 
 
 @router.patch('/{ident}')

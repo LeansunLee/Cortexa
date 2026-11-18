@@ -2,10 +2,14 @@
 import uuid
 from datetime import datetime, UTC
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select, func
+from sqlalchemy import and_, delete, or_, select, func
 from cortexa.work import service as work
 from cortexa.work.models import Work, WorkDeliverable
-from .models import Project, ProjectMember, ProjectActivity
+from .models import Project, ProjectActivity, ProjectAgentGrant, ProjectMember
+
+# 项目-Agent 授权级别：manage 蕴含 use
+LEVELS = {'use': 1, 'manage': 2}
+LEVEL_LABELS = {'use': '使用', 'manage': '管理'}
 
 
 def visibility(a):
@@ -41,6 +45,57 @@ async def activity(db, p, action, data=None):
         actor_id=work.actor().user_id, action=action, data_json=data or {}))
 
 
+def grant_allows(level, need):
+    """manage 蕴含 use；无授权（None）不满足任何级别。"""
+    return LEVELS.get(level or '', 0) >= LEVELS.get(need, 0)
+
+
+async def agent_grant_level(db, project_id, agent_id) -> str | None:
+    return await db.scalar(select(ProjectAgentGrant.level).where(
+        ProjectAgentGrant.project_id == project_id, ProjectAgentGrant.agent_id == agent_id))
+
+
+async def require_agent_grant(db, project_id, agent_id, need='use'):
+    level = await agent_grant_level(db, project_id, agent_id)
+    if not grant_allows(level, need):
+        raise HTTPException(403, f"本 Agent 未获得该项目的{LEVEL_LABELS[need]}授权，请在项目「Agent 授权」中添加后重试")
+    return level
+
+
+async def agent_grants(db, project_id):
+    from cortexa.db.models import Agent
+    rows = (await db.execute(
+        select(ProjectAgentGrant, Agent.name, Agent.avatar)
+        .join(Agent, Agent.id == ProjectAgentGrant.agent_id)
+        .where(ProjectAgentGrant.project_id == project_id)
+        .order_by(ProjectAgentGrant.created_at))).all()
+    return [{'agent_id': g.agent_id, 'agent_name': name or '', 'agent_avatar': avatar, 'level': g.level}
+            for g, name, avatar in rows]
+
+
+async def replace_agent_grants(db, project, items):
+    """整体替换项目的 Agent 授权（仿 member_ids 模式）；返回授权列表。"""
+    deduped = {}
+    for item in items:
+        aid, level = item.get('agent_id'), item.get('level', 'use')
+        if level not in LEVELS:
+            raise HTTPException(422, f"无效的权限级别：{level}（仅支持 manage/use）")
+        deduped[aid] = level  # 同一 Agent 后写的级别生效
+    cleaned = list(deduped.items())
+    from cortexa.db.models import Agent
+    if cleaned:
+        known = set(await db.scalars(select(Agent.id).where(
+            Agent.id.in_([aid for aid, _ in cleaned]), Agent.workspace_id == project.workspace_id)))
+        missing = [str(aid) for aid, _ in cleaned if aid not in known]
+        if missing:
+            raise HTTPException(422, "以下 Agent 不属于当前工作空间：" + "、".join(missing))
+    await db.execute(delete(ProjectAgentGrant).where(ProjectAgentGrant.project_id == project.id))
+    for aid, level in cleaned:
+        db.add(ProjectAgentGrant(workspace_id=project.workspace_id, project_id=project.id, agent_id=aid, level=level))
+    await activity(db, project, 'agent_grants_changed', {'agents': [{'agent_id': str(a), 'level': l} for a, l in cleaned]})
+    return cleaned
+
+
 async def output(db, p):
     counts = dict((await db.execute(select(Work.status, func.count()).where(
         Work.project_id == p.id, work.visibility(work.actor())).group_by(Work.status))).all())
@@ -53,11 +108,20 @@ async def output(db, p):
         'statistics_scope':'按可见工作统计'}
 
 
-async def summaries(db, ids, *, budget=6000):
+async def summaries(db, ids, *, budget=6000, agent_id=None):
     import json
     result, refs = [], []
     for ident in dict.fromkeys(str(i) for i in ids):
         p = await get(db, uuid.UUID(ident))
+        if agent_id is not None and not grant_allows(await agent_grant_level(db, p.id, agent_id), 'use'):
+            # 严格授权：未获得使用授权的项目不注入任何内容，只留一行说明供 Agent 向用户转达。
+            notice = json.dumps({'project_id': ident,
+                'notice': '本 Agent 未获得该项目的使用授权，项目内容未注入；请提示用户在项目「Agent 授权」中添加'}, ensure_ascii=False)
+            budget -= len(notice.encode())
+            if budget < 0:
+                raise HTTPException(422, '项目引用超出本轮上下文预算，请减少引用')
+            result.append(notice)
+            continue
         rows = (await db.scalars(select(Work).where(Work.project_id == p.id,
             work.visibility(work.actor())).order_by(Work.updated_at.desc()).limit(20))).all()
         from cortexa.security.models import User

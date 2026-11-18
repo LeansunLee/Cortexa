@@ -18,7 +18,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import ProgrammingError
 
 from cortexa.agents.prompts import build_system_prompt
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.db.models import AgentCollaboration, Conversation, ConversationMessage, Workspace
 from cortexa.runtime.bindings import prepare_bindings
 from cortexa.runtime.budget_notices import budget_notices
@@ -328,7 +328,7 @@ async def create_goal_stream(conv_id: uuid.UUID, request: GoalRequest):
     payload = {"goal": goal.model_dump(mode="json"), "messages": [], "sources": [], "observations": [], "cache": {}}
     from cortexa.projects.service import summaries
     async with store.sessions() as db:
-        project_text, project_refs = await summaries(db, request.project_ids, budget=min(6000, state.limits.context_tokens // 4))
+        project_text, project_refs = await summaries(db, request.project_ids, budget=min(6000, state.limits.context_tokens // 4), agent_id=agent.id)
     payload["project_ids"] = [str(i) for i in request.project_ids]
     payload["conversation_id"] = str(conv_id)
     payload["project_context"] = project_text
@@ -671,7 +671,7 @@ def stream_response(row, state, payload, agent, workspace):
                             if payload.get("project_ids"):
                                 from cortexa.projects.service import summaries
                                 from cortexa.agents.prompts import reference_message
-                                text, _ = await summaries(db, payload["project_ids"], budget=min(6000, state.limits.context_tokens // 4))
+                                text, _ = await summaries(db, payload["project_ids"], budget=min(6000, state.limits.context_tokens // 4), agent_id=agent.id)
                                 messages.append(reference_message("本轮引用项目（仅可见内容，未验收成果需标注）", text))
                             messages.append({"role": "user", "content": payload["goal"]["raw_request"]})
                             messages.extend({"role": "user", "content": x} for x in payload.get("clarifications", []))
@@ -692,7 +692,7 @@ def stream_response(row, state, payload, agent, workspace):
                         payload["collaboration_runtime"] = True
                     required = [t.name for t in business] if should_require_business_tool(query, business) else []
                     await loop.save()
-                    model = create_llm(agent.model)
+                    model = create_llm_for(agent, "goal_execution")
                     if hasattr(model, "max_retries"):
                         model = model.model_copy(update={"max_retries": 0})
                     async def drive_loop():

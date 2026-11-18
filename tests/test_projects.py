@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from cortexa.projects import service as s
-from cortexa.projects.models import Project, ProjectMember, ProjectActivity
+from cortexa.projects.models import Project, ProjectAgentGrant, ProjectMember, ProjectActivity
 from cortexa.api import projects as api
 from cortexa.work.models import Work, WorkDeliverable
 from cortexa.work.schemas import WorkInput
@@ -91,6 +91,9 @@ def test_project_read_only_tool_and_goal_reference(tmp_path,monkeypatch):
                 db.add(Membership(user_id=ctx.actor.user_id,workspace_id=ctx.actor.workspace_id));await db.commit()
                 p=await api.save(db,api.ProjectInput(title='项目引用测试',goal='REFERENCE_GOAL',owner_id=ctx.actor.user_id))
                 await db.commit();pid=p.id
+                # 2026-11-18 项目-Agent 权限：Agent 需获得授权才能读取项目
+                await s.replace_agent_grants(db,await s.get(db,pid,lock=True),[{'agent_id':ctx.source.id,'level':'use'}])
+                await db.commit()
             monkeypatch.setattr(runtime,'async_session_factory',ctx.store.sessions)
             refs=[];tool=runtime.tools(ctx.source.id,[pid],refs)[0]
             result=await tool.ainvoke({'project_id':str(pid)})
@@ -98,7 +101,7 @@ def test_project_read_only_tool_and_goal_reference(tmp_path,monkeypatch):
             assert refs[0]['type']=='project'
             assert (await tool.ainvoke({'project_id':str(uuid.uuid4())}))['success'] is False
             model=FakeModel([[AIMessageChunk(content='项目摘要已读取。')]])
-            monkeypatch.setattr(goals,'create_llm',lambda *_:model)
+            monkeypatch.setattr(goals,'create_llm_for',lambda *a,**k:model)
             response=await goals.create_goal_stream(ctx.conv,goals.GoalRequest(content='总结项目',idempotency_key='project-ref',project_ids=[pid]))
             events=[]
             async for chunk in response.body_iterator:
@@ -128,10 +131,13 @@ def test_additive_migration_preserves_unassigned_works(tmp_path,monkeypatch):
                             reviewer_id=ctx.actor.user_id,status='todo',priority='P2',source_type='manual'))
                 await db.commit()
                 await db.execute(text('ALTER TABLE t_works DROP COLUMN project_id CASCADE'))
-                await db.execute(text('DROP TABLE t_project_activities, t_project_members, t_projects'))
+                await db.execute(text('DROP TABLE t_project_agent_grants, t_project_activities, t_project_members, t_projects'))
                 await db.commit()
                 conn=await db.connection();raw=await conn.get_raw_connection()
                 await raw.driver_connection.execute(Path('migrations/add_projects_20261013.sql').read_text())
+                await raw.driver_connection.execute(Path('migrations/add_project_agent_grants_20261118.sql').read_text())
                 row=await db.scalar(select(Work).where(Work.id==wid))
                 assert row.title=='历史工作' and row.project_id is None
+                # 新迁移对既有数据无影响，且授权表可用
+                assert await db.scalar(select(func.count()).select_from(ProjectAgentGrant)) == 0
     asyncio.run(scenario())

@@ -340,7 +340,7 @@ async def _execute_target_agent(
     关键：使用 target_agent 自己的 model、知识库和数据能力。
     使用独立的 DB session（不泄露源 Agent 的知识）。
     """
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
     from cortexa.config.settings import load_env
     from cortexa.db.engine import async_session_factory
 
@@ -350,7 +350,7 @@ async def _execute_target_agent(
     if handoff.project_ids:
         from cortexa.projects.service import summaries
         async with async_session_factory() as project_db:
-            project_text, project_refs = await summaries(project_db,handoff.project_ids,budget=3000 if target_agent.agent_type == "proxy" else 6000)
+            project_text, project_refs = await summaries(project_db,handoff.project_ids,budget=3000 if target_agent.agent_type == "proxy" else 6000,agent_id=target_agent.id)
         sources.extend(project_refs)
     if target_agent.agent_type == "proxy":
         if project_text:
@@ -393,7 +393,7 @@ async def _execute_target_agent(
 
     # 使用目标 Agent 的 model 配置创建 LLM
     annotate_usage(agent=target_agent)
-    llm = create_llm(target_agent.model)
+    llm = create_llm_for(target_agent, "collaboration")
 
     # 构建消息：先注入对话历史，再放用户问题
     messages = [{"role": "system", "content": system_prompt}]

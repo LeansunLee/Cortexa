@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from cortexa.agents.prompts import build_system_prompt, reference_message
 from cortexa.collaboration.schemas import AgentHandoff, AgentHandoffResult
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.db.models import AgentCollaboration, Workspace
 from cortexa.runtime.adapters import agent_adapter
 from cortexa.runtime.bindings import prepare_bindings
@@ -225,7 +225,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
             if payload.get("project_ids"):
                 from cortexa.projects.service import summaries
                 async with store.sessions() as project_db:
-                    project_text, _ = await summaries(project_db, payload["project_ids"], budget=min(6000,input_limit//4))
+                    project_text, _ = await summaries(project_db, payload["project_ids"], budget=min(6000,input_limit//4), agent_id=fresh.id)
                 invocation["project_reference"] = project_text
             if payload.get("conversation_id"):
                 from cortexa.work import runtime as work_runtime
@@ -397,7 +397,7 @@ async def prepare_agent_bindings(source, state, payload, loop, store, row, confi
                                                                    **({"conversation_id": child_payload["conversation_id"]} if child_payload.get("conversation_id") else {}),
                                                                    **({"project_ids":child_payload["project_ids"]} if child_payload.get("project_ids") else {}))
                 try:
-                    model = create_llm(fresh.model)
+                    model = create_llm_for(fresh, "goal_execution")
                 except Exception as error:
                     # Deterministic misconfiguration (e.g. unknown provider). Report
                     # a structured collaboration failure instead of tripping the

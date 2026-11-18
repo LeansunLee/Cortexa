@@ -25,7 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortexa.api.deps import get_db, get_current_workspace
-from cortexa.api.conversation_titles import assign_first_message_title
+from cortexa.api.conversation_titles import assign_first_message_title, schedule_llm_title
+from cortexa.config.llm_providers import resolve_model_name
 from cortexa.db.engine import async_session_factory
 from cortexa.api.schemas import (
     ConversationCreate,
@@ -297,7 +298,7 @@ async def create_message(
     from cortexa.conversation.questions import require_no_pending
     await require_no_pending(conv_id)
     from cortexa.projects.service import summaries
-    project_context, project_refs = await summaries(db, payload.project_ids)
+    project_context, project_refs = await summaries(db, payload.project_ids, agent_id=conv.agent_id)
     from cortexa.work import runtime as work_runtime
     works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
     referenced_works_context, referenced_works_refs = await work_runtime.referenced_summary(db, payload.work_ids)
@@ -307,7 +308,7 @@ async def create_message(
         content=payload.content,
         metadata_json={"project_ids":[str(i) for i in payload.project_ids], "work_ids":[str(i) for i in payload.work_ids]},
     )
-    await assign_first_message_title(db, conv_id, payload.content)
+    generated_title = await assign_first_message_title(db, conv_id, payload.content)
     db.add(msg)
 
     # If there's an agent, generate response
@@ -315,11 +316,11 @@ async def create_message(
         agent = await db.get(Agent, conv.agent_id)
         if agent:
             try:
-                from cortexa.config.llm_providers import create_llm
+                from cortexa.config.llm_providers import create_llm_for
                 import json
 
                 annotate_usage(agent=agent, action="reply")
-                model = create_llm(agent.model)
+                model = create_llm_for(agent, "chat_reply")
 
                 # Build system prompt with workspace context
                 workspace = await db.get(Workspace, conv.workspace_id) if conv.workspace_id else None
@@ -515,6 +516,8 @@ async def create_message(
     await db.refresh(msg)
     from cortexa.memory.integration import register_extraction
     await register_extraction(db,conv_id,msg.id)
+    if generated_title:
+        schedule_llm_title(conv_id)
     return msg
 
 
@@ -1009,6 +1012,8 @@ async def update_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
     if payload.title is not None:
         conv.title = payload.title
+        # A manual rename must not be overwritten by the background LLM title.
+        conv.metadata_json = {**(conv.metadata_json or {}), "title_manual": True}
     await db.flush()
     await db.refresh(conv)
     return conv
@@ -1096,13 +1101,14 @@ async def regenerate_message(
         if m.role in ("user", "assistant"):
             llm_messages.append({"role": m.role, "content": history_text(m.content)})
 
-    from cortexa.config.llm_providers import create_llm, provider_exists
-    if not provider_exists(agent.model):
+    from cortexa.config.llm_providers import create_llm, provider_exists, resolve_model_name
+    reply_model = resolve_model_name(agent, "chat_reply")
+    if not provider_exists(reply_model):
         # The provider may have been renamed or removed in config.yaml after the
         # agent was published; fail with a readable 422 instead of a 500 page.
-        raise HTTPException(422, f"智能体模型 '{agent.model}' 未在系统配置中定义，无法生成回复；请为该 Agent 重新选择可用模型")
+        raise HTTPException(422, f"智能体模型 '{reply_model or agent.model}' 未在系统配置中定义，无法生成回复；请为该 Agent 重新选择可用模型")
     annotate_usage(agent=agent, action="reply")
-    model = create_llm(agent.model)
+    model = create_llm(reply_model)
 
     usage = UsageTotals()
     sources = []
@@ -1148,7 +1154,7 @@ async def regenerate_message(
         conversation_id=conv_id,
         role="assistant",
         content=reply_content,
-        metadata_json={"stats": {**usage.stats(), "model": agent.model}, "sources": _dedupe_sources(sources),
+        metadata_json={"stats": {**usage.stats(), "model": reply_model}, "sources": _dedupe_sources(sources),
                        **({"artifacts": await artifacts_store.summaries(artifact_created)} if artifact_created else {})},
     )
     db.add(assistant_msg)
@@ -1254,7 +1260,7 @@ async def create_message_stream(
                         await require_agent_use(db, draft.agent_id)
 
                 from cortexa.projects.service import summaries
-                project_context, project_refs = await summaries(db, payload.project_ids)
+                project_context, project_refs = await summaries(db, payload.project_ids, agent_id=conv.agent_id)
                 from cortexa.work import runtime as work_runtime
                 works_context, works_refs = await work_runtime.conversation_summary(db, conv_id)
                 referenced_works_context, referenced_works_refs = await work_runtime.referenced_summary(db, payload.work_ids)
@@ -1289,6 +1295,8 @@ async def create_message_stream(
 
                 await db.commit()
                 yield f"data: {json.dumps({'type': 'user_message', 'id': str(user_msg.id), 'content': payload.content, 'attachments': attachments, 'conversation_title': generated_title})}\n\n"
+                if generated_title:
+                    schedule_llm_title(conv_id)
                 if shadow_entry and debug_enabled and can_read_goal_trace():
                     yield f"data: {json.dumps({'type': 'debug', 'entry': shadow_entry}, ensure_ascii=False)}\n\n"
 
@@ -1321,6 +1329,8 @@ async def create_message_stream(
                     return
 
                 agent_name = agent.name or "Agent"
+                # 主回复链路的实际供应商（场景调度可覆盖 agent.model），stats/debug 如实记录。
+                chat_model_name = resolve_model_name(agent, "chat_reply")
                 debug_event = await _debug(
                     "agent",
                     "确定主 Agent",
@@ -1955,7 +1965,7 @@ async def create_message_stream(
                             "target_agents": [cr["agent_name"] for cr in successful_results],
                             "stats": {
                                 "duration_ms": total_duration_ms,
-                                "model": agent.model,
+                                "model": chat_model_name,
                                 "token_count": sum(cr["result"].usage.get("token_count") or 0 for cr in successful_results) if any(cr["result"].usage.get("token_count") is not None for cr in successful_results) else None,
                                 "input_tokens": sum(cr["result"].usage.get("input_tokens") or 0 for cr in successful_results),
                                 "output_tokens": sum(cr["result"].usage.get("output_tokens") or 0 for cr in successful_results),
@@ -2021,9 +2031,9 @@ async def create_message_stream(
 
 
                 # ── Phase 2: Load data capabilities ──
-                from cortexa.config.llm_providers import create_llm
+                from cortexa.config.llm_providers import create_llm_for
                 annotate_usage(agent=agent, action="reply")
-                model = create_llm(agent.model)
+                model = create_llm_for(agent, "chat_reply")
 
                 # Fetch recent messages for follow-up detection
                 recent_for_plan = []
@@ -2118,7 +2128,7 @@ async def create_message_stream(
                     recent_raw = history_msgs[-4:]
                     try:
                         summary = await asyncio.wait_for(
-                            summarize_conversation(older_msgs, agent.model),
+                            summarize_conversation(older_msgs, chat_model_name),
                             timeout=15
                         )
                         if summary:
@@ -2400,7 +2410,7 @@ async def create_message_stream(
                 debug_event = await _debug(
                     "response", "主 Agent 回复生成完成", status="success",
                     summary=f"耗时 {duration_ms}ms · {token_count} 个流式片段",
-                    detail={"model": agent.model, "response": full_reply, "usage": usage.stats()},
+                    detail={"model": chat_model_name, "response": full_reply, "usage": usage.stats()},
                 )
                 if debug_event:
                     yield debug_event
@@ -2417,7 +2427,7 @@ async def create_message_stream(
                 meta["stats"] = {
                     "duration_ms": duration_ms,
                     **usage.stats(),
-                    "model": agent.model,
+                    "model": chat_model_name,
                 }
                 # Same shape as the goal runtime so the timeline can show the breakdown.
                 meta["execution_usage"] = [{"agent_name": agent.name, "agent_id": str(agent.id), **usage.stats()}]

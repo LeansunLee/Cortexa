@@ -267,7 +267,7 @@ async def invoke_proxy(agent, args, action_id, origin, state, payload, loop, sto
     if payload.get("project_ids"):
         from cortexa.projects.service import summaries
         async with store.sessions() as project_db:
-            text, _ = await summaries(project_db,payload["project_ids"],budget=min(3000,policy(agent).input_budget//2))
+            text, _ = await summaries(project_db,payload["project_ids"],budget=min(3000,policy(agent).input_budget//2),agent_id=agent.id)
         projection_payload = {**payload,"project_reference":text}
     else:
         projection_payload = payload

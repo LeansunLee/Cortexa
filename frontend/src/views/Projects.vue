@@ -15,15 +15,31 @@
       <section v-if="tab === 'works'" class="panel"><div class="actions"><button class="btn btn-primary" :disabled="project.status === 'archived'" @click="creatingWork=true">新建工作</button><SearchSelect v-model="selectedWork" :options="availableWorks.map(w=>({value:w.id,label:w.title}))" placeholder="选择现有工作" /><button class="btn btn-ghost" :disabled="!selectedWork || busy || project.status === 'archived'" @click="assign(selectedWork,project.id)">关联工作</button></div><p class="muted">关联工作会保留原执行状态、负责人及验收人。仅工作创建人或空间管理员可变更归属。</p><div v-for="w in works" :key="w.id" class="work-row"><router-link :to="`/works/${w.id}`">{{ w.title }}</router-link><span>{{ workStates[w.status] }}</span><span>{{ w.assignee_name }}</span><button v-if="w.permissions.project" class="btn btn-ghost btn-sm" :disabled="busy" @click="assign(w.id,null)">移出项目</button></div><p v-if="!works.length" class="muted">没有可见工作</p><router-link :to="{path:'/works',query:{project_id:project.id}}">查看完整工作列表 →</router-link></section>
       <section v-if="tab === 'deliverables'" class="panel"><article v-for="d in deliveries" :key="d.id" class="work-row delivery"><router-link :to="`/works/${d.work_id}`">{{ d.work_title }}</router-link><span>{{ d.accepted ? '已验收' : '待验收' }}</span><p class="preserve">{{ d.content }}</p><a v-if="d.filename" :href="`/api/works/${d.work_id}/deliverables/${d.id}/download`" @click.prevent="download(d)">{{ d.filename }}</a></article><p v-if="!deliveries.length" class="muted">没有可见交付物</p><button v-if="deliveryMore" class="btn btn-ghost" @click="moreDeliveries">加载更多</button></section>
       <section v-if="tab === 'activities'" class="panel"><div v-for="a in activities" :key="a.id" class="work-row"><span>{{ activityNames[a.action] || a.action }}</span><span>{{ a.data_json.title || states[a.data_json.status] || '' }}</span><small>{{ date(a.created_at) }}</small></div><p v-if="!activities.length" class="muted">暂无动态</p></section>
+      <section v-if="tab === 'agents'" class="panel">
+        <p class="muted">Agent 需获得本项目的授权才能查看或操作：「使用」=仅查看项目信息与关联工作；「管理」=另可修改项目名称、截止时间并派发关联工作。未授权的 Agent 无法看到本项目内容。</p>
+        <div v-for="g in project.agent_grants || []" :key="g.agent_id" class="work-row">
+          <span class="grant-agent">{{ g.agent_name }}</span>
+          <SearchSelect v-if="project.permissions.manage" class="grant-level" :model-value="g.level" :options="levelOptions" :aria-label="g.agent_name + ' 的权限级别'" @update:model-value="v => setGrantLevel(g, v)" />
+          <span v-else class="muted">{{ levelLabels[g.level] }}</span>
+          <button v-if="project.permissions.manage" class="btn btn-ghost btn-sm" :disabled="grantBusy" @click="removeGrant(g)">移除</button>
+        </div>
+        <p v-if="!(project.agent_grants || []).length" class="muted">尚未授权任何 Agent</p>
+        <div v-if="project.permissions.manage" class="actions">
+          <SearchSelect v-model="grantDraft.agent_id" :options="grantableAgents" placeholder="选择 Agent" aria-label="选择 Agent" />
+          <SearchSelect v-model="grantDraft.level" :options="levelOptions" placeholder="权限级别" aria-label="权限级别" />
+          <button class="btn btn-primary" :disabled="!grantDraft.agent_id || grantBusy" @click="addGrant">添加授权</button>
+        </div>
+        <p v-if="grantError" class="error" role="alert">{{ grantError }}</p>
+      </section>
     </template>
     <WorkEditor v-if="creatingWork" :project-id="project.id" @close="creatingWork=false" @saved="creatingWork=false; load()" />
     <div v-if="editing" class="project-overlay" @click.self="editing=null"><form class="project-editor panel" role="dialog" aria-modal="true" aria-label="编辑项目" @submit.prevent="save"><h3>{{ editing.id ? '编辑项目' : '新建项目' }}</h3><label><span>项目名称<LlmContextHint text="随项目引用提供给 Agent，用于识别该项目；对话中的引用标记也显示此名称。" /></span><input v-model="form.title" required maxlength="200" /></label><label><span>项目目标<LlmContextHint text="随项目引用完整提供给 Agent，是 Agent 理解项目背景的主要依据。" /></span><textarea v-model="form.goal" required maxlength="2000" rows="3" /></label><label><span>项目范围<LlmContextHint text="随项目引用提供给 Agent；超出上下文预算时截断至前 500 字。" /></span><textarea v-model="form.scope" maxlength="4000" rows="3" /></label><label><span>负责人<LlmContextHint text="以姓名形式随项目引用提供给 Agent。" /></span><SearchSelect v-model="form.owner_id" :options="members.map(m=>({value:m.id,label:m.name}))" placeholder="选择负责人" /></label><div class="filters"><label><span>状态<LlmContextHint text="以状态值随项目引用提供给 Agent。" /></span><SearchSelect v-model="form.status" :options="statusOptions.slice(1)" /></label><label><span>截止时间<LlmContextHint text="随项目引用提供给 Agent，用于判断时间要求与是否逾期。" /></span><input v-model="due" type="datetime-local" /></label></div><fieldset><legend>项目成员</legend><label v-for="m in members" :key="m.id" class="member"><input v-model="form.member_ids" type="checkbox" :value="m.id" />{{ m.name }}</label></fieldset><p class="muted">成员可查看项目；成员仅控制可见权限，不随项目引用提供给 Agent。工作及成果继续遵循原有访问权限。</p><p v-if="editError" class="error">{{ editError }}</p><footer class="actions"><button type="button" class="btn btn-ghost" @click="editing=null">取消</button><button class="btn btn-primary" :disabled="busy || !form.owner_id">{{ busy ? '保存中…' : '保存' }}</button></footer></form></div>
   </div>
 </template>
 <script setup>
-import { ref, reactive, watch, onMounted, inject } from 'vue'
+import { ref, reactive, computed, watch, onMounted, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api, { workApi } from '../api'
+import api, { workApi, agentApi } from '../api'
 import { auth } from '../auth'
 import PageHeader from '../components/PageHeader.vue'
 import SearchSelect from '../components/SearchSelect.vue'
@@ -37,10 +53,10 @@ const loading=ref(false),busy=ref(false),error=ref(''),editError=ref(''),editing
 const form=reactive({title:'',goal:'',scope:'',owner_id:'',status:'planned',member_ids:[]})
 const states={planned:'未开始',active:'进行中',completed:'已完成',archived:'已归档'}
 const statusOptions=[{value:'',label:'所有状态'},...Object.entries(states).map(([value,label])=>({value,label}))]
-const tabs=[['works','工作'],['deliverables','成果'],['activities','动态']]
+const tabs=[['works','工作'],['deliverables','成果'],['activities','动态'],['agents','Agent 授权']]
 function cycleTab(dir,e){const btns=[...e.currentTarget.querySelectorAll('[role=tab]')];const next=btns[(btns.indexOf(document.activeElement)+dir+btns.length)%btns.length];const hit=tabs.find(t=>t[1]===next.textContent);if(hit){tab.value=hit[0];next.focus()}}
 const workStates={draft:'草稿',pending:'待处理',todo:'待开始',in_progress:'进行中',review:'待验收',completed:'已完成',rejected:'退回修改',cancelled:'已取消'}
-const activityNames={created:'创建项目',updated:'修改项目',archived:'归档项目',work_changed:'变更工作归属'}
+const activityNames={created:'创建项目',updated:'修改项目',archived:'归档项目',work_changed:'变更工作归属',agent_grants_changed:'变更 Agent 授权'}
 const date=v=>v?new Date(v).toLocaleString('zh-CN'):'未设置'
 let generation=0
 async function load(){const ticket=++generation;loading.value=true;error.value='';try{if(route.params.id){const id=route.params.id;const [p,w,d,a]=await Promise.all([api.get(`/projects/${id}`),workApi.list({view:'all',project_id:id}),api.get(`/projects/${id}/deliverables`),api.get(`/projects/${id}/activities`)]);if(ticket!==generation)return;project.value=p.data;works.value=w.data;deliveries.value=d.data;deliveryMore.value=d.data.length===50;activities.value=a.data;availableWorks.value=(await workApi.list({view:'created'})).data.filter(w=>w.project_id!==id)}else{const {data}=await api.get('/projects',{params:{search:search.value,status:status.value,offset:offset.value}});if(ticket===generation)rows.value=data}}catch(e){if(ticket===generation)error.value=e.response?.data?.detail || '加载项目失败'}finally{if(ticket===generation)loading.value=false}}
@@ -50,8 +66,22 @@ async function archive(){try{await api.post(`/projects/${project.value.id}/archi
 async function assign(id,target){busy.value=true;try{await api.patch(`/projects/works/${id}/assignment`,{project_id:target});selectedWork.value='';await load()}catch(e){error.value=e.response?.data?.detail||'修改归属失败'}finally{busy.value=false}}
 async function moreDeliveries(){try{const {data}=await api.get(`/projects/${project.value.id}/deliverables`,{params:{offset:deliveries.value.length}});deliveries.value.push(...data);deliveryMore.value=data.length===50}catch{error.value='加载成果失败'}}
 async function download(d){try{const {data}=await api.get(`/works/${d.work_id}/deliverables/${d.id}/download`,{responseType:'blob'});const url=URL.createObjectURL(data),a=document.createElement('a');a.href=url;a.download=d.filename;a.click();URL.revokeObjectURL(url)}catch{error.value='下载失败或无权访问'}}
+
+// ── Agent 授权 ──
+const agents=ref([]),grantDraft=reactive({agent_id:'',level:'use'}),grantBusy=ref(false),grantError=ref('')
+const levelOptions=[{value:'manage',label:'管理 · 可改名称/截止时间、派发工作'},{value:'use',label:'使用 · 仅查看项目与关联工作'}]
+const levelLabels={manage:'管理',use:'使用'}
+const grantableAgents=computed(()=>{const taken=new Set((project.value?.agent_grants||[]).map(g=>g.agent_id));return agents.value.filter(a=>!taken.has(a.id)).map(a=>({value:a.id,label:a.name}))})
+async function loadAgents(){if(agents.value.length)return;try{agents.value=(await agentApi.list()).data}catch{grantError.value='加载 Agent 列表失败，请重试'}}
+async function saveGrants(list){if(!project.value?.permissions.manage)return;grantBusy.value=true;grantError.value='';try{const {data}=await api.put(`/projects/${project.value.id}/agent-grants`,{grants:list.map(g=>({agent_id:g.agent_id,level:g.level}))});project.value.agent_grants=data;grantDraft.agent_id='';grantDraft.level='use'}catch(e){grantError.value=typeof e.response?.data?.detail==='string'?e.response.data.detail:'保存授权失败，请重试'}finally{grantBusy.value=false}}
+async function setGrantLevel(g,v){await saveGrants((project.value.agent_grants||[]).map(x=>x.agent_id===g.agent_id?{...x,level:v}:x))}
+async function removeGrant(g){await saveGrants((project.value.agent_grants||[]).filter(x=>x.agent_id!==g.agent_id))}
+async function addGrant(){if(!grantDraft.agent_id||grantBusy.value)return;await saveGrants([...(project.value.agent_grants||[]),{agent_id:grantDraft.agent_id,level:grantDraft.level}])}
+
+watch(tab,t=>{if(t==='agents')loadAgents()});
 watch(()=>route.params.id,()=>{tab.value='works';load()});watch([search,status],()=>{offset.value=0;load()});onMounted(load)
 </script>
 <style scoped>
 .project-page{font-size:13px;color:var(--text)}.panel{padding:20px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-card);margin-bottom:16px}.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:16px}.project-card{display:flex;flex-direction:column;gap:10px;text-decoration:none;color:var(--text);margin:0}.card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.card-heading h3,.card-heading h2{margin:0;font-size:16px}.card-heading span,.muted,small{color:var(--text2)}.project-card p{margin:0;line-height:1.75;overflow-wrap:anywhere}progress{width:100%;height:6px;accent-color:var(--primary)}.filters,.actions{display:flex;flex-wrap:wrap;align-items:start;gap:10px;margin:12px 0}.filters input{flex:1}.filters>*{min-width:180px}.work-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}.work-row a{color:var(--primary);flex:1}.delivery p{width:100%}.preserve{white-space:pre-wrap;line-height:1.75;overflow-wrap:anywhere}.empty{text-align:center;color:var(--text2);padding:40px}.error{color:var(--danger)}input,textarea{padding:9px 12px;border:1px solid var(--border);border-radius:8px;color:var(--text);background:var(--surface);font:inherit;box-sizing:border-box}.project-overlay{position:fixed;inset:0;z-index:1000;background:var(--overlay);backdrop-filter:var(--glass-reading-backdrop,blur(8px));display:grid;place-items:center;padding:20px}.project-editor{width:min(640px,100%);max-height:85dvh;overflow:auto;box-sizing:border-box;background:var(--surface-dialog);box-shadow:var(--shadow-dialog)}.project-editor>label,.project-editor .filters>label{display:grid;gap:7px;margin:12px 0}.project-editor .filters>label{flex:1;margin:0}.project-editor fieldset{border:1px solid var(--border);border-radius:8px;max-height:180px;overflow:auto}.member{display:inline-flex;align-items:center;gap:6px;margin:6px 14px 6px 0}.project-editor .actions{justify-content:flex-end}
+.grant-agent{flex:1;font-weight:500}.grant-level{width:280px}
 </style>

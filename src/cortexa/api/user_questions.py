@@ -365,7 +365,7 @@ async def continue_agent(context, answer, conv_id, emit):
         emit({"type": "token", "content": text})
         return text
     from cortexa.api.conversations import _build_data_tools, _load_agent_capabilities, _stream_model_response
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
     from cortexa.runtime.loop import serialize_messages
     from cortexa.tools.web_search import load_search_tools
 
@@ -387,10 +387,10 @@ async def continue_agent(context, answer, conv_id, emit):
         from cortexa.projects.service import summaries
         from cortexa.agents.prompts import reference_message
         async with async_session_factory() as project_db:
-            project_text, refs = await summaries(project_db,context["project_ids"])
+            project_text, refs = await summaries(project_db,context["project_ids"],agent_id=agent.id)
         sources.extend(refs)
         messages.append(reference_message("本轮引用项目（只读参考）",project_text))
-    model = create_llm(agent.model)
+    model = create_llm_for(agent, "chat_reply")
     async with async_session_factory() as db:
         caps = await _load_agent_capabilities(agent.id, db, query)
         from cortexa.projects.runtime import tools as project_tools

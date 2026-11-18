@@ -31,6 +31,22 @@ class ProjectMember(Base):
     role: Mapped[str] = mapped_column(String(16), default='member')
 
 
+class ProjectAgentGrant(Base):
+    """项目-Agent 权限授权：use 仅查看项目与关联工作，manage 另可改名称/截止时间并派发关联工作。"""
+    __tablename__ = 't_project_agent_grants'
+    __table_args__ = (
+        ForeignKeyConstraint(['workspace_id','project_id'],['t_projects.workspace_id','t_projects.id'], ondelete='CASCADE'),
+        UniqueConstraint('project_id','agent_id'),
+        CheckConstraint("level IN ('manage','use')"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('t_workspaces.id'))
+    project_id: Mapped[uuid.UUID]
+    agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('t_agents.id', ondelete='CASCADE'), index=True)
+    level: Mapped[str] = mapped_column(String(16), default='use')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ProjectActivity(Base):
     __tablename__ = 't_project_activities'
     __table_args__ = (ForeignKeyConstraint(['workspace_id','project_id'],['t_projects.workspace_id','t_projects.id']),)
