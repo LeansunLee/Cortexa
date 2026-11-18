@@ -56,7 +56,7 @@ const assigneeOptions = computed(() => [
 ])
 const reviewerOptions = computed(() => [
   { value: '', label: '选择验收人', disabled: true },
-  ...members.value.map(u => ({ value: u.id, label: u.name, disabled: u.id === form.value.assignee_id })),
+  ...members.value.map(u => ({ value: u.id, label: u.name })),
 ])
 onMounted(async () => { try { members.value = (await workApi.members()).data } catch { error.value = '无法加载空间成员，请关闭后重试' } })
 const recommendations=ref([]), recommending=ref(false), recommendationError=ref('')

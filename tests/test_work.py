@@ -24,15 +24,20 @@ def test_work_validation_and_conservative_dedup():
     assert Extraction.model_validate({"works": []}).works == []
 
 
-def test_assignee_cannot_review_even_as_creator_or_admin():
+def test_assignee_cannot_review_unless_designated_reviewer():
     uid, ws = uuid.uuid4(), uuid.uuid4()
     a = Actor(uid, "a", True, False, 1, memberships={ws: {"permissions": set()}}, workspace_id=ws)
-    w = SimpleNamespace(assignee_type="human", assignee_id=uid, creator_id=uid, reviewer_id=uid, status="review")
+    # 负责人即使同时是创建者/管理员，未被指定为验收人 → 不能审批自己的工作
+    w = SimpleNamespace(assignee_type="human", assignee_id=uid, creator_id=uid, reviewer_id=uuid.uuid4(), status="review")
     assert not permissions(w, a)["approve"]
     assert not permissions(w, a)["reject"]
     w.status = "completed"
     assert permissions(w, a)["log"]
     assert not any(value for key, value in permissions(w, a).items() if key != "log")
+    # 工作显式指定负责人兼验收人（同一人）→ 允许自验自批，否则工作会卡死在待验收
+    w = SimpleNamespace(assignee_type="human", assignee_id=uid, creator_id=uuid.uuid4(), reviewer_id=uid, status="review")
+    assert permissions(w, a)["approve"]
+    assert permissions(w, a)["reject"]
 
 
 def test_delete_only_creator_or_admin_on_cancelled():
@@ -381,7 +386,9 @@ async def integration(tmp_path, monkeypatch):
         saved_log = next(e for e in await call(b, "GET", url + "/activities") if e["id"] == log["id"])
         assert saved_log["data_json"]["content"] == "已完成第一轮调研" and saved_log["can_edit"]
         assert any(e["action"] == "log_edited" for e in await call(b, "GET", url + "/activities"))
-        await call(a, "POST", "/api/works", 422, json={**payload, "reviewer_id": str(people[1].id)})
+        # 负责人与验收人相同现在允许（2026-11-16 放开）；同一个人仍可继续后续断言流程
+        same_person = await call(a, "POST", "/api/works", 201, json={**payload, "reviewer_id": str(people[1].id)})
+        assert same_person["assignee_id"] == same_person["reviewer_id"]
         await call(a, "POST", url + "/start", 403)
         await call(b, "PATCH", url, 403, json=payload)
         await call(b, "POST", url + "/start")

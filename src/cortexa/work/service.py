@@ -40,7 +40,12 @@ def visibility(a):
 def permissions(w, a):
     assignee = w.assignee_type == "human" and w.assignee_id == a.user_id
     manager = w.creator_id == a.user_id or a.has("workspace.manage")
-    reviewer = (w.creator_id == a.user_id or w.reviewer_id == a.user_id or a.has("workspace.manage")) and not assignee
+    # 负责人默认不能审批自己的工作；仅当工作显式指定负责人兼验收人（同一人）时放行，
+    # 否则这类工作会永远停在待验收（approve 是 review → completed 的唯一出口）。
+    double_hatted = w.assignee_type == "human" and w.assignee_id == w.reviewer_id
+    reviewer = (w.creator_id == a.user_id or w.reviewer_id == a.user_id or a.has("workspace.manage")) and (
+        not assignee or double_hatted
+    )
     return {
         "log": assignee or manager or w.reviewer_id == a.user_id,
         "edit": manager and w.status in {"draft", "pending", "todo"},
@@ -92,8 +97,6 @@ async def validate_people(db, data, existing_project=None):
     else:
         await require_agent_use(db, data["assignee_id"])
     await member(db, data["reviewer_id"])
-    if data["assignee_type"] == "human" and data["assignee_id"] == data["reviewer_id"]:
-        raise HTTPException(422, "验收人不能与负责人相同，请指定其他验收人")
 
 
 async def event(db, w, action, data=None):
