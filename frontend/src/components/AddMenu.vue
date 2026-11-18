@@ -163,7 +163,7 @@ onBeforeUnmount(disarm)
 </script>
 <style scoped>
 .ref-picker { font-size: 12px; }
-.ref-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 0; }
+.ref-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 0 40px; } /* 40 = 附加按钮36 + 行间距4，与输入文字左对齐 */
 .ref-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 6px 3px 9px; border-radius: 999px;
   color: var(--primary); background: var(--primary-light); border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent); }
 .ref-chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -172,7 +172,7 @@ onBeforeUnmount(disarm)
 .ref-chip button:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 18%, transparent); }
 .ref-chip button:disabled { opacity: .5; cursor: not-allowed; }
 
-.ref-menu { position: relative; z-index: 830; /* above the floating robot (820) */ display: flex; flex-direction: column; gap: 8px; margin: 6px 10px 10px; padding: 12px; border-radius: 12px;
+.ref-menu { position: relative; z-index: 830; /* above the floating robot (820) */ display: flex; flex-direction: column; gap: 8px; margin: 6px 10px 10px 40px; padding: 12px; border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   backdrop-filter: blur(20px) saturate(140%); -webkit-backdrop-filter: blur(20px) saturate(140%);
