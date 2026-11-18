@@ -159,7 +159,7 @@ async def run_extraction(conversation_id, message_id, snapshot, token):
 
 async def ingest_collaboration(db, record):
     """Distill the receiving Agent's perspective; references must be verified, not copied."""
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
     from .schemas import Candidate
     from .evidence import Source, append_evidence
     from .governance import ingest, relation, confidence
@@ -178,7 +178,7 @@ async def ingest_collaboration(db, record):
     )
     try:
         answer = await asyncio.wait_for(
-            create_llm(agent.model).ainvoke(
+            create_llm_for(agent, "memory_extraction").ainvoke(
                 [
                     {"role": "system", "content": prompt},
                     {

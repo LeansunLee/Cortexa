@@ -44,8 +44,8 @@ def generate_hypothetical_answer(
         )
 
     if llm is None:
-        from cortexa.config.llm_providers import create_llm
-        llm = create_llm()
+        from cortexa.config.llm_providers import create_llm_for
+        llm = create_llm_for(scenario="rag_retrieval")
 
     prompt = prompt_template.format(query=query)
     response = llm.invoke(prompt)

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortexa.api.deps import get_db
 from cortexa.api.schema_generation import GeneratedSchema, validate_result
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.data.sql_drafts import TOKENS, execute_draft, validate_sql
 from cortexa.db.models import DataCredential, DataSource, Workspace
 from cortexa.security.access import require
@@ -389,7 +389,7 @@ async def parameterize(payload: RewriteInput, db: Db):
         "explanation 用中文简述新增筛选与保留的固定条件，需要确认的语义也要说明。"
     )
     try:
-        llm = create_llm(workspace.default_model_provider if workspace else None)
+        llm = create_llm_for(scenario="sql_draft", fallback=workspace.default_model_provider if workspace else None)
         response = await asyncio.wait_for(
             llm.ainvoke(
                 [

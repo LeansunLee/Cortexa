@@ -33,7 +33,7 @@ def patch_env(monkeypatch, model):
     monkeypatch.setattr(goal_analysis, "available_agents", lambda db, source: _async(ROSTER))
     monkeypatch.setattr(goal_analysis, "proxy_enabled", lambda a: True)
     monkeypatch.setattr(goal_analysis, "settings", lambda a: SimpleNamespace(allow_incoming=True))
-    monkeypatch.setattr(goal_analysis, "create_llm", lambda name: model)
+    monkeypatch.setattr(goal_analysis, "create_llm_for", lambda agent, scenario=None, fallback=None: model)
 
 
 def _async(value):
@@ -90,11 +90,11 @@ def test_analyze_request_accepts_role_and_dedupes(monkeypatch):
 def test_analyze_request_disabled_flag_skips_model(monkeypatch):
     called = []
 
-    def boom(name):
-        called.append(name)
+    def boom(agent, scenario=None, fallback=None):
+        called.append(scenario)
         raise AssertionError("should not call model")
 
-    monkeypatch.setattr(goal_analysis, "create_llm", boom)
+    monkeypatch.setattr(goal_analysis, "create_llm_for", boom)
     monkeypatch.setattr(goal_analysis, "available_agents", lambda db, source: _async(ROSTER))
     monkeypatch.setattr(goal_analysis, "proxy_enabled", lambda a: True)
     monkeypatch.setattr(goal_analysis, "settings", lambda a: SimpleNamespace(allow_incoming=True))

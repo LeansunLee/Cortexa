@@ -1,7 +1,13 @@
 <template>
   <div class="settings">
+    <nav v-if="settingsTabs.length > 1" class="tabs" role="tablist" aria-label="系统配置标签">
+      <button v-for="t in settingsTabs" :key="t.key" type="button" role="tab" class="tab"
+              :class="{ active: activeTab === t.key }" :aria-selected="activeTab === t.key"
+              @click="activeTab = t.key">{{ t.label }}</button>
+    </nav>
+
     <!-- Platform feature flags -->
-    <section v-if="can('config.manage')" class="card feature-flags-card" aria-labelledby="feature-flags-heading">
+    <section v-if="can('config.manage')" v-show="activeTab === 'features'" class="card feature-flags-card" aria-labelledby="feature-flags-heading">
       <div class="card-header">
         <div>
           <h2 id="feature-flags-heading" class="card-title"><SlidersHorizontal :size="18" /> 平台功能开关</h2>
@@ -21,8 +27,31 @@
       </div>
     </section>
 
+    <!-- Scenario model routing -->
+    <section v-if="can('config.manage')" v-show="activeTab === 'routing'" class="card model-routing-card" aria-labelledby="model-routing-heading">
+      <div class="card-header">
+        <div>
+          <h2 id="model-routing-heading" class="card-title"><Cpu :size="18" /> 场景模型调度</h2>
+          <p class="card-desc">按任务场景指定模型供应商：轻量任务用便宜的轻量模型，重要任务用更强的模型。保存后立即生效，无需重启。</p>
+        </div>
+      </div>
+      <div v-for="s in modelRouting" :key="s.key" class="feature-row">
+        <div class="feature-copy">
+          <h3 class="card-title">{{ s.title }} <code class="flag-key">{{ s.key }}</code></h3>
+          <p class="card-desc">{{ s.description }}{{ s.value ? '' : `（${s.default_label}）` }}</p>
+        </div>
+        <SearchSelect
+          class="routing-select"
+          :model-value="routingSelections[s.key]"
+          :options="routingOptions"
+          :aria-label="s.title + '使用的模型'"
+          @update:model-value="value => saveRouting(s, value)"
+        />
+      </div>
+    </section>
+
     <!-- LLM Providers -->
-    <section class="card llm-provider-card" aria-labelledby="llm-provider-heading">
+    <section v-show="activeTab === 'providers'" class="card llm-provider-card" aria-labelledby="llm-provider-heading">
       <div class="card-header llm-provider-header">
         <div>
           <h2 id="llm-provider-heading" class="card-title"><Server :size="18" /> LLM 供应商配置</h2>
@@ -145,7 +174,7 @@
 </template>
 
 <script setup>
-import { Server, SlidersHorizontal } from 'lucide-vue-next'
+import { Cpu, Server, SlidersHorizontal } from 'lucide-vue-next'
 
 import { computed, ref, onMounted } from 'vue'
 import { configApi } from '../api'
@@ -162,6 +191,29 @@ const editMode = ref(false)
 const editingName = ref('')
 const featureFlags = ref([])
 const savingFlags = ref(false)
+const modelRouting = ref([])
+const routingSelections = ref({})
+
+// 系统配置页三个区块用 tab 切换；无 config.manage 权限时只有供应商一个区块，不显示 tab 栏
+const activeTab = ref(can('config.manage') ? 'features' : 'providers')
+const settingsTabs = computed(() => {
+  const tabs = []
+  if (can('config.manage')) {
+    tabs.push({ key: 'features', label: '平台功能开关' })
+    tabs.push({ key: 'routing', label: '场景模型调度' })
+  }
+  tabs.push({ key: 'providers', label: 'LLM 供应商' })
+  return tabs
+})
+
+const routingOptions = computed(() => [
+  { value: '', label: '跟随默认策略' },
+  { value: 'agent', label: '跟随智能体' },
+  ...Object.entries(providers.value).map(([name, p]) => ({
+    value: name,
+    label: name + ' (' + (p.model || '未设置模型') + ')',
+  })),
+])
 
 const form = ref({
   name: '',
@@ -228,6 +280,32 @@ const toggleFlag = async (flag, event) => {
     showToast('保存失败: ' + (e.response?.data?.detail || e.message), 'error')
   } finally {
     savingFlags.value = false
+  }
+}
+
+const loadModelRouting = async () => {
+  if (!can('config.manage')) return
+  try {
+    const { data } = await configApi.listModelRouting()
+    modelRouting.value = data.scenarios || []
+    const selections = {}
+    for (const s of modelRouting.value) selections[s.key] = s.value || ''
+    routingSelections.value = selections
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const saveRouting = async (scenario, value) => {
+  const prev = scenario.value
+  routingSelections.value[scenario.key] = value
+  try {
+    const { data } = await configApi.saveModelRouting({ [scenario.key]: value })
+    scenario.value = data.routing?.[scenario.key] || ''
+    showToast(`${scenario.title}已${scenario.value ? '改为 ' + scenario.value : '恢复默认'}`, 'success')
+  } catch (e) {
+    routingSelections.value[scenario.key] = prev
+    showToast('保存失败: ' + (e.response?.data?.detail || e.message), 'error')
   }
 }
 
@@ -304,6 +382,7 @@ const saveDefault = async () => {
 onMounted(() => {
   loadConfig()
   loadFeatures()
+  loadModelRouting()
 })
 </script>
 
@@ -312,6 +391,7 @@ onMounted(() => {
 .settings h1 { font-size: 24px; font-weight: 700; margin: 0; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
 .feature-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.routing-select { width: 260px; flex-shrink: 0; }
 .feature-row:last-child { border-bottom: 0; }
 .feature-copy { min-width: 0; }
 .feature-copy .card-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }

@@ -1517,6 +1517,7 @@ const sendMessage = async (decision = null) => {
             if (event.conversation_title) {
               const conversation = conversations.value.find(item => item.id === convId)
               if (conversation) conversation.title = event.conversation_title
+              scheduleTitleRefresh(convId)
             }
             const optimistic = session.messages.find(m => m._attemptId === attempt.id)
             if (optimistic) optimistic.id = event.id
@@ -1708,6 +1709,20 @@ const retryMessage = async () => {
   }
   session.lastUserMessage = ''
   await sendMessage()
+}
+
+// 首轮后台会把截断占位标题换成 LLM 生成的简洁标题，这里短暂轮询拿到结果
+const scheduleTitleRefresh = (convId) => {
+  for (const delay of [3000, 10000]) {
+    setTimeout(async () => {
+      const conversation = conversations.value.find(item => item.id === convId)
+      if (!conversation) return
+      try {
+        const { data } = await conversationApi.get(convId)
+        if (data?.title && data.title !== conversation.title) conversation.title = data.title
+      } catch { /* 标题刷新失败无需提示，下次加载列表会取到 */ }
+    }, delay)
+  }
 }
 
 const editingConvId = ref(null)

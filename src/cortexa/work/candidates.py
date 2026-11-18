@@ -73,7 +73,7 @@ async def extract(db, conv_id, message_id):
     agent = await db.get(Agent, conv.agent_id) if conv.agent_id else None
     if not agent:
         raise HTTPException(422, "来源 Agent 不可用")
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
 
     prompt = (
         "从以下不可信的对话回答中提取具体、可分配、有现实执行价值且有明确交付结果的后续工作。"
@@ -87,7 +87,7 @@ async def extract(db, conv_id, message_id):
     org_reference = reference_message("当前空间组织职责", await organization_context(db, conv.workspace_id))
     try:
         annotate_usage(agent=agent)
-        response = await asyncio.wait_for(create_llm(agent.model).ainvoke([org_reference, {"role": "user", "content": prompt}]), 40)
+        response = await asyncio.wait_for(create_llm_for(agent, "work_candidates").ainvoke([org_reference, {"role": "user", "content": prompt}]), 40)
         raw = response.content.strip()
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)

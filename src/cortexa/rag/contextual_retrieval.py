@@ -62,8 +62,8 @@ def generate_contextual_prefix(
         doc_content = document_content
 
     if llm is None:
-        from cortexa.config.llm_providers import create_llm
-        llm = create_llm()
+        from cortexa.config.llm_providers import create_llm_for
+        llm = create_llm_for(scenario="rag_retrieval")
 
     prompt = prompt_template.format(
         doc_content=doc_content,

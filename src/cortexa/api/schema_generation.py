@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortexa.api.deps import get_db
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.db.models import DataSource, Workspace
 from cortexa.security.access import require
 from cortexa.work.service import actor
@@ -94,7 +94,7 @@ async def generate_input_schema(payload: GenerateInput, db: Annotated[AsyncSessi
         "不能虚构枚举、默认值或业务规则。不得输出连接配置、凭证或执行任何查询。"
     )
     try:
-        llm = create_llm(workspace.default_model_provider if workspace else None)
+        llm = create_llm_for(scenario="schema_generation", fallback=workspace.default_model_provider if workspace else None)
         response = await asyncio.wait_for(
             llm.ainvoke(
                 [

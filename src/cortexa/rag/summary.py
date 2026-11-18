@@ -41,7 +41,7 @@ async def generate_document_summary(doc_name: str, content: str) -> tuple[str, s
     or ``"truncated"`` when the LLM failed and the legacy head-truncation
     summary from ``make_summary`` is used instead.
     """
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
     from cortexa.data.doc_storage import make_summary
 
     text = (content or "").strip()
@@ -55,7 +55,7 @@ async def generate_document_summary(doc_name: str, content: str) -> tuple[str, s
         sample += "\n…[中间内容省略]…\n" + text[-SUMMARY_TAIL_CHARS:]
     prompt = DOC_SUMMARY_PROMPT.format(name=doc_name, content=sample)
     try:
-        model = create_llm()
+        model = create_llm_for(scenario="rag_summary")
         response = await asyncio.wait_for(
             model.ainvoke([{"role": "user", "content": prompt}]),
             timeout=SUMMARY_TIMEOUT_SECONDS,

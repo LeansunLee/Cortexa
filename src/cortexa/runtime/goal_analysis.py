@@ -11,7 +11,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.runtime.collaboration import available_agents, proxy_enabled, settings
 
 ANALYSIS_TIMEOUT_SECONDS = 30
@@ -68,7 +68,7 @@ async def analyze_request(source, payload, db, config):
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        model = create_llm(source.model)
+        model = create_llm_for(source, "goal_analysis")
         if hasattr(model, "max_retries"):
             model = model.model_copy(update={"max_retries": 0})
         response = await asyncio.wait_for(

@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from cortexa.api.conversation_titles import assign_first_message_title
+from cortexa.api.conversation_titles import assign_first_message_title, schedule_llm_title
 from cortexa.db.engine import async_session_factory
 from cortexa.db.models import Conversation, ConversationMessage
 from cortexa.runtime.artifacts import ArtifactStore
@@ -111,6 +111,8 @@ class GoalStore:
             except IntegrityError as error:
                 await db.rollback()
                 raise HTTPException(409, "幂等键冲突，请读取原 Goal") from error
+            if payload.get("conversation_title"):
+                schedule_llm_title(conv_id)
             return row, True
 
     async def checkpoint(self, row, state, payload, *, reply=None, trace=None, stats=None, resume_content=None):

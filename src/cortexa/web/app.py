@@ -29,6 +29,7 @@ class CacheControlStaticFiles(_BaseStaticFiles):
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from cortexa.config.llm_providers import MODEL_SCENARIOS, SCENARIO_DEFAULT_LABELS
 from cortexa.config.settings import load_env
 from cortexa.workflow.graph import build_graph
 from cortexa.api.router import api_router
@@ -357,6 +358,51 @@ class EmbeddingPayload(BaseModel):
     model: str = "text-embedding-3-small"
 
 
+@app.get("/api/config/model-routing")
+async def list_model_routing() -> dict[str, Any]:
+    """场景→模型调度目录；读取点按请求读盘，保存后立即生效，无需重启。"""
+    cfg = _load_config()
+    routing = cfg.get("model_routing", {})
+    providers = list(cfg.get("llm", {}).get("providers", {}).keys())
+    scenarios = [
+        {
+            "key": key,
+            "title": title,
+            "description": description,
+            "default_policy": policy,
+            "default_label": SCENARIO_DEFAULT_LABELS[policy],
+            "value": routing.get(key) or "",
+        }
+        for key, (title, description, policy) in MODEL_SCENARIOS.items()
+    ]
+    return {"scenarios": scenarios, "providers": providers}
+
+
+class ModelRoutingPayload(BaseModel):
+    routing: dict[str, str]
+
+
+@app.put("/api/config/model-routing")
+async def save_model_routing(payload: ModelRoutingPayload) -> dict[str, Any]:
+    unknown = sorted(set(payload.routing) - set(MODEL_SCENARIOS))
+    if unknown:
+        raise HTTPException(422, "未知的场景：" + "、".join(unknown))
+    providers = set(_load_config().get("llm", {}).get("providers", {}).keys())
+    allowed = providers | {"agent", ""}
+    bad = sorted({value for value in payload.routing.values() if value not in allowed})
+    if bad:
+        raise HTTPException(422, "未配置的供应商：" + "、".join(bad))
+    cfg = _load_config()
+    routing = cfg.setdefault("model_routing", {})
+    for key, value in payload.routing.items():
+        if value:
+            routing[key] = value
+        else:
+            routing.pop(key, None)  # 空串 = 清除覆盖，回到场景缺省策略
+    _save_config(cfg)
+    return {"status": "ok", "routing": dict(routing)}
+
+
 @app.post("/api/config/embedding")
 async def save_embedding_config(payload: EmbeddingPayload) -> dict[str, Any]:
     """Save embedding model configuration."""
@@ -414,8 +460,15 @@ async def delete_provider(name: str) -> dict[str, Any]:
     if name not in providers:
         return {"status": "error", "message": "Provider not found"}
     del providers[name]
+    # 场景调度里指向该供应商的覆盖一并清掉，回到场景缺省策略，避免运行时报未知供应商。
+    routing = cfg.get("model_routing") or {}
+    affected = sorted(key for key, value in routing.items() if value == name)
+    if affected:
+        for key in affected:
+            del routing[key]
+        cfg["model_routing"] = routing
     _save_config(cfg)
-    return {"status": "ok"}
+    return {"status": "ok", "routing_reset": affected}
 
 
 @app.put("/api/config/provider/{name}")

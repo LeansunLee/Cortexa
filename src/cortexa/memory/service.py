@@ -76,11 +76,11 @@ async def extract_memories(agent, conversation_id, current_message, recent_messa
     if not rows:
         return []
     sources = [{"id": str(m.id), "text": m.content[:2000], "at": str(m.created_at)} for m in reversed(rows)]
-    from cortexa.config.llm_providers import create_llm
+    from cortexa.config.llm_providers import create_llm_for
 
     try:
         answer = await asyncio.wait_for(
-            create_llm(agent.model).ainvoke(
+            create_llm_for(agent, "memory_extraction").ainvoke(
                 [
                     {"role": "system", "content": EXTRACTION_PROMPT},
                     {

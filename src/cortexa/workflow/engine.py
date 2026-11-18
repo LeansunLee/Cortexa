@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cortexa.api.agents import _build_system_prompt
-from cortexa.config.llm_providers import create_llm
+from cortexa.config.llm_providers import create_llm_for
 from cortexa.db.models import AgentRun, AgentVersion, Task, TaskRun, WorkflowEdge, WorkflowNode
 from cortexa.security.access import actor_required, require_agent_use
 from cortexa.usage.context import annotate_usage, usage_action
@@ -99,7 +99,7 @@ async def run_task(db: AsyncSession, task: Task, steps: list[tuple[str, uuid.UUI
             annotate_usage(agent_id=agent.id, agent_name=agent.name)
             prompt = f"任务：{task.name}\n{task.description or ''}\n当前输入与已完成步骤：\n{json.dumps(context, ensure_ascii=False, default=str)}"
             response = await asyncio.wait_for(
-                create_llm(agent.model).ainvoke(
+                create_llm_for(agent, "workflow_node").ainvoke(
                     [SystemMessage(content=_build_system_prompt(agent)), HumanMessage(content=prompt)]
                 ),
                 timeout=120,

@@ -73,6 +73,64 @@ def get_provider_config(name: str | None = None, config_path: Path | None = None
     )
 
 
+# 场景目录：key -> (标题, 说明, 缺省策略)。缺省策略决定 config.yaml 未配置该场景时的行为：
+#   "agent"     跟随智能体（旧路径 create_llm(agent.model)）
+#   "workspace" 跟随调用方传入的工作空间默认（旧路径 create_llm(workspace.default_model_provider)）
+#   "global"    全局默认供应商（旧路径 create_llm()）
+# 即：model_routing 未配置时，所有场景行为与历史完全一致。
+MODEL_SCENARIOS: dict[str, tuple[str, str, str]] = {
+    "chat_reply": ("对话回复", "普通对话、追问后继续、上下文压缩等主回复链路", "agent"),
+    "goal_execution": ("Goal 执行", "目标模式的多步执行与协作参与者", "agent"),
+    "collaboration": ("协作任务", "Agent 互相委派的协作执行", "agent"),
+    "workflow_node": ("工作流节点", "工作流中每个节点的一次模型调用", "agent"),
+    "memory_extraction": ("记忆提取", "对话后的记忆提取、治理与协作认知沉淀", "agent"),
+    "goal_analysis": ("目标智能拆解", "目标入口的一次问题拆解调用", "agent"),
+    "work_candidates": ("工作候选提取", "对话后自动提取可分配的后续工作", "agent"),
+    "title": ("对话命名", "首轮对话自动生成简洁标题", "agent"),
+    "rag_summary": ("知识库文档摘要", "入库文档的摘要生成", "global"),
+    "rag_retrieval": ("检索改写", "HyDE 假设片段与上下文化检索改写", "global"),
+    "sql_draft": ("SQL 草稿", "数据能力 SQL 与参数草稿生成", "workspace"),
+    "schema_generation": ("能力 Schema 生成", "数据能力输入 Schema 编辑", "workspace"),
+}
+
+SCENARIO_DEFAULT_LABELS = {"agent": "跟随智能体", "workspace": "跟随工作空间默认", "global": "全局默认"}
+
+
+def resolve_model_name(
+    agent: Any = None,
+    scenario: str | None = None,
+    fallback: str | None = None,
+    config_path: Path | None = None,
+) -> str | None:
+    """模型解析链：场景覆盖 → 场景缺省策略 → 调用点回退 → 全局默认。
+
+    config.yaml 每次现读，管理端保存 model_routing 后立即生效，无需重启。
+    覆盖值指向已删除的供应商时回退到缺省策略，不让场景任务挂掉。
+    """
+    if scenario:
+        routing = _load_yaml_config(config_path).get("model_routing") or {}
+        choice = routing.get(scenario)
+        if choice and choice != "agent" and provider_exists(choice, config_path):
+            return choice
+        if not choice:
+            policy = MODEL_SCENARIOS.get(scenario, ("", "", "agent"))[2]
+            if policy == "global":
+                return None
+    if agent is not None and getattr(agent, "model", None):
+        return agent.model
+    return fallback
+
+
+def create_llm_for(
+    agent: Any = None,
+    scenario: str | None = None,
+    fallback: str | None = None,
+    config_path: Path | None = None,
+) -> Any:
+    """按场景解析供应商并构建模型实例；等价于 create_llm(resolve_model_name(...))。"""
+    return create_llm(resolve_model_name(agent, scenario, fallback, config_path), config_path)
+
+
 def provider_exists(name: str | None, config_path: Path | None = None) -> bool:
     """Whether a provider name exists in config.yaml; unknown names otherwise
     only fail at message time with a mid-stream error."""

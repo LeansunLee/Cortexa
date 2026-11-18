@@ -39,7 +39,9 @@ export const configApi = {
   saveEmbedding: (data) => api.post('/config/embedding', data),
   saveConversationDebug: (enabled) => api.post('/config/conversation-debug', { enabled }),
   listFeatures: () => api.get('/config/features'),
-  saveFeatures: (features) => api.put('/config/features', { features })
+  saveFeatures: (features) => api.put('/config/features', { features }),
+  listModelRouting: () => api.get('/config/model-routing'),
+  saveModelRouting: (routing) => api.put('/config/model-routing', { routing })
 }
 
 export const debugPreferenceApi = {
